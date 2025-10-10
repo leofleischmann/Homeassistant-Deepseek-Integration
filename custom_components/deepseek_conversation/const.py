@@ -27,7 +27,7 @@ RECOMMENDED_TEMPERATURE = 1.0
 RECOMMENDED_TOP_P = 1.0
 
 # DeepSeek API endpoint
-DEEPSEEK_API_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"
 
 # Removed OpenAI specific constants
 # CONF_REASONING_EFFORT = "reasoning_effort"
