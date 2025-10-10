@@ -1,6 +1,6 @@
 {
   "domain": "deepseek_conversation",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "DeepSeek Conversation",
   "after_dependencies": ["assist_pipeline", "intent"],
   "codeowners": ["@leofleischmann"],
