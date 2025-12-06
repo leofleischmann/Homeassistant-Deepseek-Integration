@@ -9,19 +9,19 @@ from typing import Any
 import openai
 import voluptuous as vol
 
-from homeassistant.config_entries import (
+from homeassistant.config_entries import (  # pyright: ignore[reportMissingImports]
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
 )
 # --- Import CONF_LLM_HASS_API ---
-from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API
+from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 # --- End Import ---
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import llm
-from homeassistant.helpers.httpx_client import get_async_client
-from homeassistant.helpers.selector import (
+from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImports]
     NumberSelector,
     NumberSelectorConfig,
     SelectOptionDict,
@@ -29,7 +29,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     TemplateSelector,
 )
-from homeassistant.helpers.typing import VolDictType
+from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
 # Updated imports from const
 from .const import (
@@ -38,6 +38,7 @@ from .const import (
     CONF_PROMPT,
     CONF_TEMPERATURE,
     CONF_TOP_P,
+    CONF_BASE_URL,
     DOMAIN,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
@@ -51,6 +52,7 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
+        vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): str,
     }
 )
 
@@ -67,9 +69,15 @@ DEFAULT_OPTIONS = {
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
     """Validate the user input allows us to connect."""
+    base_url = data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+    if base_url:
+        base_url = base_url.strip()
+    if not base_url:
+        base_url = DEEPSEEK_API_BASE_URL
+    
     client = openai.AsyncOpenAI(
         api_key=data[CONF_API_KEY],
-        base_url=DEEPSEEK_API_BASE_URL,
+        base_url=base_url,
         http_client=get_async_client(hass)
     )
     await client.with_options(timeout=10.0).chat.completions.create(
@@ -147,13 +155,36 @@ class DeepSeekOptionsFlow(OptionsFlow):
             if user_input.get(CONF_LLM_HASS_API) == "none":
                  user_input.pop(CONF_LLM_HASS_API, None)
 
+            # Handle base URL update - move it from options to data if changed
+            base_url_changed = False
+            if CONF_BASE_URL in user_input:
+                base_url = user_input.pop(CONF_BASE_URL).strip()
+                # Validate URL is not empty
+                if not base_url:
+                    errors[CONF_BASE_URL] = "url_required"
+                else:
+                    # Normalize URL (ensure it ends with /v1 or similar, or let user specify full path)
+                    if base_url != self.config_entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL):
+                        base_url_changed = True
+                        # Update the config entry data
+                        new_data = {**self.config_entry.data, CONF_BASE_URL: base_url}
+                        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+
             if not errors:
                 # Merge new user input with existing options before creating entry
                 updated_options = {**self.config_entry.options, **user_input}
-                return self.async_create_entry(title="", data=updated_options)
+                result = self.async_create_entry(title="", data=updated_options)
+                
+                # Reload the entry if base URL was changed to apply the new URL
+                if base_url_changed:
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                    )
+                
+                return result
 
         # Pass options from self.config_entry to the schema function
-        schema = deepseek_config_option_schema(self.hass, self.config_entry.options)
+        schema = deepseek_config_option_schema(self.hass, self.config_entry.options, self.config_entry)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
@@ -164,6 +195,7 @@ class DeepSeekOptionsFlow(OptionsFlow):
 def deepseek_config_option_schema(
     hass: HomeAssistant,
     options: dict[str, Any] | MappingProxyType[str, Any],
+    config_entry: ConfigEntry | None = None,
 ) -> VolDictType:
     """Return a schema for DeepSeek completion options."""
     # Re-add HASS API selection
@@ -175,7 +207,19 @@ def deepseek_config_option_schema(
         for api in llm.async_get_apis(hass)
     )
 
+    # Get base URL from config entry data if available, otherwise from options or default
+    base_url = DEEPSEEK_API_BASE_URL
+    if config_entry:
+        base_url = config_entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+    elif CONF_BASE_URL in options:
+        base_url = options[CONF_BASE_URL]
+
     schema: VolDictType = {
+        vol.Optional(
+            CONF_BASE_URL,
+            description={"suggested_value": base_url},
+            default=base_url,
+        ): str,
         vol.Optional(
             CONF_PROMPT,
             description={
