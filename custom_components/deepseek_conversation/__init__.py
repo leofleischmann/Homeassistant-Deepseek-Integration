@@ -13,22 +13,23 @@ import openai
 # from openai.types.responses import (...)
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY, Platform
-from homeassistant.core import (
+from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
+from homeassistant.const import CONF_API_KEY, Platform  # pyright: ignore[reportMissingImports]
+from homeassistant.core import (  # pyright: ignore[reportMissingImports]
     HomeAssistant,
     ServiceCall,
     ServiceResponse,
     SupportsResponse,
 )
-from homeassistant.exceptions import (
+from homeassistant.exceptions import (  # pyright: ignore[reportMissingImports]
     ConfigEntryNotReady,
     HomeAssistantError,
     ServiceValidationError,
 )
-from homeassistant.helpers import config_validation as cv, selector
-from homeassistant.helpers.httpx_client import get_async_client
-from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers import config_validation as cv, selector  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers.typing import ConfigType  # pyright: ignore[reportMissingImports]
+from typing import TypeAlias  # pyright: ignore[reportMissingImports]
 
 # Updated imports from const.py
 from .const import (
@@ -38,6 +39,7 @@ from .const import (
     CONF_PROMPT,
     CONF_TEMPERATURE,
     CONF_TOP_P,
+    CONF_BASE_URL,
     DOMAIN, # Use the updated domain
     LOGGER, # Keep using the logger from const
     RECOMMENDED_CHAT_MODEL,
@@ -55,7 +57,7 @@ PLATFORMS = (Platform.CONVERSATION,)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # Define type alias using the updated domain if needed, or keep generic
-type DeepSeekConfigEntry = ConfigEntry[openai.AsyncClient]
+DeepSeekConfigEntry: TypeAlias = ConfigEntry[openai.AsyncClient]
 
 
 def encode_file(file_path: str) -> tuple[str, str]:
@@ -210,10 +212,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> bool:
     """Set up DeepSeek Conversation from a config entry."""
-    # --- Initialize client with DeepSeek base URL ---
+    # --- Initialize client with DeepSeek base URL from config entry ---
+    base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
     client = openai.AsyncOpenAI(
         api_key=entry.data[CONF_API_KEY],
-        base_url=DEEPSEEK_API_BASE_URL, # Use DeepSeek endpoint
+        base_url=base_url, # Use base URL from config entry or default
         http_client=get_async_client(hass),
     )
     # --- End of client initialization change ---
