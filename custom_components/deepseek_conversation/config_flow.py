@@ -53,6 +53,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
         vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): str,
+        vol.Optional(CONF_CHAT_MODEL, default=RECOMMENDED_CHAT_MODEL): str,
     }
 )
 
@@ -75,13 +76,15 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
     if not base_url:
         base_url = DEEPSEEK_API_BASE_URL
     
+    model = data.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
+    
     client = openai.AsyncOpenAI(
         api_key=data[CONF_API_KEY],
         base_url=base_url,
         http_client=get_async_client(hass)
     )
     await client.with_options(timeout=10.0).chat.completions.create(
-        model=RECOMMENDED_CHAT_MODEL,
+        model=model,
         messages=[{"role": "user", "content": "Hi"}],
         max_tokens=1,
     )
@@ -116,10 +119,20 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected exception during validation")
             errors["base"] = "unknown"
         else:
+            # Separate data (connection settings) from options (model settings)
+            entry_data = {
+                CONF_API_KEY: user_input[CONF_API_KEY],
+                CONF_BASE_URL: user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+            }
+            # Move chat_model to options if provided
+            entry_options = {**DEFAULT_OPTIONS}
+            if CONF_CHAT_MODEL in user_input:
+                entry_options[CONF_CHAT_MODEL] = user_input[CONF_CHAT_MODEL]
+            
             return self.async_create_entry(
                 title="DeepSeek",
-                data=user_input,
-                options=DEFAULT_OPTIONS,
+                data=entry_data,
+                options=entry_options,
             )
 
         return self.async_show_form(
