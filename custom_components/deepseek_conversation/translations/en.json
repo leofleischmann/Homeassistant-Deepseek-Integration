@@ -5,7 +5,8 @@
                 "title": "DeepSeek API Configuration",
                 "data": {
                     "api_key": "API Key",
-                    "base_url": "API Base URL"
+                    "base_url": "API Base URL",
+                    "chat_model": "Chat Model"
                 },
                 "description": "Configure your DeepSeek API connection. You can use the official DeepSeek API or any compatible endpoint."
             }
