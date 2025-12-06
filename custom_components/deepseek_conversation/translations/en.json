@@ -2,18 +2,40 @@
     "config": {
         "step": {
             "user": {
-                "title": "DeepSeek API Key",
+                "title": "DeepSeek API Configuration",
                 "data": {
-                    "api_key": "API Key"
-                }
+                    "api_key": "API Key",
+                    "base_url": "API Base URL"
+                },
+                "description": "Configure your DeepSeek API connection. You can use the official DeepSeek API or any compatible endpoint."
             }
         },
         "error": {
             "cannot_connect": "Cannot connect",
-            "invalid_auth": "Invalid auth"
+            "invalid_auth": "Invalid auth",
+            "api_error": "API error",
+            "unknown": "Unknown error",
+            "url_required": "Base URL is required"
         },
         "abort": {
             "already_configured": "Already configured"
+        },
+        "options": {
+            "step": {
+                "init": {
+                    "title": "DeepSeek Options",
+                    "description": "Configure DeepSeek conversation options. You can change the API base URL to use a different DeepSeek-compatible endpoint.",
+                    "data": {
+                        "base_url": "API Base URL",
+                        "prompt": "System Prompt",
+                        "llm_hass_api": "Home Assistant API",
+                        "chat_model": "Chat Model",
+                        "max_tokens": "Max Tokens",
+                        "top_p": "Top P",
+                        "temperature": "Temperature"
+                    }
+                }
+            }
         }
     }
 }
