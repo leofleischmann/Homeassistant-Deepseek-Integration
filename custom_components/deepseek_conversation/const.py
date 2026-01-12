@@ -22,7 +22,7 @@ CONF_FILENAMES = "filenames" # Kept for potential future file support if DeepSee
 # Changed recommended model to DeepSeek's chat model
 RECOMMENDED_CHAT_MODEL = "deepseek-chat"
 # Adjusted default tokens, temperature, top_p if needed, keeping OpenAI's for now
-RECOMMENDED_MAX_TOKENS = 150
+RECOMMENDED_MAX_TOKENS = 1500
 RECOMMENDED_TEMPERATURE = 1.0
 RECOMMENDED_TOP_P = 1.0
 
