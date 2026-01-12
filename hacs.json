@@ -1,6 +1,5 @@
-    {
-      "name": "DeepSeek Conversation",
-      "homeassistant": "2025.5.2",
-      "render_readme": true
-    }
-    
+{
+  "name": "DeepSeek Conversation",
+  "homeassistant": "2025.5.2",
+  "render_readme": true
+}
