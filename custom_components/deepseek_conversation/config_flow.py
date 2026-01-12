@@ -7,7 +7,7 @@ from types import MappingProxyType
 from typing import Any
 
 import openai
-import voluptuous as vol
+import voluptuous as vol  # pyright: ignore[reportMissingImports]
 
 from homeassistant.config_entries import (  # pyright: ignore[reportMissingImports]
     ConfigEntry,
@@ -144,23 +144,24 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> OptionsFlow:
         """Create the options flow."""
-        return DeepSeekOptionsFlow(config_entry)
+        return DeepSeekOptionsFlow()
 
 
 class DeepSeekOptionsFlow(OptionsFlow):
     """DeepSeek config flow options handler."""
 
-    # --- Reinstated __init__ method ---
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-    # --- End reinstatement ---
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
-        # self.config_entry should be automatically available here
+        # self.config_entry should be automatically available as a property
+        # Access it safely to avoid AttributeError
+        try:
+            config_entry = self.config_entry
+        except AttributeError:
+            _LOGGER.error("config_entry not available in OptionsFlow")
+            return self.async_abort(reason="config_entry_not_available")
+        
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -177,27 +178,27 @@ class DeepSeekOptionsFlow(OptionsFlow):
                     errors[CONF_BASE_URL] = "url_required"
                 else:
                     # Normalize URL (ensure it ends with /v1 or similar, or let user specify full path)
-                    if base_url != self.config_entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL):
+                    if base_url != config_entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL):
                         base_url_changed = True
                         # Update the config entry data
-                        new_data = {**self.config_entry.data, CONF_BASE_URL: base_url}
-                        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+                        new_data = {**config_entry.data, CONF_BASE_URL: base_url}
+                        self.hass.config_entries.async_update_entry(config_entry, data=new_data)
 
             if not errors:
                 # Merge new user input with existing options before creating entry
-                updated_options = {**self.config_entry.options, **user_input}
+                updated_options = {**config_entry.options, **user_input}
                 result = self.async_create_entry(title="", data=updated_options)
                 
                 # Reload the entry if base URL was changed to apply the new URL
                 if base_url_changed:
                     self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                        self.hass.config_entries.async_reload(config_entry.entry_id)
                     )
                 
                 return result
 
-        # Pass options from self.config_entry to the schema function
-        schema = deepseek_config_option_schema(self.hass, self.config_entry.options, self.config_entry)
+        # Pass options from config_entry to the schema function
+        schema = deepseek_config_option_schema(self.hass, config_entry.options, config_entry)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
