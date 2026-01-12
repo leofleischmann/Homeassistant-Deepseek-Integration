@@ -13,21 +13,21 @@ from openai.types.chat.chat_completion import ChatCompletionMessage, ChatComplet
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
 
 # --- Import voluptuous_openapi ---
-from voluptuous_openapi import convert
+from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
 # --- End Import ---
-import voluptuous as vol # Keep for basic schema validation if needed
+import voluptuous as vol # Keep for basic schema validation if needed  # pyright: ignore[reportMissingImports]
 
-from homeassistant.components import assist_pipeline, conversation
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
+from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
 # --- Import CONF_LLM_HASS_API ---
-from homeassistant.const import MATCH_ALL, CONF_LLM_HASS_API
+from homeassistant.const import MATCH_ALL, CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 # --- End Import ---
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 # --- Import HomeAssistantError --- Needed for exception handling
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
 # --- End Import ---
-from homeassistant.helpers import device_registry as dr, intent, llm
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers import device_registry as dr, intent, llm  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 
 # Use the specific type alias if defined, otherwise generic ConfigEntry
 # from . import DeepSeekConfigEntry
@@ -280,9 +280,14 @@ class DeepSeekConversationEntity(
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        assist_pipeline.async_migrate_engine(
-            self.hass, "conversation", self.entry.entry_id, self.entity_id
-        )
+        # async_migrate_engine may not be available in all Home Assistant versions
+        if hasattr(assist_pipeline, 'async_migrate_engine'):
+            try:
+                assist_pipeline.async_migrate_engine(
+                    self.hass, "conversation", self.entry.entry_id, self.entity_id
+                )
+            except Exception as e:
+                LOGGER.warning("Failed to migrate assist pipeline engine: %s", e)
         conversation.async_set_agent(self.hass, self.entry, self)
         self.entry.async_on_unload(
             self.entry.add_update_listener(self._async_entry_update_listener)
