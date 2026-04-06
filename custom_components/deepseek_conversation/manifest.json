@@ -1,6 +1,6 @@
 {
   "domain": "deepseek_conversation",
-  "version": "1.0.8",
+  "version": "1.0.6",
   "name": "DeepSeek Conversation",
   "after_dependencies": ["assist_pipeline", "intent"],
   "codeowners": ["@leofleischmann"],
@@ -10,7 +10,7 @@
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "requirements": [
-    "openai>=1.68.2,<3",
-    "voluptuous-openapi>=0.2.0,<0.4"
+    "openai==1.68.2",
+    "voluptuous-openapi==0.3.0"
   ]
 }
