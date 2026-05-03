@@ -236,8 +236,24 @@ async def async_run_debug_suite(
         return {"status": r.status_code, "len": len(r.text or ""), "url": url}
 
     _hr, ht, herr = await _timed("http_get", _http_probe)
-    out["http"] = {"ok": herr is None, "seconds": round(ht, 3), "error": herr, "result": _hr}
-    log(f"HTTP GET {(_hr or {})} err={herr} t={ht:.3f}s")
+    reach_note: str | None = None
+    if herr is None and isinstance(_hr, dict):
+        st = _hr.get("status")
+        if st in (401, 403):
+            reach_note = (
+                "401/403 on base URL without Authorization is expected for this probe; "
+                "the host answers and TLS/route work. API auth is tested via chat.completions."
+            )
+        elif isinstance(st, int) and st >= 500:
+            reach_note = "5xx from base URL — check provider status or proxy."
+    out["http"] = {
+        "ok": herr is None,
+        "seconds": round(ht, 3),
+        "error": herr,
+        "result": _hr,
+        "reachability_note": reach_note,
+    }
+    log(f"HTTP GET {(_hr or {})} err={herr} t={ht:.3f}s note={reach_note!r}")
 
     # --- models.list (optional) ---
     async def _models_list() -> Any:
