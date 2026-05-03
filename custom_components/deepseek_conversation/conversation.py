@@ -229,6 +229,7 @@ async def _transform_stream(
     current_tool_calls: list[dict] = []
     current_tool_call_args_buffer: dict[int, str] = {}
     role: Optional[Literal["assistant"]] = None
+    role_emitted = False  # Track whether {"role": "assistant"} has been emitted for this stream
     full_response_log = [] # --- DEBUG: Log full stream ---
 
     async for chunk in result:
@@ -247,19 +248,32 @@ async def _transform_stream(
         # missing or an empty object (OpenAI-compatible streams); tool_calls must still
         # be finalized.
         if delta is not None:
-            if delta.role:
-                if delta.role == "assistant":
-                    role = delta.role
-                    yield {"role": role}
-                else:
-                    LOGGER.warning("Unexpected role in stream delta: %s", delta.role)
-
-            if delta.content:
-                yield {"content": delta.content}
+            if delta.role and delta.role != "assistant":
+                LOGGER.warning("Unexpected role in stream delta: %s", delta.role)
+            elif delta.role == "assistant":
+                role = delta.role
 
             reasoning_delta = getattr(delta, "reasoning_content", None)
-            if reasoning_delta:
-                yield {"thinking_content": reasoning_delta}
+
+            # Emit role together with the first non-empty payload so the HA chat
+            # panel reliably binds the new assistant bubble to the streamed text.
+            # Standalone {"role": "assistant"} deltas (DeepSeek sends an empty
+            # initial chunk) caused iteration 2's content to be lost in the UI
+            # after a tool_call iteration switched currentDeltaRole away from
+            # "assistant".
+            if not role_emitted and (delta.content or reasoning_delta):
+                first_delta: dict[str, Any] = {"role": "assistant"}
+                if delta.content:
+                    first_delta["content"] = delta.content
+                if reasoning_delta:
+                    first_delta["thinking_content"] = reasoning_delta
+                yield first_delta
+                role_emitted = True
+            else:
+                if delta.content:
+                    yield {"content": delta.content}
+                if reasoning_delta:
+                    yield {"thinking_content": reasoning_delta}
 
         if delta is not None and delta.tool_calls:
             LOGGER.debug("Received Tool Call Chunk: %s", delta.tool_calls)
@@ -313,7 +327,14 @@ async def _transform_stream(
                         else:
                              LOGGER.warning("Missing function info for tool call at index %d", index)
                 if tool_inputs:
-                    yield {"tool_calls": tool_inputs}
+                    if not role_emitted:
+                        # Tool-only iteration (no content/thinking streamed):
+                        # bind role to the tool_calls delta so chat_log starts
+                        # an assistant message instead of dropping the call.
+                        yield {"role": "assistant", "tool_calls": tool_inputs}
+                        role_emitted = True
+                    else:
+                        yield {"tool_calls": tool_inputs}
                 current_tool_calls = []
                 current_tool_call_args_buffer = {}
             elif finish_reason == "stop":
