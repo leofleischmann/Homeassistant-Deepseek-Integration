@@ -1,7 +1,25 @@
 {
   "permissions": {
     "allow": [
-      "Bash(awk -F: '{print $1}')"
+      "Bash(awk -F: '{print $1}')",
+      "Bash(gh api *)",
+      "Bash(python -c \"import sys, json, base64; d=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(d['content']\\).decode\\(\\)\\)\")",
+      "Read(//tmp/**)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/components/conversation/chat_log.py\" -o /tmp/chat_log.py)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/components/conversation/chat_log.py\" -o \"C:/temp/chat_log.py\")",
+      "Bash(mkdir -p \"C:/temp\")",
+      "Read(//c/temp/**)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/components/assist_pipeline/pipeline.py\" -o \"C:/temp/pipeline.py\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/components/anthropic/entity.py\" -o \"C:/temp/anthropic_entity.py\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/frontend/dev/src/panels/lovelace/cards/hui-conversation-card.ts\" -o \"C:/temp/conversation-card.ts\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/frontend/dev/src/components/ha-assist-chat.ts\" -o \"C:/temp/ha-assist-chat.ts\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/components/ollama/conversation.py\" -o \"C:/temp/ollama_conv.py\")",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/components/ollama/entity.py\" -o \"C:/temp/ollama_entity.py\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(r'C:\\\\Users\\\\leofl\\\\Desktop\\\\Programmieren\\\\Server\\\\Homeassistant-Deepseek-Integration\\\\custom_components\\\\deepseek_conversation\\\\conversation.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
