@@ -465,17 +465,16 @@ class DeepSeekConversationEntity(
         thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
 
         # --- Convert chat history (NOW EXCLUDES system prompt) ---
-        messages = _convert_content_to_messages(
+        initial_messages = _convert_content_to_messages(
             chat_log.content, model=model, thinking_enabled=thinking_on
         )
-        LOGGER.debug("Sending messages to DeepSeek (excluding system): %s", json.dumps(messages, indent=2))
+        LOGGER.debug("Sending messages to DeepSeek (excluding system): %s", json.dumps(initial_messages, indent=2))
         # --- End Convert ---
 
-        # To prevent infinite loops with tools
-        for _iteration in range(MAX_TOOL_ITERATIONS):
-            model_args: Dict[str, Any] = {
+        def _build_model_args(messages: list[dict[str, Any]]) -> dict[str, Any]:
+            args: dict[str, Any] = {
                 "model": model,
-                "messages": messages, # Pass history without explicit system prompt
+                "messages": messages,
                 "max_tokens": coerce_max_tokens(
                     options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
                 ),
@@ -487,150 +486,167 @@ class DeepSeekConversationEntity(
                     ),
                 ),
             }
-            # Thinking mode ignores temperature/top_p; omitting avoids confusion and matches DeepSeek docs.
             if not thinking_on:
-                model_args["top_p"] = options.get(CONF_TOP_P, RECOMMENDED_TOP_P)
-                model_args["temperature"] = options.get(
+                args["top_p"] = options.get(CONF_TOP_P, RECOMMENDED_TOP_P)
+                args["temperature"] = options.get(
                     CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE
                 )
             if tools:
-                model_args["tools"] = tools
+                args["tools"] = tools
             if tool_choice:
-                 model_args["tool_choice"] = tool_choice
+                args["tool_choice"] = tool_choice
+            return args
 
-            LOGGER.debug("Model arguments for DeepSeek: %s", model_args) # This might fail again if tools aren't fully serializable by default logger
+        max_iterations_reached = False
 
-            try:
+        async def _multi_iteration_stream() -> AsyncGenerator[
+            conversation.AssistantContentDeltaDict, None
+        ]:
+            """Yield deltas across all tool-call iterations as ONE continuous stream.
+
+            Calling ``chat_log.async_add_delta_content_stream`` once per iteration
+            (the previous design) caused the HA chat panel to drop iteration 2's
+            streamed answer after a tool-call round, even though the data arrived
+            in the chat_log. Keeping a single stream alive across iterations
+            ensures every ``delta.content`` from every iteration reaches the UI.
+            """
+            nonlocal max_iterations_reached
+            current_messages = list(initial_messages)
+            for _iteration in range(MAX_TOOL_ITERATIONS):
+                model_args = _build_model_args(current_messages)
+                LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
                 result = await client.chat.completions.create(**model_args)
-            except openai.RateLimitError as err:
-                LOGGER.warning("Rate limited by DeepSeek: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, "Rate limited by DeepSeek API")
-                return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
-            except openai.APIConnectionError as err:
-                 LOGGER.error("Connection error talking to DeepSeek: %s", err)
-                 intent_response = intent.IntentResponse(language=user_input.language)
-                 intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, "Connection error with DeepSeek API")
-                 return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
-            except openai.BadRequestError as err:
-                LOGGER.error("DeepSeek rejected the request (400): %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    openai_exception_user_message(err),
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
-            except openai.APIStatusError as err:
-                LOGGER.error("DeepSeek API status error: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    openai_exception_user_message(err),
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
-            # --- Catch potential TypeError during request encoding ---
-            except TypeError as err:
-                 LOGGER.error("TypeError during DeepSeek API call (likely tool serialization): %s", err, exc_info=True)
-                 intent_response = intent.IntentResponse(language=user_input.language)
-                 intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, f"Failed to send request: {err}")
-                 return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
-            # --- End Catch ---
-            except openai.OpenAIError as err:
-                LOGGER.error("Error talking to DeepSeek: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    openai_exception_user_message(err),
-                )
-                return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
 
-            # Process the stream and update chat log
-            try:
-                async for content_delta in chat_log.async_add_delta_content_stream(
-                    user_input.agent_id, _transform_stream(chat_log, result)
-                ):
-                    pass # Handled by chat_log internally
-            except openai.RateLimitError as err:
-                LOGGER.warning("Rate limited by DeepSeek during stream: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    "Rate limited by DeepSeek API",
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
-            except openai.BadRequestError as err:
-                LOGGER.error("DeepSeek bad request during stream: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    openai_exception_user_message(err),
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
-            except openai.APIStatusError as err:
-                LOGGER.error("DeepSeek API status error during stream: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    openai_exception_user_message(err),
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
-            except openai.OpenAIError as err:
-                LOGGER.error("OpenAI SDK error during stream: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    openai_exception_user_message(err),
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
-            except HomeAssistantError as e:
-                 LOGGER.error("Error processing DeepSeek stream: %s", e)
-                 intent_response = intent.IntentResponse(language=user_input.language)
-                 error_code = intent.IntentResponseErrorCode.UNKNOWN
-                 error_msg = str(e)
-                 if str(e) == "max_token": error_msg = "Response truncated by token limit"
-                 elif str(e) == "content_filter": error_msg = "Response blocked by content filter"
-                 intent_response.async_set_error(error_code, error_msg)
-                 return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
-            except Exception as err:
-                LOGGER.exception("Unexpected error during DeepSeek stream")
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    "Unexpected error while reading the model response. Check logs for details.",
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=chat_log.conversation_id
-                )
+                saw_tool_calls = False
+                async for delta in _transform_stream(chat_log, result):
+                    if delta.get("tool_calls"):
+                        saw_tool_calls = True
+                    yield delta
 
-            # --- Rebuild messages for next iteration (using updated chat_log.content) ---
-            messages = _convert_content_to_messages(
-                chat_log.content, model=model, thinking_enabled=thinking_on
-            )
-            # --- End Rebuild ---
+                if not saw_tool_calls:
+                    LOGGER.debug(
+                        "Iteration %d finished. No tool calls.", _iteration + 1
+                    )
+                    return
 
-            if not chat_log.unresponded_tool_results:
-                LOGGER.debug("Iteration %d finished. No unresponded tool results.", _iteration + 1)
-                break
-            else:
-                 LOGGER.debug("Iteration %d finished. Unresponded tool results found, preparing next iteration.", _iteration + 1)
+                LOGGER.debug(
+                    "Iteration %d finished. Tool calls in flight, preparing next iteration.",
+                    _iteration + 1,
+                )
+                # chat_log finalizes the assistant turn + executes tools as soon
+                # as the next role:assistant delta arrives. We yield a sentinel
+                # role delta to force that finalization NOW, so chat_log.content
+                # contains the tool result before we build the next request.
+                yield {"role": "assistant"}
+                current_messages = _convert_content_to_messages(
+                    chat_log.content, model=model, thinking_enabled=thinking_on
+                )
+            max_iterations_reached = True
 
-        else: # Max iterations reached
-            LOGGER.warning("Max tool iterations reached for conversation %s", chat_log.conversation_id)
+        try:
+            async for _ in chat_log.async_add_delta_content_stream(
+                user_input.agent_id, _multi_iteration_stream()
+            ):
+                pass  # Handled by chat_log internally
+        except openai.RateLimitError as err:
+            LOGGER.warning("Rate limited by DeepSeek: %s", err)
             intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, "Maximum tool iterations reached")
-            return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN, "Rate limited by DeepSeek API"
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except openai.APIConnectionError as err:
+            LOGGER.error("Connection error talking to DeepSeek: %s", err)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                "Connection error with DeepSeek API",
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except openai.BadRequestError as err:
+            LOGGER.error("DeepSeek rejected the request (400): %s", err)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                openai_exception_user_message(err),
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except openai.APIStatusError as err:
+            LOGGER.error("DeepSeek API status error: %s", err)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                openai_exception_user_message(err),
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except TypeError as err:
+            LOGGER.error(
+                "TypeError during DeepSeek API call (likely tool serialization): %s",
+                err,
+                exc_info=True,
+            )
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                f"Failed to send request: {err}",
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except openai.OpenAIError as err:
+            LOGGER.error("OpenAI SDK error talking to DeepSeek: %s", err)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                openai_exception_user_message(err),
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except HomeAssistantError as e:
+            LOGGER.error("Error processing DeepSeek stream: %s", e)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            error_code = intent.IntentResponseErrorCode.UNKNOWN
+            error_msg = str(e)
+            if str(e) == "max_token":
+                error_msg = "Response truncated by token limit"
+            elif str(e) == "content_filter":
+                error_msg = "Response blocked by content filter"
+            intent_response.async_set_error(error_code, error_msg)
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+        except Exception:
+            LOGGER.exception("Unexpected error during DeepSeek stream")
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN,
+                "Unexpected error while reading the model response. Check logs for details.",
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
+
+        if max_iterations_reached:
+            LOGGER.warning(
+                "Max tool iterations reached for conversation %s",
+                chat_log.conversation_id,
+            )
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN, "Maximum tool iterations reached"
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
 
         # --- Construct final response ---
         intent_response = intent.IntentResponse(language=user_input.language)
