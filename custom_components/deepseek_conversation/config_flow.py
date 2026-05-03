@@ -22,6 +22,7 @@ from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImp
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImports]
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     SelectOptionDict,
@@ -36,14 +37,19 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
     CONF_PROMPT,
+    CONF_REASONING_EFFORT,
     CONF_TEMPERATURE,
+    CONF_THINKING_ENABLED,
     CONF_TOP_P,
     CONF_BASE_URL,
+    DEFAULT_THINKING_ENABLED,
     DOMAIN,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
+    RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
+    REASONING_EFFORT_SELECT,
     DEEPSEEK_API_BASE_URL,
 )
 
@@ -65,6 +71,8 @@ DEFAULT_OPTIONS = {
     CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS, # Remember to increase this in UI!
     CONF_TEMPERATURE: RECOMMENDED_TEMPERATURE,
     CONF_TOP_P: RECOMMENDED_TOP_P,
+    CONF_THINKING_ENABLED: DEFAULT_THINKING_ENABLED,
+    CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
 }
 
 
@@ -228,6 +236,11 @@ def deepseek_config_option_schema(
     elif CONF_BASE_URL in options:
         base_url = options[CONF_BASE_URL]
 
+    reasoning_effort_options = [
+        SelectOptionDict(label=label, value=value)
+        for value, label in REASONING_EFFORT_SELECT
+    ]
+
     schema: VolDictType = {
         vol.Optional(
             CONF_BASE_URL,
@@ -269,5 +282,27 @@ def deepseek_config_option_schema(
             description={"suggested_value": options.get(CONF_TEMPERATURE)},
             default=RECOMMENDED_TEMPERATURE,
         ): NumberSelector(NumberSelectorConfig(min=0, max=2, step=0.05, mode="slider")),
+        vol.Optional(
+            CONF_THINKING_ENABLED,
+            description={
+                "suggested_value": options.get(
+                    CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED
+                )
+            },
+            default=options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED),
+        ): BooleanSelector(),
+        vol.Optional(
+            CONF_REASONING_EFFORT,
+            description={
+                "suggested_value": options.get(
+                    CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
+                )
+            },
+            default=options.get(
+                CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
+            ),
+        ): SelectSelector(
+            SelectSelectorConfig(options=reasoning_effort_options)
+        ),
     }
     return schema

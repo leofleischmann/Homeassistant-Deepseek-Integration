@@ -25,7 +25,7 @@
             "step": {
                 "init": {
                     "title": "DeepSeek Options",
-                    "description": "Configure DeepSeek conversation options. You can change the API base URL to use a different DeepSeek-compatible endpoint.",
+                    "description": "Configure DeepSeek conversation options. You can change the API base URL to use a different DeepSeek-compatible endpoint. Reasoning effort is only sent to the API when Thinking / reasoning is turned on; otherwise it has no effect.",
                     "data": {
                         "base_url": "API Base URL",
                         "prompt": "System Prompt",
@@ -33,7 +33,9 @@
                         "chat_model": "Chat Model",
                         "max_tokens": "Max Tokens",
                         "top_p": "Top P",
-                        "temperature": "Temperature"
+                        "temperature": "Temperature",
+                        "thinking_enabled": "Thinking / reasoning",
+                        "reasoning_effort": "Reasoning effort"
                     }
                 }
             }

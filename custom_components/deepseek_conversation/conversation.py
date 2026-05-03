@@ -38,14 +38,19 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
     CONF_PROMPT, # Keep CONF_PROMPT for options access
+    CONF_REASONING_EFFORT,
     CONF_TEMPERATURE,
+    CONF_THINKING_ENABLED,
     CONF_TOP_P,
+    DEFAULT_THINKING_ENABLED,
     DOMAIN, # Use updated domain
     LOGGER, # Use the logger from const
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
+    RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
+    deepseek_chat_thinking_params,
 )
 
 # Max number of back and forth with the LLM for tool usage
@@ -107,7 +112,7 @@ def _convert_content_to_messages(
         tool_calls: list[ChatCompletionMessageToolCall] | None = None
         tool_call_id: str | None = None
 
-        # --- ADDED: Skip system messages potentially added by async_update_llm_data ---
+        # --- Skip system messages added by async_provide_llm_data ---
         if isinstance(content, conversation.SystemContent):
              continue
         # --- End ADDED ---
@@ -139,6 +144,10 @@ def _convert_content_to_messages(
             msg: Dict[str, Any] = {"role": role}
             if message_content:
                 msg["content"] = message_content
+            if isinstance(content, conversation.AssistantContent):
+                thinking = getattr(content, "thinking_content", None)
+                if thinking:
+                    msg["reasoning_content"] = thinking
             if tool_calls:
                 if role == "assistant":
                     msg["content"] = msg.get("content")
@@ -183,6 +192,10 @@ async def _transform_stream(
 
         if delta.content:
             yield {"content": delta.content}
+
+        reasoning_delta = getattr(delta, "reasoning_content", None)
+        if reasoning_delta:
+            yield {"thinking_content": reasoning_delta}
 
         if delta.tool_calls:
             LOGGER.debug("Received Tool Call Chunk: %s", delta.tool_calls)
@@ -316,32 +329,29 @@ class DeepSeekConversationEntity(
         client: openai.AsyncClient = self.entry.runtime_data
         model = options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
 
-        # --- Reinstate async_update_llm_data call ---
         try:
-            await chat_log.async_update_llm_data(
-                DOMAIN,
-                user_input,
-                options.get(CONF_LLM_HASS_API), # Pass selected API key
-                options.get(CONF_PROMPT), # Pass RAW prompt template
+            await chat_log.async_provide_llm_data(
+                llm_context=user_input.as_llm_context(DOMAIN),
+                user_llm_hass_api=options.get(CONF_LLM_HASS_API),
+                user_llm_prompt=options.get(CONF_PROMPT),
+                user_extra_system_prompt=user_input.extra_system_prompt,
             )
         except conversation.ConverseError as err:
-             # Handle potential errors during prompt rendering/context management
-             LOGGER.error("Error during chat_log.async_update_llm_data: %s", err)
-             intent_response = intent.IntentResponse(language=user_input.language)
-             intent_response.async_set_error(
-                 intent.IntentResponseErrorCode.UNKNOWN, f"Error preparing context: {err}"
-             )
-             return conversation.ConversationResult(
-                 response=intent_response, conversation_id=chat_log.conversation_id
-             )
-        # --- End reinstate ---
+            LOGGER.error("Error during chat_log.async_provide_llm_data: %s", err)
+            intent_response = intent.IntentResponse(language=user_input.language)
+            intent_response.async_set_error(
+                intent.IntentResponseErrorCode.UNKNOWN, f"Error preparing context: {err}"
+            )
+            return conversation.ConversationResult(
+                response=intent_response, conversation_id=chat_log.conversation_id
+            )
 
         # --- Prepare tools if HASS API is available in chat_log ---
         tools: list[Dict[str, Any]] | None = None
         tool_choice: Optional[Union[str, Dict[str, Any]]] = None
         hass_api_key = options.get(CONF_LLM_HASS_API) # Still useful for logging
 
-        if chat_log.llm_api: # Check the object populated by async_update_llm_data
+        if chat_log.llm_api:  # Set by async_provide_llm_data
             active_llm_api = chat_log.llm_api
             try:
                  # --- Use _format_tool which now includes conversion ---
@@ -360,7 +370,10 @@ class DeepSeekConversationEntity(
                  tools = None # Ensure tools are None if formatting failed
                  tool_choice = None
         elif hass_api_key:
-             LOGGER.warning("HASS API '%s' selected in options, but chat_log.llm_api is None after async_update_llm_data. Tools cannot be sent.", hass_api_key)
+            LOGGER.warning(
+                "HASS API '%s' selected in options, but chat_log.llm_api is None after async_provide_llm_data. Tools cannot be sent.",
+                hass_api_key,
+            )
         # --- End Tool Prep ---
 
 
@@ -371,6 +384,9 @@ class DeepSeekConversationEntity(
 
         # To prevent infinite loops with tools
         for _iteration in range(MAX_TOOL_ITERATIONS):
+            thinking_on = options.get(
+                CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED
+            )
             model_args: Dict[str, Any] = {
                 "model": model,
                 "messages": messages, # Pass history without explicit system prompt
@@ -378,6 +394,12 @@ class DeepSeekConversationEntity(
                 "top_p": options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
                 "temperature": options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),
                 "stream": True,
+                **deepseek_chat_thinking_params(
+                    thinking_enabled=thinking_on,
+                    reasoning_effort=options.get(
+                        CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
+                    ),
+                ),
             }
             if tools:
                 model_args["tools"] = tools
