@@ -224,12 +224,20 @@ def _final_speech_from_chat_log(content_list: list[conversation.Content]) -> str
 async def _transform_stream(
     chat_log: conversation.ChatLog,
     result: AsyncStream[ChatCompletionChunk],
+    *,
+    role_already_emitted: bool = False,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
-    """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format."""
+    """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format.
+
+    ``role_already_emitted`` is set by the caller for follow-up iterations
+    where the outer unified stream has already yielded ``{"role": "assistant"}``
+    as a sentinel — preventing a redundant role transition that would create
+    an empty AssistantContent in chat_log.
+    """
     current_tool_calls: list[dict] = []
     current_tool_call_args_buffer: dict[int, str] = {}
     role: Optional[Literal["assistant"]] = None
-    role_emitted = False  # Track whether {"role": "assistant"} has been emitted for this stream
+    role_emitted = role_already_emitted  # Track whether {"role": "assistant"} has been emitted for this stream
     full_response_log = [] # --- DEBUG: Log full stream ---
 
     async for chunk in result:
@@ -512,16 +520,22 @@ class DeepSeekConversationEntity(
             """
             nonlocal max_iterations_reached
             current_messages = list(initial_messages)
+            sentinel_pending = False
             for _iteration in range(MAX_TOOL_ITERATIONS):
                 model_args = _build_model_args(current_messages)
                 LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
                 result = await client.chat.completions.create(**model_args)
 
                 saw_tool_calls = False
-                async for delta in _transform_stream(chat_log, result):
+                async for delta in _transform_stream(
+                    chat_log, result, role_already_emitted=sentinel_pending
+                ):
                     if delta.get("tool_calls"):
                         saw_tool_calls = True
                     yield delta
+                # Once the iteration's first delta has flowed through, any
+                # pending sentinel-role context is consumed.
+                sentinel_pending = False
 
                 if not saw_tool_calls:
                     LOGGER.debug(
@@ -537,7 +551,10 @@ class DeepSeekConversationEntity(
                 # as the next role:assistant delta arrives. We yield a sentinel
                 # role delta to force that finalization NOW, so chat_log.content
                 # contains the tool result before we build the next request.
+                # We mark sentinel_pending so the next iteration's transform
+                # stream skips its own redundant role yield.
                 yield {"role": "assistant"}
+                sentinel_pending = True
                 current_messages = _convert_content_to_messages(
                     chat_log.content, model=model, thinking_enabled=thinking_on
                 )
