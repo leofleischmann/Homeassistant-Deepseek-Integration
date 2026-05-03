@@ -6,9 +6,9 @@
                 "data": {
                     "api_key": "API 密钥",
                     "base_url": "API 基础地址",
-                    "chat_model": "对话模型"
+                    "chat_model": "模型"
                 },
-                "description": "配置 DeepSeek API 连接。可使用官方 DeepSeek API 或任意兼容端点。"
+                "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 与 deepseek-reasoner 仍可用，但将于 2026-07-24 停用——请适时在选项中改用 V4。"
             }
         },
         "error": {
@@ -25,18 +25,44 @@
             "step": {
                 "init": {
                     "title": "DeepSeek 选项",
-                    "description": "配置 DeepSeek 对话选项。可更改 API 基础地址以使用其他 DeepSeek 兼容端点。仅在开启「思考 / 推理」时才会向 API 发送推理强度参数；关闭时该设置无效。",
+                    "description": "DeepSeek V4 用同一模型兼顾对话与推理：开启「启用推理」后，API 会进入思考阶段（extra_body）。推理强度仅在启用推理时生效；启用推理时不发送 temperature 与 top_p。旧模型 ID 可使用至 2026-07-24。",
                     "data": {
                         "base_url": "API 基础地址",
                         "prompt": "系统提示词",
                         "llm_hass_api": "Home Assistant API",
-                        "chat_model": "对话模型",
+                        "chat_model": "模型",
                         "max_tokens": "最大令牌数",
                         "top_p": "Top P",
                         "temperature": "温度",
-                        "thinking_enabled": "思考 / 推理",
+                        "thinking_enabled": "启用推理",
                         "reasoning_effort": "推理强度"
+                    },
+                    "selector": {
+                        "chat_model": {
+                            "options": {
+                                "deepseek-v4-flash": "DeepSeek V4 Flash（快速，默认）",
+                                "deepseek-v4-pro": "DeepSeek V4 Pro（最强）",
+                                "deepseek-chat": "旧版：deepseek-chat（至 2026-07-24）",
+                                "deepseek-reasoner": "旧版：deepseek-reasoner（至 2026-07-24）"
+                            }
+                        }
                     }
+                }
+            }
+        }
+    },
+    "services": {
+        "run_debug": {
+            "name": "运行 DeepSeek 诊断",
+            "description": "全面诊断：环境、HTTP 探测、可选 models.list、已注册的 HA LLM API、实体注册表、大量非流式与流式补全测试（思考开关、系统消息、多轮、JSON 模式、并行小请求）、日志摘录与报告末尾 JSON 附录。多次短 API 调用；写入 /config/deepseek_conversation_debug_report.txt 并发送简短通知（摘要 + 失败项）。",
+            "fields": {
+                "config_entry": {
+                    "name": "集成条目",
+                    "description": "要测试的 DeepSeek Conversation 配置条目。"
+                },
+                "log_tail_lines": {
+                    "name": "日志摘录行数",
+                    "description": "从 home-assistant.log 追加的过滤行数（默认 600，允许 50–8000）。"
                 }
             }
         }

@@ -6,9 +6,9 @@
                 "data": {
                     "api_key": "API Key",
                     "base_url": "API Base URL",
-                    "chat_model": "Chat Model"
+                    "chat_model": "Model"
                 },
-                "description": "Configure your DeepSeek API connection. You can use the official DeepSeek API or any compatible endpoint."
+                "description": "Connect to the DeepSeek API. Default model is DeepSeek V4 Flash. Legacy names deepseek-chat and deepseek-reasoner still work but are removed after 2026-07-24 — switch to V4 in options when ready."
             }
         },
         "error": {
@@ -25,18 +25,44 @@
             "step": {
                 "init": {
                     "title": "DeepSeek Options",
-                    "description": "Configure DeepSeek conversation options. You can change the API base URL to use a different DeepSeek-compatible endpoint. Reasoning effort is only sent to the API when Thinking / reasoning is turned on; otherwise it has no effect.",
+                    "description": "DeepSeek V4 uses one model for chat and reasoning: turn on “Enable reasoning” to send thinking in the API (extra_body). Reasoning effort only applies when reasoning is on. Temperature and top_p are omitted while reasoning is on. Legacy model IDs work until 2026-07-24.",
                     "data": {
                         "base_url": "API Base URL",
                         "prompt": "System Prompt",
                         "llm_hass_api": "Home Assistant API",
-                        "chat_model": "Chat Model",
+                        "chat_model": "Model",
                         "max_tokens": "Max Tokens",
                         "top_p": "Top P",
                         "temperature": "Temperature",
-                        "thinking_enabled": "Thinking / reasoning",
+                        "thinking_enabled": "Enable reasoning",
                         "reasoning_effort": "Reasoning effort"
+                    },
+                    "selector": {
+                        "chat_model": {
+                            "options": {
+                                "deepseek-v4-flash": "DeepSeek V4 Flash (fast, default)",
+                                "deepseek-v4-pro": "DeepSeek V4 Pro (most capable)",
+                                "deepseek-chat": "Legacy: deepseek-chat (until 2026-07-24)",
+                                "deepseek-reasoner": "Legacy: deepseek-reasoner (until 2026-07-24)"
+                            }
+                        }
                     }
+                }
+            }
+        }
+    },
+    "services": {
+        "run_debug": {
+            "name": "Run DeepSeek debug suite",
+            "description": "Exhaustive diagnostics: environment, HTTP probe, optional models.list, registered HA LLM APIs, entity registry, many non-stream and stream completion checks (thinking on/off, system message, multi-turn, JSON mode, parallel pings), log excerpt, and a JSON appendix in the report file. Many short API calls; writes /config/deepseek_conversation_debug_report.txt and a brief notification (summary + failures).",
+            "fields": {
+                "config_entry": {
+                    "name": "Integration entry",
+                    "description": "DeepSeek Conversation config entry to test."
+                },
+                "log_tail_lines": {
+                    "name": "Log excerpt size",
+                    "description": "Filtered log lines appended from home-assistant.log (default 600, allowed 50–8000)."
                 }
             }
         }

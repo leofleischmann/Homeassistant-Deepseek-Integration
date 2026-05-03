@@ -2,6 +2,9 @@
   "services": {
     "generate_content": {
       "service": "mdi:receipt-text-outline"
+    },
+    "run_debug": {
+      "service": "mdi:bug-outline"
     }
   }
 }

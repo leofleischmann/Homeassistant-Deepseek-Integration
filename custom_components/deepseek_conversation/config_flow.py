@@ -34,9 +34,12 @@ from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMi
 
 # Updated imports from const
 from .const import (
+    CHAT_MODEL_OPTIONS,
+    coerce_max_tokens,
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
     CONF_PROMPT,
+    DEFAULT_SYSTEM_PROMPT,
     CONF_REASONING_EFFORT,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
@@ -55,18 +58,36 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_API_KEY): str,
-        vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): str,
-        vol.Optional(CONF_CHAT_MODEL, default=RECOMMENDED_CHAT_MODEL): str,
-    }
-)
+
+def _chat_model_select_options() -> list[SelectOptionDict]:
+    return [SelectOptionDict(value=v, label=lbl) for v, lbl in CHAT_MODEL_OPTIONS]
+
+
+def _chat_model_selector() -> SelectSelector:
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=_chat_model_select_options(),
+            custom_value=True,
+        )
+    )
+
+
+def get_user_step_schema() -> vol.Schema:
+    """Schema for initial config (API key, URL, V4 / legacy model)."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_API_KEY): str,
+            vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): str,
+            vol.Optional(
+                CONF_CHAT_MODEL, default=RECOMMENDED_CHAT_MODEL
+            ): _chat_model_selector(),
+        }
+    )
 
 # Add CONF_LLM_HASS_API back to default options if desired, e.g., default to Assist
 DEFAULT_OPTIONS = {
     CONF_LLM_HASS_API: llm.LLM_API_ASSIST, # Default to Assist API
-    CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
+    CONF_PROMPT: DEFAULT_SYSTEM_PROMPT,
     CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
     CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS, # Remember to increase this in UI!
     CONF_TEMPERATURE: RECOMMENDED_TEMPERATURE,
@@ -109,7 +130,7 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         if user_input is None:
             return self.async_show_form(
-                step_id="user", data_schema=STEP_USER_DATA_SCHEMA
+                step_id="user", data_schema=get_user_step_schema()
             )
 
         errors: dict[str, str] = {}
@@ -144,7 +165,7 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         return self.async_show_form(
-            step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+            step_id="user", data_schema=get_user_step_schema(), errors=errors
         )
 
     @staticmethod
@@ -251,10 +272,10 @@ def deepseek_config_option_schema(
             CONF_PROMPT,
             description={
                 "suggested_value": options.get(
-                    CONF_PROMPT, llm.DEFAULT_INSTRUCTIONS_PROMPT
+                    CONF_PROMPT, DEFAULT_SYSTEM_PROMPT
                 )
             },
-            default=llm.DEFAULT_INSTRUCTIONS_PROMPT,
+            default=DEFAULT_SYSTEM_PROMPT,
         ): TemplateSelector(),
         # Add selector for CONF_LLM_HASS_API
         vol.Optional(
@@ -265,13 +286,17 @@ def deepseek_config_option_schema(
         vol.Optional(
             CONF_CHAT_MODEL,
             description={"suggested_value": options.get(CONF_CHAT_MODEL)},
-            default=RECOMMENDED_CHAT_MODEL,
-        ): str,
+            default=options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
+        ): _chat_model_selector(),
         vol.Optional(
             CONF_MAX_TOKENS,
             description={"suggested_value": options.get(CONF_MAX_TOKENS)},
-            default=RECOMMENDED_MAX_TOKENS,
-        ): int,
+            default=coerce_max_tokens(
+                options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
+            ),
+        ): NumberSelector(
+            NumberSelectorConfig(min=1, max=1_000_000, mode="box", step=1)
+        ),
         vol.Optional(
             CONF_TOP_P,
             description={"suggested_value": options.get(CONF_TOP_P)},

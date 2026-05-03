@@ -6,9 +6,9 @@
                 "data": {
                     "api_key": "Clé API",
                     "base_url": "URL de base de l’API",
-                    "chat_model": "Modèle de chat"
+                    "chat_model": "Modèle"
                 },
-                "description": "Configurez la connexion à l’API DeepSeek. Vous pouvez utiliser l’API officielle DeepSeek ou tout point de terminaison compatible."
+                "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4 Flash. Les anciens noms deepseek-chat et deepseek-reasoner fonctionnent encore mais seront retirés après le 2026-07-24 — passez à V4 dans les options quand vous êtes prêt."
             }
         },
         "error": {
@@ -25,18 +25,44 @@
             "step": {
                 "init": {
                     "title": "Options DeepSeek",
-                    "description": "Options de la conversation DeepSeek. Vous pouvez modifier l’URL de base de l’API pour utiliser un autre point de terminaison compatible DeepSeek. L’effort de raisonnement n’est envoyé à l’API que lorsque la réflexion / le raisonnement est activé ; sinon ce paramètre n’a aucun effet.",
+                    "description": "DeepSeek V4 utilise un seul modèle pour le chat et le raisonnement : activez « Activer le raisonnement » pour envoyer la phase de réflexion à l’API (extra_body). L’effort de raisonnement ne s’applique que si le raisonnement est activé. La température et le top_p sont omis pendant le raisonnement. Les anciens identifiants de modèle fonctionnent jusqu’au 2026-07-24.",
                     "data": {
                         "base_url": "URL de base de l’API",
                         "prompt": "Invite système",
                         "llm_hass_api": "API Home Assistant",
-                        "chat_model": "Modèle de chat",
+                        "chat_model": "Modèle",
                         "max_tokens": "Jetons max.",
                         "top_p": "Top P",
                         "temperature": "Température",
-                        "thinking_enabled": "Réflexion / raisonnement",
+                        "thinking_enabled": "Activer le raisonnement",
                         "reasoning_effort": "Effort de raisonnement"
+                    },
+                    "selector": {
+                        "chat_model": {
+                            "options": {
+                                "deepseek-v4-flash": "DeepSeek V4 Flash (rapide, par défaut)",
+                                "deepseek-v4-pro": "DeepSeek V4 Pro (le plus puissant)",
+                                "deepseek-chat": "Ancien : deepseek-chat (jusqu’au 2026-07-24)",
+                                "deepseek-reasoner": "Ancien : deepseek-reasoner (jusqu’au 2026-07-24)"
+                            }
+                        }
                     }
+                }
+            }
+        }
+    },
+    "services": {
+        "run_debug": {
+            "name": "Lancer le diagnostic DeepSeek",
+            "description": "Diagnostic étendu : environnement, sonde HTTP, models.list optionnel, APIs LLM HA, registre d’entités, nombreux appels chat completions (flux et non-flux, thinking, message système, multi-tours, JSON, pings parallèles), extrait de journal et annexe JSON. Nombreux appels API courts ; écrit /config/deepseek_conversation_debug_report.txt et une notification courte (résumé + échecs).",
+            "fields": {
+                "config_entry": {
+                    "name": "Entrée d’intégration",
+                    "description": "Quelle configuration DeepSeek Conversation tester."
+                },
+                "log_tail_lines": {
+                    "name": "Lignes de journal",
+                    "description": "Lignes filtrées depuis home-assistant.log (défaut 600, plage 50–8000)."
                 }
             }
         }

@@ -22,3 +22,27 @@ generate_content:
           multiline: true
       example: |
         - /config/www/image.jpg
+
+run_debug:
+  name: Run DeepSeek debug suite
+  description: >
+    Exhaustive diagnostics: environment/versions, HTTP GET to base URL, optional models.list,
+    registered LLM APIs, entity registry, many chat.completions (non-stream + stream, thinking on/off,
+    system message, multi-turn, high max_tokens probe, JSON mode, parallel pings), dual log excerpts,
+    JSON appendix in the report file. Writes /config/deepseek_conversation_debug_report.txt and
+    creates a persistent notification (many API calls — small max_tokens per call but longer runtime).
+  fields:
+    config_entry:
+      required: true
+      selector:
+        config_entry:
+          integration: deepseek_conversation
+    log_tail_lines:
+      default: 600
+      example: 600
+      selector:
+        number:
+          min: 50
+          max: 8000
+          step: 50
+          mode: box

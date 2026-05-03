@@ -21,6 +21,7 @@ from homeassistant.core import (  # pyright: ignore[reportMissingImports]
     ServiceResponse,
     SupportsResponse,
 )
+from homeassistant.components import persistent_notification  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import (  # pyright: ignore[reportMissingImports]
     ConfigEntryNotReady,
     HomeAssistantError,
@@ -31,8 +32,13 @@ from homeassistant.helpers.httpx_client import get_async_client  # pyright: igno
 from homeassistant.helpers.typing import ConfigType  # pyright: ignore[reportMissingImports]
 from typing import TypeAlias  # pyright: ignore[reportMissingImports]
 
+from .api_errors import openai_exception_user_message
+from .debug import async_run_debug_suite
+
 # Updated imports from const.py
 from .const import (
+    coerce_max_tokens,
+    DEFAULT_SYSTEM_PROMPT,
     CONF_CHAT_MODEL,
     CONF_FILENAMES,
     CONF_MAX_TOKENS,
@@ -56,6 +62,7 @@ from .const import (
 
 # Removed SERVICE_GENERATE_IMAGE
 SERVICE_GENERATE_CONTENT = "generate_content"
+SERVICE_RUN_DEBUG = "run_debug"
 
 # Only conversation platform remains
 PLATFORMS = (Platform.CONVERSATION,)
@@ -95,10 +102,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         client: openai.AsyncClient = entry.runtime_data
 
         # --- Adapt message format for chat.completions.create ---
-        # Start with a system message if a general prompt/instruction is set in options
         messages = []
-        if system_prompt := entry.options.get(CONF_PROMPT):
-             messages.append({"role": "system", "content": system_prompt})
+        system_prompt = (entry.options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
+        messages.append({"role": "system", "content": system_prompt})
 
         # Handle user prompt and potential files (basic text for now)
         user_content = [{"type": "text", "text": call.data[CONF_PROMPT]}]
@@ -161,8 +167,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             model_args = {
                 "model": model,
                 "messages": messages,
-                "max_tokens": entry.options.get(
-                    CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS
+                "max_tokens": coerce_max_tokens(
+                    entry.options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
                 ),
                 "top_p": entry.options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
                 "temperature": entry.options.get(
@@ -190,12 +196,60 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         except openai.OpenAIError as err:
             LOGGER.error("Error generating content with DeepSeek: %s", err)
-            raise HomeAssistantError(f"Error generating content: {err}") from err
+            raise HomeAssistantError(
+                openai_exception_user_message(err)
+            ) from err
         except Exception as err: # Catch potential file errors or other issues
             LOGGER.error("Unexpected error during content generation: %s", err)
             raise HomeAssistantError(f"Error generating content: {err}") from err
 
         return {"text": response_text or ""} # Ensure text is not None
+
+    async def run_debug(call: ServiceCall) -> ServiceResponse:
+        """Run DeepSeek diagnostics and write ``/config/deepseek_conversation_debug_report.txt``."""
+        entry_id = call.data["config_entry"]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_config_entry",
+                translation_placeholders={"config_entry": entry_id},
+            )
+        log_tail = int(call.data.get("log_tail_lines", 600))
+        report = await async_run_debug_suite(hass, entry, log_tail_lines=log_tail)
+        path = report.get("report_path", "")
+        summary = report.get("summary") or report.get("tests", {}).get("summary", {})
+        parts = [
+            f"Bericht: {path}",
+            "",
+            f"Zusammenfassung: {summary}",
+            "",
+            "Fehler (falls vorhanden):",
+        ]
+        fails: list[str] = []
+        for name, body in report.get("tests", {}).items():
+            if name in ("summary", "client"):
+                continue
+            if isinstance(body, dict) and body.get("ok") is False:
+                fails.append(f"- {name}: {str(body.get('error', body))[:600]}")
+        parts.extend(fails if fails else ["(keine)"])
+        parts.append("")
+        parts.append("Details: Berichtdatei öffnen (Text + JSON-Anhang).")
+        msg = "\n".join(parts)[:15000]
+        persistent_notification.async_create(
+            hass,
+            title="DeepSeek-Debug abgeschlossen",
+            message=msg,
+            notification_id="deepseek_conversation_debug_done",
+        )
+        return {
+            "report_path": path,
+            "environment": report.get("environment", {}),
+            "summary": report.get("summary", {}),
+            "tests": report.get("tests", {}),
+            "redacted_entry": report.get("redacted_entry"),
+            "log_excerpt_chars": report.get("log_excerpt_chars", 0),
+        }
 
     # Register the generate_content service
     hass.services.async_register(
@@ -213,6 +267,23 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 # Keep filenames optional, but functionality depends on DeepSeek support
                 vol.Optional(CONF_FILENAMES, default=[]): vol.All(
                     cv.ensure_list, [cv.string]
+                ),
+            }
+        ),
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RUN_DEBUG,
+        run_debug,
+        schema=vol.Schema(
+            {
+                vol.Required("config_entry"): selector.ConfigEntrySelector(
+                    {"integration": DOMAIN},
+                ),
+                vol.Optional("log_tail_lines", default=600): vol.All(
+                    int, vol.Range(min=50, max=8000)
                 ),
             }
         ),

@@ -29,6 +29,8 @@ from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[repor
 from homeassistant.helpers import device_registry as dr, intent, llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 
+from .api_errors import openai_exception_user_message
+
 # Use the specific type alias if defined, otherwise generic ConfigEntry
 # from . import DeepSeekConfigEntry
 type DeepSeekConfigEntry = ConfigEntry
@@ -37,7 +39,9 @@ type DeepSeekConfigEntry = ConfigEntry
 from .const import (
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
-    CONF_PROMPT, # Keep CONF_PROMPT for options access
+    CONF_PROMPT,
+    coerce_max_tokens,
+    DEFAULT_SYSTEM_PROMPT,
     CONF_REASONING_EFFORT,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
@@ -364,7 +368,8 @@ class DeepSeekConversationEntity(
             await chat_log.async_provide_llm_data(
                 llm_context=user_input.as_llm_context(DOMAIN),
                 user_llm_hass_api=options.get(CONF_LLM_HASS_API),
-                user_llm_prompt=options.get(CONF_PROMPT),
+                user_llm_prompt=(options.get(CONF_PROMPT) or "").strip()
+                or DEFAULT_SYSTEM_PROMPT,
                 user_extra_system_prompt=user_input.extra_system_prompt,
             )
         except conversation.ConverseError as err:
@@ -421,7 +426,9 @@ class DeepSeekConversationEntity(
             model_args: Dict[str, Any] = {
                 "model": model,
                 "messages": messages, # Pass history without explicit system prompt
-                "max_tokens": options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
+                "max_tokens": coerce_max_tokens(
+                    options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
+                ),
                 "stream": True,
                 **deepseek_chat_thinking_params(
                     thinking_enabled=thinking_on,
@@ -455,6 +462,26 @@ class DeepSeekConversationEntity(
                  intent_response = intent.IntentResponse(language=user_input.language)
                  intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, "Connection error with DeepSeek API")
                  return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
+            except openai.BadRequestError as err:
+                LOGGER.error("DeepSeek rejected the request (400): %s", err)
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    openai_exception_user_message(err),
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
+            except openai.APIStatusError as err:
+                LOGGER.error("DeepSeek API status error: %s", err)
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    openai_exception_user_message(err),
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
             # --- Catch potential TypeError during request encoding ---
             except TypeError as err:
                  LOGGER.error("TypeError during DeepSeek API call (likely tool serialization): %s", err, exc_info=True)
@@ -465,7 +492,10 @@ class DeepSeekConversationEntity(
             except openai.OpenAIError as err:
                 LOGGER.error("Error talking to DeepSeek: %s", err)
                 intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, f"DeepSeek API error: {err}")
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    openai_exception_user_message(err),
+                )
                 return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
 
             # Process the stream and update chat log
@@ -474,6 +504,46 @@ class DeepSeekConversationEntity(
                     user_input.agent_id, _transform_stream(chat_log, result)
                 ):
                     pass # Handled by chat_log internally
+            except openai.RateLimitError as err:
+                LOGGER.warning("Rate limited by DeepSeek during stream: %s", err)
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    "Rate limited by DeepSeek API",
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
+            except openai.BadRequestError as err:
+                LOGGER.error("DeepSeek bad request during stream: %s", err)
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    openai_exception_user_message(err),
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
+            except openai.APIStatusError as err:
+                LOGGER.error("DeepSeek API status error during stream: %s", err)
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    openai_exception_user_message(err),
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
+            except openai.OpenAIError as err:
+                LOGGER.error("OpenAI SDK error during stream: %s", err)
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    openai_exception_user_message(err),
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
             except HomeAssistantError as e:
                  LOGGER.error("Error processing DeepSeek stream: %s", e)
                  intent_response = intent.IntentResponse(language=user_input.language)
@@ -483,6 +553,16 @@ class DeepSeekConversationEntity(
                  elif str(e) == "content_filter": error_msg = "Response blocked by content filter"
                  intent_response.async_set_error(error_code, error_msg)
                  return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
+            except Exception as err:
+                LOGGER.exception("Unexpected error during DeepSeek stream")
+                intent_response = intent.IntentResponse(language=user_input.language)
+                intent_response.async_set_error(
+                    intent.IntentResponseErrorCode.UNKNOWN,
+                    "Unexpected error while reading the model response. Check logs for details.",
+                )
+                return conversation.ConversationResult(
+                    response=intent_response, conversation_id=chat_log.conversation_id
+                )
 
             # --- Rebuild messages for next iteration (using updated chat_log.content) ---
             messages = _convert_content_to_messages(

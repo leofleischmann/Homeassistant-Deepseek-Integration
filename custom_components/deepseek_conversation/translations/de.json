@@ -6,9 +6,9 @@
                 "data": {
                     "api_key": "API-Schlüssel",
                     "base_url": "API-Basis-URL",
-                    "chat_model": "Chat-Modell"
+                    "chat_model": "Modell"
                 },
-                "description": "Richte die Verbindung zur DeepSeek-API ein. Du kannst die offizielle DeepSeek-API oder einen kompatiblen Endpunkt verwenden."
+                "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4 Flash. Die Legacy-Namen deepseek-chat und deepseek-reasoner funktionieren noch, entfallen aber ab 2026-07-24 — rechtzeitig auf V4 umstellen."
             }
         },
         "error": {
@@ -25,18 +25,44 @@
             "step": {
                 "init": {
                     "title": "DeepSeek-Optionen",
-                    "description": "Optionen für die DeepSeek-Konversation. Du kannst die API-Basis-URL ändern, um einen anderen DeepSeek-kompatiblen Endpunkt zu nutzen. „Reasoning effort“ wird nur an die API gesendet, wenn Denken / Reasoning aktiviert ist; sonst hat die Einstellung keine Wirkung.",
+                    "description": "DeepSeek V4 nutzt ein Modell für Chat und Reasoning: „Reasoning aktivieren“ schaltet das API-Denken (extra_body) ein. Reasoning-Aufwand gilt nur bei aktiviertem Reasoning. Temperatur und Top-P werden bei aktivem Reasoning nicht gesendet. Legacy-Modell-IDs funktionieren bis 2026-07-24.",
                     "data": {
                         "base_url": "API-Basis-URL",
                         "prompt": "System-Prompt",
                         "llm_hass_api": "Home-Assistant-API",
-                        "chat_model": "Chat-Modell",
+                        "chat_model": "Modell",
                         "max_tokens": "Max. Tokens",
                         "top_p": "Top P",
                         "temperature": "Temperatur",
-                        "thinking_enabled": "Denken / Reasoning",
+                        "thinking_enabled": "Reasoning aktivieren",
                         "reasoning_effort": "Reasoning-Aufwand"
+                    },
+                    "selector": {
+                        "chat_model": {
+                            "options": {
+                                "deepseek-v4-flash": "DeepSeek V4 Flash (schnell, Standard)",
+                                "deepseek-v4-pro": "DeepSeek V4 Pro (leistungsstärkster)",
+                                "deepseek-chat": "Legacy: deepseek-chat (bis 2026-07-24)",
+                                "deepseek-reasoner": "Legacy: deepseek-reasoner (bis 2026-07-24)"
+                            }
+                        }
                     }
+                }
+            }
+        }
+    },
+    "services": {
+        "run_debug": {
+            "name": "DeepSeek-Debug ausführen",
+            "description": "Umfassende Diagnose: Umgebung, HTTP-Probe, optional models.list, registrierte HA-LLM-APIs, Entity-Registry, viele chat.completions- und Stream-Tests (Thinking an/aus, Systemnachricht, Mehr-Turn, JSON-Modus, parallele Mini-Pings), Log-Auszug und JSON-Anhang im Report. Viele kurze API-Aufrufe; schreibt /config/deepseek_conversation_debug_report.txt und eine Kurznotiz (Zusammenfassung + Fehler).",
+            "fields": {
+                "config_entry": {
+                    "name": "Integrations-Eintrag",
+                    "description": "Welcher DeepSeek-Conversation-Eintrag getestet werden soll."
+                },
+                "log_tail_lines": {
+                    "name": "Log-Auszug (Zeilen)",
+                    "description": "Anzahl gefilterter Zeilen aus home-assistant.log (Standard 600, erlaubt 50–8000)."
                 }
             }
         }
