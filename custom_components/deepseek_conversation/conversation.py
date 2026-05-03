@@ -57,6 +57,30 @@ from .const import (
 MAX_TOOL_ITERATIONS = 10
 
 
+def _is_deepseek_reasoner_model(model: str) -> bool:
+    """True for deepseek-reasoner (CoT must not be replayed in request history)."""
+    return "reasoner" in (model or "").lower()
+
+
+def _include_assistant_reasoning_in_request(
+    *,
+    model: str,
+    thinking_enabled: bool,
+    has_tool_calls: bool,
+) -> bool:
+    """Whether to attach reasoning_content for an assistant message.
+
+    deepseek-reasoner: never send reasoning in the messages array (API 400).
+    Thinking mode (non-reasoner): only on assistant turns that issued tool_calls;
+    plain answers do not need CoT in context (DeepSeek thinking-mode guide).
+    """
+    if _is_deepseek_reasoner_model(model):
+        return False
+    if not thinking_enabled:
+        return False
+    return has_tool_calls
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: DeepSeekConfigEntry,
@@ -101,6 +125,9 @@ def _format_tool(
 # --- MODIFIED: Removed system_prompt argument ---
 def _convert_content_to_messages(
     content_list: list[conversation.Content],
+    *,
+    model: str,
+    thinking_enabled: bool,
 ) -> list[dict[str, Any]]:
     """Convert conversation history (excluding system prompt) to DeepSeek API message format."""
     messages = []
@@ -146,7 +173,11 @@ def _convert_content_to_messages(
                 msg["content"] = message_content
             if isinstance(content, conversation.AssistantContent):
                 thinking = getattr(content, "thinking_content", None)
-                if thinking:
+                if thinking and _include_assistant_reasoning_in_request(
+                    model=model,
+                    thinking_enabled=thinking_enabled,
+                    has_tool_calls=bool(content.tool_calls),
+                ):
                     msg["reasoning_content"] = thinking
             if tool_calls:
                 if role == "assistant":
@@ -376,23 +407,21 @@ class DeepSeekConversationEntity(
             )
         # --- End Tool Prep ---
 
+        thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
 
         # --- Convert chat history (NOW EXCLUDES system prompt) ---
-        messages = _convert_content_to_messages(chat_log.content)
+        messages = _convert_content_to_messages(
+            chat_log.content, model=model, thinking_enabled=thinking_on
+        )
         LOGGER.debug("Sending messages to DeepSeek (excluding system): %s", json.dumps(messages, indent=2))
         # --- End Convert ---
 
         # To prevent infinite loops with tools
         for _iteration in range(MAX_TOOL_ITERATIONS):
-            thinking_on = options.get(
-                CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED
-            )
             model_args: Dict[str, Any] = {
                 "model": model,
                 "messages": messages, # Pass history without explicit system prompt
                 "max_tokens": options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS),
-                "top_p": options.get(CONF_TOP_P, RECOMMENDED_TOP_P),
-                "temperature": options.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE),
                 "stream": True,
                 **deepseek_chat_thinking_params(
                     thinking_enabled=thinking_on,
@@ -401,6 +430,12 @@ class DeepSeekConversationEntity(
                     ),
                 ),
             }
+            # Thinking mode ignores temperature/top_p; omitting avoids confusion and matches DeepSeek docs.
+            if not thinking_on:
+                model_args["top_p"] = options.get(CONF_TOP_P, RECOMMENDED_TOP_P)
+                model_args["temperature"] = options.get(
+                    CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE
+                )
             if tools:
                 model_args["tools"] = tools
             if tool_choice:
@@ -450,7 +485,9 @@ class DeepSeekConversationEntity(
                  return conversation.ConversationResult(response=intent_response, conversation_id=chat_log.conversation_id)
 
             # --- Rebuild messages for next iteration (using updated chat_log.content) ---
-            messages = _convert_content_to_messages(chat_log.content)
+            messages = _convert_content_to_messages(
+                chat_log.content, model=model, thinking_enabled=thinking_on
+            )
             # --- End Rebuild ---
 
             if not chat_log.unresponded_tool_results:

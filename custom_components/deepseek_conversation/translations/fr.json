@@ -1,0 +1,44 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configuration de l’API DeepSeek",
+                "data": {
+                    "api_key": "Clé API",
+                    "base_url": "URL de base de l’API",
+                    "chat_model": "Modèle de chat"
+                },
+                "description": "Configurez la connexion à l’API DeepSeek. Vous pouvez utiliser l’API officielle DeepSeek ou tout point de terminaison compatible."
+            }
+        },
+        "error": {
+            "cannot_connect": "Connexion impossible",
+            "invalid_auth": "Authentification invalide",
+            "api_error": "Erreur d’API",
+            "unknown": "Erreur inconnue",
+            "url_required": "L’URL de base est obligatoire"
+        },
+        "abort": {
+            "already_configured": "Déjà configuré"
+        },
+        "options": {
+            "step": {
+                "init": {
+                    "title": "Options DeepSeek",
+                    "description": "Options de la conversation DeepSeek. Vous pouvez modifier l’URL de base de l’API pour utiliser un autre point de terminaison compatible DeepSeek. L’effort de raisonnement n’est envoyé à l’API que lorsque la réflexion / le raisonnement est activé ; sinon ce paramètre n’a aucun effet.",
+                    "data": {
+                        "base_url": "URL de base de l’API",
+                        "prompt": "Invite système",
+                        "llm_hass_api": "API Home Assistant",
+                        "chat_model": "Modèle de chat",
+                        "max_tokens": "Jetons max.",
+                        "top_p": "Top P",
+                        "temperature": "Température",
+                        "thinking_enabled": "Réflexion / raisonnement",
+                        "reasoning_effort": "Effort de raisonnement"
+                    }
+                }
+            }
+        }
+    }
+}

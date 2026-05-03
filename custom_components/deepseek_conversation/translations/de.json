@@ -1,0 +1,44 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "DeepSeek-API-Konfiguration",
+                "data": {
+                    "api_key": "API-Schlüssel",
+                    "base_url": "API-Basis-URL",
+                    "chat_model": "Chat-Modell"
+                },
+                "description": "Richte die Verbindung zur DeepSeek-API ein. Du kannst die offizielle DeepSeek-API oder einen kompatiblen Endpunkt verwenden."
+            }
+        },
+        "error": {
+            "cannot_connect": "Verbindung nicht möglich",
+            "invalid_auth": "Ungültige Anmeldung",
+            "api_error": "API-Fehler",
+            "unknown": "Unbekannter Fehler",
+            "url_required": "Basis-URL ist erforderlich"
+        },
+        "abort": {
+            "already_configured": "Bereits konfiguriert"
+        },
+        "options": {
+            "step": {
+                "init": {
+                    "title": "DeepSeek-Optionen",
+                    "description": "Optionen für die DeepSeek-Konversation. Du kannst die API-Basis-URL ändern, um einen anderen DeepSeek-kompatiblen Endpunkt zu nutzen. „Reasoning effort“ wird nur an die API gesendet, wenn Denken / Reasoning aktiviert ist; sonst hat die Einstellung keine Wirkung.",
+                    "data": {
+                        "base_url": "API-Basis-URL",
+                        "prompt": "System-Prompt",
+                        "llm_hass_api": "Home-Assistant-API",
+                        "chat_model": "Chat-Modell",
+                        "max_tokens": "Max. Tokens",
+                        "top_p": "Top P",
+                        "temperature": "Temperatur",
+                        "thinking_enabled": "Denken / Reasoning",
+                        "reasoning_effort": "Reasoning-Aufwand"
+                    }
+                }
+            }
+        }
+    }
+}
