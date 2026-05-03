@@ -56,6 +56,9 @@ REASONING_EFFORT_SELECT: tuple[tuple[str, str], ...] = (
 REASONING_EFFORT_VALUES: frozenset[str] = frozenset(v for v, _ in REASONING_EFFORT_SELECT)
 RECOMMENDED_REASONING_EFFORT = "high"
 
+# Upper bound for max_tokens from options (UI + API); not a “secret” 1000 cap.
+MAX_TOKENS_UPPER_BOUND = 1_000_000
+
 # DeepSeek API endpoint
 DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"
 
@@ -67,12 +70,12 @@ def deepseek_chat_extra_body(*, thinking_enabled: bool) -> dict[str, Any]:
 
 
 def coerce_max_tokens(value: Any, *, fallback: int = RECOMMENDED_MAX_TOKENS) -> int:
-    """Parse max_tokens from config options (int/float/str); clamp to a sane range."""
+    """Parse max_tokens from config options (int/float/str); clamp to [1, MAX_TOKENS_UPPER_BOUND]."""
     try:
         n = int(float(value))
     except (TypeError, ValueError):
         return fallback
-    return max(1, min(n, 1_000_000))
+    return max(1, min(n, MAX_TOKENS_UPPER_BOUND))
 
 
 def normalized_reasoning_effort(value: Any) -> str:

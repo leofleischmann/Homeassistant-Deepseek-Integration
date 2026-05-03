@@ -54,6 +54,7 @@ from .const import (
     RECOMMENDED_TOP_P,
     REASONING_EFFORT_SELECT,
     DEEPSEEK_API_BASE_URL,
+    MAX_TOKENS_UPPER_BOUND,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -295,7 +296,7 @@ def deepseek_config_option_schema(
                 options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
             ),
         ): NumberSelector(
-            NumberSelectorConfig(min=1, max=1_000_000, mode="box", step=1)
+            NumberSelectorConfig(min=1, max=MAX_TOKENS_UPPER_BOUND, mode="box", step=1)
         ),
         vol.Optional(
             CONF_TOP_P,

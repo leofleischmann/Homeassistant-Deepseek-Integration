@@ -39,6 +39,7 @@ from .const import (
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
     DEEPSEEK_API_BASE_URL,
+    MAX_TOKENS_UPPER_BOUND,
     coerce_max_tokens,
     deepseek_chat_thinking_params,
 )
@@ -184,6 +185,7 @@ async def async_run_debug_suite(
         "integration_domain": DOMAIN,
         "config_dir": hass.config.config_dir,
         "component_in_loaded_components": DOMAIN in hass.config.components,
+        "coerce_max_tokens_upper_bound": MAX_TOKENS_UPPER_BOUND,
     }
     out["environment"] = env
     for k, v in env.items():
@@ -224,7 +226,8 @@ async def async_run_debug_suite(
     thinking_opt = bool(opts.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED))
     base_url = str(entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL))
     log(
-        f"OPTIONS model={model!r} raw_max_tokens={raw_mt!r} coerced_max_tokens={mt_coerced} "
+        f"OPTIONS model={model!r} raw_max_tokens={raw_mt!r} (type={type(raw_mt).__name__}) "
+        f"coerced_max_tokens={mt_coerced} coerce_ceiling={MAX_TOKENS_UPPER_BOUND} "
         f"thinking_option={thinking_opt} base_url={base_url!r}"
     )
 
@@ -338,6 +341,17 @@ async def async_run_debug_suite(
     )
 
     cap = max(8, min(max_completion_tokens_test, mt_coerced, 128))
+    out["debug_token_policy"] = {
+        "configured_coerced_max_tokens": mt_coerced,
+        "suite_cap_most_tests": cap,
+        "max_completion_tokens_test_param": max_completion_tokens_test,
+        "note": (
+            "Debug suite intentionally uses small max_tokens per call (ping=8; most tests "
+            "use suite_cap <= 128) for speed and API cost. This is NOT the Assist conversation "
+            "path — see conversation.py model_args['max_tokens'] = coerce_max_tokens(options[...])."
+        ),
+    }
+    log(f"TOKEN POLICY (debug only): {out['debug_token_policy']}")
 
     # 2) production-like no-thinking with sampling
     args_nt: dict[str, Any] = {
@@ -407,6 +421,7 @@ async def async_run_debug_suite(
 
     # 6) high max_tokens acceptance (still small completion text)
     high_cap = min(2048, mt_coerced, 8192)
+    out["debug_token_policy"]["high_max_tokens_probe_request"] = high_cap
     await _complete(
         "non_stream_high_max_tokens_probe",
         {
@@ -630,6 +645,7 @@ async def async_run_debug_suite(
     flat["http"] = out["http"]
     flat["llm"] = out["llm"]
     flat["entities"] = out["entities"]
+    flat["debug_token_policy"] = out.get("debug_token_policy", {})
     for k, v in out["completions"].items():
         flat[f"completion.{k}"] = v
     for k, v in out["streams"].items():

@@ -195,6 +195,31 @@ def _convert_content_to_messages(
 # --- End Message Conversion ---
 
 
+def _final_speech_from_chat_log(content_list: list[conversation.Content]) -> str:
+    """Pick text for IntentResponse after tool rounds.
+
+    The last ``AssistantContent`` in the log is often the tool-call turn (empty or
+    preamble only). We prefer the latest assistant message with non-empty ``content``.
+    """
+    for msg in reversed(content_list):
+        if not isinstance(msg, conversation.AssistantContent):
+            continue
+        raw = msg.content
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    # Thinking-only final turn (e.g. v4 + thinking): visible answer may live here.
+    for msg in reversed(content_list):
+        if isinstance(msg, conversation.AssistantContent):
+            think = getattr(msg, "thinking_content", None)
+            if isinstance(think, str) and think.strip():
+                LOGGER.debug(
+                    "Using thinking_content as speech fallback (no assistant text in content)"
+                )
+                return think.strip()
+            break
+    return ""
+
+
 # --- Stream Transformation (Adapted for ChatCompletionChunk) ---
 async def _transform_stream(
     chat_log: conversation.ChatLog,
@@ -212,27 +237,31 @@ async def _transform_stream(
         full_response_log.append(chunk.model_dump())
         # --- END DEBUG ---
 
-        delta = chunk.choices[0].delta if chunk.choices else None
-        finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
-
-        if not delta:
+        if not chunk.choices:
             continue
+        choice0 = chunk.choices[0]
+        delta = choice0.delta
+        finish_reason = choice0.finish_reason
 
-        if delta.role:
-            if delta.role == "assistant":
-                role = delta.role
-                yield {"role": role}
-            else:
-                LOGGER.warning("Unexpected role in stream delta: %s", delta.role)
+        # Never skip terminal chunks: ``finish_reason`` may be set when ``delta`` is
+        # missing or an empty object (OpenAI-compatible streams); tool_calls must still
+        # be finalized.
+        if delta is not None:
+            if delta.role:
+                if delta.role == "assistant":
+                    role = delta.role
+                    yield {"role": role}
+                else:
+                    LOGGER.warning("Unexpected role in stream delta: %s", delta.role)
 
-        if delta.content:
-            yield {"content": delta.content}
+            if delta.content:
+                yield {"content": delta.content}
 
-        reasoning_delta = getattr(delta, "reasoning_content", None)
-        if reasoning_delta:
-            yield {"thinking_content": reasoning_delta}
+            reasoning_delta = getattr(delta, "reasoning_content", None)
+            if reasoning_delta:
+                yield {"thinking_content": reasoning_delta}
 
-        if delta.tool_calls:
+        if delta is not None and delta.tool_calls:
             LOGGER.debug("Received Tool Call Chunk: %s", delta.tool_calls)
             for tool_call_chunk in delta.tool_calls:
                 if tool_call_chunk.index is None:
@@ -584,11 +613,13 @@ class DeepSeekConversationEntity(
 
         # --- Construct final response ---
         intent_response = intent.IntentResponse(language=user_input.language)
-        last_assistant_message = next(
-            (msg for msg in reversed(chat_log.content) if isinstance(msg, conversation.AssistantContent)), None
-        )
-        speech_text = last_assistant_message.content if last_assistant_message else ""
-        intent_response.async_set_speech(speech_text or "")
+        speech_text = _final_speech_from_chat_log(chat_log.content)
+        if not speech_text:
+            LOGGER.warning(
+                "DeepSeek: empty speech after tool loop; tail=%s",
+                [(type(c).__name__, getattr(c, "role", None)) for c in chat_log.content[-6:]],
+            )
+        intent_response.async_set_speech(speech_text)
 
         return conversation.ConversationResult(
             response=intent_response,
