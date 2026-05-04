@@ -262,6 +262,11 @@ async def _transform_stream(
                 role = delta.role
 
             reasoning_delta = getattr(delta, "reasoning_content", None)
+            if reasoning_delta is None:
+                # SDK may park unknown stream fields on model_extra (OpenAI-compatible deltas).
+                reasoning_delta = (getattr(delta, "model_extra", None) or {}).get(
+                    "reasoning_content"
+                )
 
             # Emit role together with the first non-empty payload so the HA chat
             # panel reliably binds the new assistant bubble to the streamed text.
