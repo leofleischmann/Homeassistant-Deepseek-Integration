@@ -96,25 +96,33 @@ def _strip_markdown(text: str) -> str:
     if not text:
         return text
     
+    # Remove code block formatting (```python)
+    text = re.sub(r'```[a-z]*\n?', '', text)
+    # Remove inline code formatting
+    text = text.replace('`', '')
+    
     # Remove blockquotes
     text = re.sub(r'(?m)^\s*>\s+', '', text)
     # Remove headings
     text = re.sub(r'(?m)^#{1,6}\s+', '', text)
+    
     # Remove bold/italic (asterisks and underscores)
-    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-    text = re.sub(r'\*(.*?)\*', r'\1', text)
-    text = re.sub(r'__(.*?)__', r'\1', text)
-    text = re.sub(r'_(.*?)_', r'\1', text)
+    text = re.sub(r'(?<!\w)\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\w)', r'\1', text)
+    text = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'\1', text)
+    text = re.sub(r'(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)', r'\1', text)
+    text = re.sub(r'(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)', r'\1', text)
+    
     # Remove strikethrough
-    text = re.sub(r'~~(.*?)~~', r'\1', text)
-    # Remove inline code
-    text = re.sub(r'`(.*?)`', r'\1', text)
+    text = re.sub(r'(?<!\w)~~(?!\s)(.+?)(?<!\s)~~(?!\w)', r'\1', text)
+    
+    # Remove images
+    text = re.sub(r'!\[(.*?)\]\(.*?\)', r'\1', text)
     # Remove links (replace with just the text)
     text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+    
     # Remove list formatting
     text = re.sub(r'(?m)^\s*[-*+]\s+', '', text)
-    # Remove code blocks
-    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    
     # Remove arrows
     text = text.replace('→', '').replace('->', '')
     
