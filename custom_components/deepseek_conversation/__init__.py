@@ -23,6 +23,7 @@ from homeassistant.core import (  # pyright: ignore[reportMissingImports]
 )
 from homeassistant.components import persistent_notification  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import (  # pyright: ignore[reportMissingImports]
+    ConfigEntryAuthFailed,
     ConfigEntryNotReady,
     HomeAssistantError,
     ServiceValidationError,
@@ -194,16 +195,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             # Assuming response structure is similar to OpenAI's chat completion
             response_text = response.choices[0].message.content
 
+        except openai.AuthenticationError as err:
+            LOGGER.error("DeepSeek API key rejected: %s", err)
+            entry.async_start_reauth(hass)
+            raise HomeAssistantError(
+                openai_exception_user_message(err)
+            ) from err
         except openai.OpenAIError as err:
             LOGGER.error("Error generating content with DeepSeek: %s", err)
             raise HomeAssistantError(
                 openai_exception_user_message(err)
             ) from err
-        except Exception as err: # Catch potential file errors or other issues
-            LOGGER.error("Unexpected error during content generation: %s", err)
-            raise HomeAssistantError(f"Error generating content: {err}") from err
+        except (OSError, ValueError) as err:
+            LOGGER.error("Error preparing input for DeepSeek: %s", err)
+            raise HomeAssistantError(f"Error preparing input: {err}") from err
 
-        return {"text": response_text or ""} # Ensure text is not None
+        return {"text": response_text or ""}
 
     async def run_debug(call: ServiceCall) -> ServiceResponse:
         """Run DeepSeek diagnostics and write ``/config/deepseek_conversation_debug_report.txt``."""
@@ -297,32 +304,51 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> bool:
     """Set up DeepSeek Conversation from a config entry."""
-    # --- Initialize client with DeepSeek base URL from config entry ---
     base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
     client = openai.AsyncOpenAI(
         api_key=entry.data[CONF_API_KEY],
-        base_url=base_url, # Use base URL from config entry or default
+        base_url=base_url,
         http_client=get_async_client(hass),
     )
-    # --- End of client initialization change ---
 
-    # Removed platform_headers cache call, may not be relevant/needed
-
-    # --- Validate API key using a test chat completion ---
+    # Validate the connection using ``models.list()`` instead of a chat
+    # completion: it does not consume tokens / quota on the DeepSeek free tier
+    # and still surfaces auth failures. Some OpenAI-compatible gateways do not
+    # implement ``/models``; in that case we skip the probe and let the first
+    # real conversation call surface any auth issue (which then triggers
+    # reauth via ``ConfigEntryAuthFailed``).
     try:
-        await client.with_options(timeout=10.0).chat.completions.create(
-            model=entry.options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
-            messages=[{"role": "user", "content": "Hi"}],
-            max_tokens=1,
-        )
+        await client.with_options(timeout=10.0).models.list()
     except openai.AuthenticationError as err:
         LOGGER.error("Invalid DeepSeek API key: %s", err)
-        return False
-    except openai.OpenAIError as err:
-        # Log the specific error for better debugging
+        raise ConfigEntryAuthFailed("Invalid DeepSeek API key") from err
+    except openai.APIStatusError as err:
+        if err.status_code in (401, 403):
+            LOGGER.error("DeepSeek rejected credentials (%s): %s", err.status_code, err)
+            raise ConfigEntryAuthFailed("Invalid DeepSeek credentials") from err
+        if err.status_code in (404, 405, 501):
+            LOGGER.debug(
+                "DeepSeek base URL does not implement /models (%s); "
+                "skipping setup probe",
+                err.status_code,
+            )
+        else:
+            LOGGER.warning(
+                "Unexpected DeepSeek status during setup probe (%s): %s",
+                err.status_code,
+                err,
+            )
+            raise ConfigEntryNotReady(
+                f"DeepSeek API returned {err.status_code}: {err}"
+            ) from err
+    except openai.APIConnectionError as err:
         LOGGER.error("Failed to connect to DeepSeek API: %s", err)
-        raise ConfigEntryNotReady(f"Failed to connect to DeepSeek API: {err}") from err
-    # --- End of validation change ---
+        raise ConfigEntryNotReady(
+            f"Failed to connect to DeepSeek API: {err}"
+        ) from err
+    except openai.OpenAIError as err:
+        LOGGER.error("DeepSeek SDK error during setup: %s", err)
+        raise ConfigEntryNotReady(f"DeepSeek API error: {err}") from err
 
     entry.runtime_data = client
 
@@ -332,9 +358,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> 
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload DeepSeek."""
-    # Close the client if the library supports it (optional)
-    # client: openai.AsyncClient = entry.runtime_data
-    # await client.close()
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    """Unload DeepSeek and close the underlying OpenAI client.
+
+    The OpenAI ``AsyncClient`` owns an httpx connection pool; HA recreates the
+    entry on every options-update via ``async_reload``, so without an explicit
+    ``close()`` the pool would leak per reload.
+    """
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    client: openai.AsyncClient | None = getattr(entry, "runtime_data", None)
+    if client is not None:
+        try:
+            await client.close()
+        except (openai.OpenAIError, OSError, RuntimeError) as err:
+            LOGGER.debug("Error closing DeepSeek client on unload: %s", err)
+    return unload_ok
 
