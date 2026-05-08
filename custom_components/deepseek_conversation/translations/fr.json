@@ -20,35 +20,35 @@
         },
         "abort": {
             "already_configured": "Déjà configuré"
-        },
-        "options": {
-            "step": {
-                "init": {
-                    "title": "Options DeepSeek",
-                    "description": "DeepSeek V4 utilise un seul modèle pour le chat et le raisonnement : activez « Activer le raisonnement » pour envoyer la phase de réflexion à l’API (extra_body). L’effort de raisonnement ne s’applique que si le raisonnement est activé. La température et le top_p sont omis pendant le raisonnement. Les anciens identifiants de modèle fonctionnent jusqu’au 2026-07-24.",
-                    "data": {
-                        "base_url": "URL de base de l’API",
-                        "prompt": "Invite système",
-                        "llm_hass_api": "API Home Assistant",
-                        "chat_model": "Modèle",
-                        "max_tokens": "Jetons max.",
-                        "top_p": "Top P",
-                        "temperature": "Température",
-                        "thinking_enabled": "Activer le raisonnement",
-                        "strip_markdown": "Supprimer le Markdown pour les assistants vocaux",
-                        "reasoning_effort": "Effort de raisonnement"
-                    },
-                    "selector": {
-                        "chat_model": {
-                            "options": {
-                                "deepseek-v4-flash": "DeepSeek V4 Flash (rapide, par défaut)",
-                                "deepseek-v4-pro": "DeepSeek V4 Pro (le plus puissant)",
-                                "deepseek-chat": "Ancien : deepseek-chat (jusqu’au 2026-07-24)",
-                                "deepseek-reasoner": "Ancien : deepseek-reasoner (jusqu’au 2026-07-24)"
-                            }
-                        }
-                    }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Options DeepSeek",
+                "description": "DeepSeek V4 utilise un seul modèle pour le chat et le raisonnement : activez « Activer le raisonnement » pour envoyer la phase de réflexion à l’API (extra_body). L’effort de raisonnement ne s’applique que si le raisonnement est activé. La température et le top_p sont omis pendant le raisonnement. Les anciens identifiants de modèle fonctionnent jusqu’au 2026-07-24.",
+                "data": {
+                    "base_url": "URL de base de l’API",
+                    "prompt": "Invite système",
+                    "llm_hass_api": "API Home Assistant",
+                    "chat_model": "Modèle",
+                    "max_tokens": "Jetons max.",
+                    "top_p": "Top P",
+                    "temperature": "Température",
+                    "thinking_enabled": "Activer le raisonnement",
+                    "strip_markdown": "Supprimer le Markdown pour les assistants vocaux",
+                    "reasoning_effort": "Effort de raisonnement"
                 }
+            }
+        }
+    },
+    "selector": {
+        "chat_model": {
+            "options": {
+                "deepseek-v4-flash": "DeepSeek V4 Flash (rapide, par défaut)",
+                "deepseek-v4-pro": "DeepSeek V4 Pro (le plus puissant)",
+                "deepseek-chat": "Ancien : deepseek-chat (jusqu’au 2026-07-24)",
+                "deepseek-reasoner": "Ancien : deepseek-reasoner (jusqu’au 2026-07-24)"
             }
         }
     },

@@ -20,35 +20,35 @@
         },
         "abort": {
             "already_configured": "Bereits konfiguriert"
-        },
-        "options": {
-            "step": {
-                "init": {
-                    "title": "DeepSeek-Optionen",
-                    "description": "DeepSeek V4 nutzt ein Modell für Chat und Reasoning: „Reasoning aktivieren“ schaltet das API-Denken (extra_body) ein. Reasoning-Aufwand gilt nur bei aktiviertem Reasoning. Temperatur und Top-P werden bei aktivem Reasoning nicht gesendet. Legacy-Modell-IDs funktionieren bis 2026-07-24.",
-                    "data": {
-                        "base_url": "API-Basis-URL",
-                        "prompt": "System-Prompt",
-                        "llm_hass_api": "Home-Assistant-API",
-                        "chat_model": "Modell",
-                        "max_tokens": "Max. Tokens",
-                        "top_p": "Top P",
-                        "temperature": "Temperatur",
-                        "thinking_enabled": "Reasoning aktivieren",
-                        "strip_markdown": "Markdown für Sprachassistenten entfernen",
-                        "reasoning_effort": "Reasoning-Aufwand"
-                    },
-                    "selector": {
-                        "chat_model": {
-                            "options": {
-                                "deepseek-v4-flash": "DeepSeek V4 Flash (schnell, Standard)",
-                                "deepseek-v4-pro": "DeepSeek V4 Pro (leistungsstärkster)",
-                                "deepseek-chat": "Legacy: deepseek-chat (bis 2026-07-24)",
-                                "deepseek-reasoner": "Legacy: deepseek-reasoner (bis 2026-07-24)"
-                            }
-                        }
-                    }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "DeepSeek-Optionen",
+                "description": "DeepSeek V4 nutzt ein Modell für Chat und Reasoning: „Reasoning aktivieren“ schaltet das API-Denken (extra_body) ein. Reasoning-Aufwand gilt nur bei aktiviertem Reasoning. Temperatur und Top-P werden bei aktivem Reasoning nicht gesendet. Legacy-Modell-IDs funktionieren bis 2026-07-24.",
+                "data": {
+                    "base_url": "API-Basis-URL",
+                    "prompt": "System-Prompt",
+                    "llm_hass_api": "Home-Assistant-API",
+                    "chat_model": "Modell",
+                    "max_tokens": "Max. Tokens",
+                    "top_p": "Top P",
+                    "temperature": "Temperatur",
+                    "thinking_enabled": "Reasoning aktivieren",
+                    "strip_markdown": "Markdown für Sprachassistenten entfernen",
+                    "reasoning_effort": "Reasoning-Aufwand"
                 }
+            }
+        }
+    },
+    "selector": {
+        "chat_model": {
+            "options": {
+                "deepseek-v4-flash": "DeepSeek V4 Flash (schnell, Standard)",
+                "deepseek-v4-pro": "DeepSeek V4 Pro (leistungsstärkster)",
+                "deepseek-chat": "Legacy: deepseek-chat (bis 2026-07-24)",
+                "deepseek-reasoner": "Legacy: deepseek-reasoner (bis 2026-07-24)"
             }
         }
     },

@@ -20,35 +20,35 @@
         },
         "abort": {
             "already_configured": "Already configured"
-        },
-        "options": {
-            "step": {
-                "init": {
-                    "title": "DeepSeek Options",
-                    "description": "DeepSeek V4 uses one model for chat and reasoning: turn on “Enable reasoning” to send thinking in the API (extra_body). Reasoning effort only applies when reasoning is on. Temperature and top_p are omitted while reasoning is on. Legacy model IDs work until 2026-07-24.",
-                    "data": {
-                        "base_url": "API Base URL",
-                        "prompt": "System Prompt",
-                        "llm_hass_api": "Home Assistant API",
-                        "chat_model": "Model",
-                        "max_tokens": "Max Tokens",
-                        "top_p": "Top P",
-                        "temperature": "Temperature",
-                        "thinking_enabled": "Enable reasoning",
-                        "strip_markdown": "Strip markdown for voice assistants",
-                        "reasoning_effort": "Reasoning effort"
-                    },
-                    "selector": {
-                        "chat_model": {
-                            "options": {
-                                "deepseek-v4-flash": "DeepSeek V4 Flash (fast, default)",
-                                "deepseek-v4-pro": "DeepSeek V4 Pro (most capable)",
-                                "deepseek-chat": "Legacy: deepseek-chat (until 2026-07-24)",
-                                "deepseek-reasoner": "Legacy: deepseek-reasoner (until 2026-07-24)"
-                            }
-                        }
-                    }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "DeepSeek Options",
+                "description": "DeepSeek V4 uses one model for chat and reasoning: turn on “Enable reasoning” to send thinking in the API (extra_body). Reasoning effort only applies when reasoning is on. Temperature and top_p are omitted while reasoning is on. Legacy model IDs work until 2026-07-24.",
+                "data": {
+                    "base_url": "API Base URL",
+                    "prompt": "System Prompt",
+                    "llm_hass_api": "Home Assistant API",
+                    "chat_model": "Model",
+                    "max_tokens": "Max Tokens",
+                    "top_p": "Top P",
+                    "temperature": "Temperature",
+                    "thinking_enabled": "Enable reasoning",
+                    "strip_markdown": "Strip markdown for voice assistants",
+                    "reasoning_effort": "Reasoning effort"
                 }
+            }
+        }
+    },
+    "selector": {
+        "chat_model": {
+            "options": {
+                "deepseek-v4-flash": "DeepSeek V4 Flash (fast, default)",
+                "deepseek-v4-pro": "DeepSeek V4 Pro (most capable)",
+                "deepseek-chat": "Legacy: deepseek-chat (until 2026-07-24)",
+                "deepseek-reasoner": "Legacy: deepseek-reasoner (until 2026-07-24)"
             }
         }
     },

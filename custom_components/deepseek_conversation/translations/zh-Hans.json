@@ -20,35 +20,35 @@
         },
         "abort": {
             "already_configured": "已配置过"
-        },
-        "options": {
-            "step": {
-                "init": {
-                    "title": "DeepSeek 选项",
-                    "description": "DeepSeek V4 用同一模型兼顾对话与推理：开启「启用推理」后，API 会进入思考阶段（extra_body）。推理强度仅在启用推理时生效；启用推理时不发送 temperature 与 top_p。旧模型 ID 可使用至 2026-07-24。",
-                    "data": {
-                        "base_url": "API 基础地址",
-                        "prompt": "系统提示词",
-                        "llm_hass_api": "Home Assistant API",
-                        "chat_model": "模型",
-                        "max_tokens": "最大令牌数",
-                        "top_p": "Top P",
-                        "temperature": "温度",
-                        "thinking_enabled": "启用推理",
-                        "strip_markdown": "移除语音助手的 Markdown",
-                        "reasoning_effort": "推理强度"
-                    },
-                    "selector": {
-                        "chat_model": {
-                            "options": {
-                                "deepseek-v4-flash": "DeepSeek V4 Flash（快速，默认）",
-                                "deepseek-v4-pro": "DeepSeek V4 Pro（最强）",
-                                "deepseek-chat": "旧版：deepseek-chat（至 2026-07-24）",
-                                "deepseek-reasoner": "旧版：deepseek-reasoner（至 2026-07-24）"
-                            }
-                        }
-                    }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "DeepSeek 选项",
+                "description": "DeepSeek V4 用同一模型兼顾对话与推理：开启「启用推理」后，API 会进入思考阶段（extra_body）。推理强度仅在启用推理时生效；启用推理时不发送 temperature 与 top_p。旧模型 ID 可使用至 2026-07-24。",
+                "data": {
+                    "base_url": "API 基础地址",
+                    "prompt": "系统提示词",
+                    "llm_hass_api": "Home Assistant API",
+                    "chat_model": "模型",
+                    "max_tokens": "最大令牌数",
+                    "top_p": "Top P",
+                    "temperature": "温度",
+                    "thinking_enabled": "启用推理",
+                    "strip_markdown": "移除语音助手的 Markdown",
+                    "reasoning_effort": "推理强度"
                 }
+            }
+        }
+    },
+    "selector": {
+        "chat_model": {
+            "options": {
+                "deepseek-v4-flash": "DeepSeek V4 Flash（快速，默认）",
+                "deepseek-v4-pro": "DeepSeek V4 Pro（最强）",
+                "deepseek-chat": "旧版：deepseek-chat（至 2026-07-24）",
+                "deepseek-reasoner": "旧版：deepseek-reasoner（至 2026-07-24）"
             }
         }
     },
