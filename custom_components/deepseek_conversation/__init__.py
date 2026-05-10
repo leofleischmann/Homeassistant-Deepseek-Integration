@@ -14,7 +14,7 @@ import openai
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
-from homeassistant.const import CONF_API_KEY, Platform  # pyright: ignore[reportMissingImports]
+from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, Platform  # pyright: ignore[reportMissingImports]
 from homeassistant.core import (  # pyright: ignore[reportMissingImports]
     HomeAssistant,
     ServiceCall,
@@ -71,6 +71,17 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # Define type alias using the updated domain if needed, or keep generic
 DeepSeekConfigEntry: TypeAlias = ConfigEntry[openai.AsyncClient]
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate config entry to version 2 — wrap legacy string CONF_LLM_HASS_API in a list."""
+    if entry.version < 2:
+        options = {**entry.options}
+        legacy = options.get(CONF_LLM_HASS_API)
+        if isinstance(legacy, str):
+            options[CONF_LLM_HASS_API] = [legacy] if legacy != "none" else []
+        hass.config_entries.async_update_entry(entry, options=options, version=2)
+    return True
 
 
 def encode_file(file_path: str) -> tuple[str, str]:

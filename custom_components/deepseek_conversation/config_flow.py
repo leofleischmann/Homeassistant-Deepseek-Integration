@@ -62,6 +62,15 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _normalize_llm_hass_api(value: Any) -> list[str] | None:
+    """Normalize CONF_LLM_HASS_API to a list for multi-select, or None if unset."""
+    if isinstance(value, list):
+        return value if value else None
+    if isinstance(value, str):
+        return [value] if value != "none" else None
+    return None
+
+
 def _chat_model_select_options() -> list[SelectOptionDict]:
     return [SelectOptionDict(value=v, label=lbl) for v, lbl in CHAT_MODEL_OPTIONS]
 
@@ -127,17 +136,6 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for DeepSeek Conversation."""
 
     VERSION = 2
-
-    @staticmethod
-    async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-        """Migrate config entry to version 2 — wrap legacy string CONF_LLM_HASS_API in a list."""
-        if entry.version < 2:
-            options = {**entry.options}
-            legacy = options.get(CONF_LLM_HASS_API)
-            if isinstance(legacy, str):
-                options[CONF_LLM_HASS_API] = [legacy] if legacy != "none" else []
-            hass.config_entries.async_update_entry(entry, options=options, version=2)
-        return True
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -210,8 +208,11 @@ class DeepSeekOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             # Handle CONF_LLM_HASS_API selection
-            if isinstance(user_input.get(CONF_LLM_HASS_API), list) and not user_input[CONF_LLM_HASS_API]:
+            normalized = _normalize_llm_hass_api(user_input.get(CONF_LLM_HASS_API))
+            if normalized is None:
                 user_input.pop(CONF_LLM_HASS_API, None)
+            else:
+                user_input[CONF_LLM_HASS_API] = normalized
 
             # Handle base URL update - move it from options to data if changed
             base_url_changed = False
@@ -292,8 +293,8 @@ def deepseek_config_option_schema(
         # Add selector for CONF_LLM_HASS_API
         vol.Optional(
             CONF_LLM_HASS_API,
-            description={"suggested_value": options.get(CONF_LLM_HASS_API)},
-            default=options.get(CONF_LLM_HASS_API),
+            description={"suggested_value": _normalize_llm_hass_api(options.get(CONF_LLM_HASS_API))},
+            default=_normalize_llm_hass_api(options.get(CONF_LLM_HASS_API)),
         ): SelectSelector(SelectSelectorConfig(options=hass_apis, multiple=True)),
         vol.Optional(
             CONF_CHAT_MODEL,

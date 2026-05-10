@@ -277,10 +277,11 @@ async def async_run_debug_suite(
         apis = llm.async_get_apis(hass)
         api_rows = [{"id": a.id, "name": a.name} for a in apis]
         sel = opts.get(CONF_LLM_HASS_API)
+        sel_list: list[str] = [sel] if isinstance(sel, str) else sel or []
         out["llm"] = {
             "selected_api_id": sel,
             "registered_apis": api_rows,
-            "selected_exists": bool(sel and any(a.id in sel for a in apis)),
+            "selected_exists": bool(sel_list and any(a.id in sel_list for a in apis)),
         }
         log(f"LLM APIs registered={len(api_rows)} selected={sel!r} exists={out['llm']['selected_exists']}")
     except Exception as e:

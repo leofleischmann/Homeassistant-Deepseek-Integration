@@ -38,6 +38,9 @@
                     "thinking_enabled": "启用推理",
                     "strip_markdown": "移除语音助手的 Markdown",
                     "reasoning_effort": "推理强度"
+                },
+                "data_description": {
+                    "llm_hass_api": "不选择 = 无设备控制"
                 }
             }
         }

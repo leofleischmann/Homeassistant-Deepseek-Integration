@@ -38,6 +38,9 @@
                     "thinking_enabled": "Enable reasoning",
                     "strip_markdown": "Strip markdown for voice assistants",
                     "reasoning_effort": "Reasoning effort"
+                },
+                "data_description": {
+                    "llm_hass_api": "No selection = no device control"
                 }
             }
         }

@@ -38,6 +38,9 @@
                     "thinking_enabled": "Reasoning aktivieren",
                     "strip_markdown": "Markdown für Sprachassistenten entfernen",
                     "reasoning_effort": "Reasoning-Aufwand"
+                },
+                "data_description": {
+                    "llm_hass_api": "Keine Auswahl = keine Gerätesteuerung"
                 }
             }
         }
