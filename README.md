@@ -66,12 +66,9 @@ Copy the folder `custom_components/deepseek_conversation/` into your Home Assist
 
 After changing the base URL, the integration reloads so the OpenAI client picks up the new endpoint.
 
-## Integration icon (optional)
+## Integration icon
 
-From **Home Assistant 2026.3** onward, you can ship brand images next to the integration:
-
-- `custom_components/deepseek_conversation/brand/icon.png` (256×256 PNG)
-- Optional: `icon@2x.png`, `logo.png`, dark variants — see [Home Assistant Brands](https://github.com/home-assistant/brands) image rules.
+Brand images ship in `custom_components/deepseek_conversation/brand/` (HA 2026.3+). They appear in **Settings → Devices & services** and the config flow. HACS may still show a generic tile until [HACS supports local brand icons](https://github.com/hacs/integration/issues/5171).
 
 ## Debug suite (service)
 
