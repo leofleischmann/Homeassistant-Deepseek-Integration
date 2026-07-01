@@ -58,9 +58,22 @@ MAX_TOKENS_UPPER_BOUND = 1_000_000
 DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"
 
 
-def deepseek_chat_extra_body() -> dict[str, Any]:
-    """Build OpenAI-SDK extra_body for DeepSeek thinking mode (enabled only)."""
-    return {"thinking": {"type": "enabled"}}
+def deepseek_chat_extra_body(*, thinking_enabled: bool) -> dict[str, Any]:
+    """OpenAI-SDK extra_body for DeepSeek thinking toggle.
+
+    V4 models default to thinking **enabled** when this field is omitted; send
+    ``disabled`` explicitly when the integration option is off. See conversation.py
+    and build_chat_completion_args().
+    """
+    return {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}}
+
+
+def model_uses_deepseek_thinking_api(model: str) -> bool:
+    """Whether to send DeepSeek ``extra_body.thinking`` for this model id."""
+    m = (model or "").strip().lower()
+    if not m:
+        return True
+    return m.startswith("deepseek")
 
 
 def coerce_max_tokens(value: Any, *, fallback: int = RECOMMENDED_MAX_TOKENS) -> int:
@@ -80,19 +93,25 @@ def normalized_reasoning_effort(value: Any) -> str:
 
 
 def deepseek_chat_thinking_params(
-    *, thinking_enabled: bool, reasoning_effort: str = RECOMMENDED_REASONING_EFFORT
+    *,
+    thinking_enabled: bool,
+    reasoning_effort: str = RECOMMENDED_REASONING_EFFORT,
+    model: str = RECOMMENDED_CHAT_MODEL,
 ) -> dict[str, Any]:
     """kwargs for chat.completions.create matching DeepSeek thinking docs.
 
-    When thinking is off, returns nothing so generic OpenAI-compatible endpoints
-    are not sent DeepSeek-only extra_body fields (conversation + generate_content).
+    DeepSeek model ids get an explicit thinking on/off via extra_body (V4 default is on).
+    Other model ids on a custom base_url get no extra_body so OpenAI-compatible proxies
+    are not sent DeepSeek-only fields.
     """
-    if not thinking_enabled:
+    if not model_uses_deepseek_thinking_api(model):
         return {}
-    return {
-        "extra_body": deepseek_chat_extra_body(),
-        "reasoning_effort": normalized_reasoning_effort(reasoning_effort),
+    params: dict[str, Any] = {
+        "extra_body": deepseek_chat_extra_body(thinking_enabled=thinking_enabled),
     }
+    if thinking_enabled:
+        params["reasoning_effort"] = normalized_reasoning_effort(reasoning_effort)
+    return params
 
 
 def build_chat_completion_args(
@@ -122,6 +141,7 @@ def build_chat_completion_args(
             reasoning_effort=options.get(
                 CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
             ),
+            model=model,
         ),
     }
     if not thinking_on:

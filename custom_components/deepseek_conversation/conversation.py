@@ -303,7 +303,9 @@ def _convert_content_to_messages(
     return messages
 
 
-def _final_speech_from_chat_log(content_list: list[conversation.Content]) -> str:
+def _final_speech_from_chat_log(
+    content_list: list[conversation.Content], *, thinking_enabled: bool
+) -> str:
     """Pick text for IntentResponse after tool rounds.
 
     The last ``AssistantContent`` in the log is often the tool-call turn (empty or
@@ -315,16 +317,17 @@ def _final_speech_from_chat_log(content_list: list[conversation.Content]) -> str
         raw = msg.content
         if isinstance(raw, str) and raw.strip():
             return raw.strip()
-    # Thinking-only final turn (e.g. v4 + thinking): visible answer may live here.
-    for msg in reversed(content_list):
-        if isinstance(msg, conversation.AssistantContent):
-            think = getattr(msg, "thinking_content", None)
-            if isinstance(think, str) and think.strip():
-                LOGGER.debug(
-                    "Using thinking_content as speech fallback (no assistant text in content)"
-                )
-                return think.strip()
-            break
+    # Thinking-only final turn when reasoning is enabled (e.g. v4 + thinking).
+    if thinking_enabled:
+        for msg in reversed(content_list):
+            if isinstance(msg, conversation.AssistantContent):
+                think = getattr(msg, "thinking_content", None)
+                if isinstance(think, str) and think.strip():
+                    LOGGER.debug(
+                        "Using thinking_content as speech fallback (no assistant text in content)"
+                    )
+                    return think.strip()
+                break
     return ""
 
 
@@ -367,6 +370,7 @@ async def _transform_stream(
     chat_log: conversation.ChatLog,
     result: AsyncStream[ChatCompletionChunk],
     *,
+    thinking_enabled: bool = False,
     role_already_emitted: bool = False,
     usage_events: list[CompletionUsage] | None = None,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
@@ -409,6 +413,12 @@ async def _transform_stream(
 
             reasoning_delta = _stream_delta_text(delta, "reasoning_content")
             content_delta = _stream_delta_text(delta, "content")
+            if not thinking_enabled and reasoning_delta:
+                LOGGER.debug(
+                    "[Debug conversation]: dropping reasoning_content stream "
+                    "(thinking_enabled is false)"
+                )
+                reasoning_delta = None
             if content_delta and not (getattr(delta, "content", None) or ""):
                 LOGGER.debug(
                     "Stream delta: using content from model_extra (attr empty or unset)"
@@ -715,7 +725,10 @@ class DeepSeekConversationEntity(
                 async for _ in chat_log.async_add_delta_content_stream(
                     user_input.agent_id,
                     _transform_stream(
-                        chat_log, result, usage_events=iteration_usage
+                        chat_log,
+                        result,
+                        thinking_enabled=bool(thinking_on),
+                        usage_events=iteration_usage,
                     ),
                 ):
                     pass  # Handled by chat_log internally
@@ -777,7 +790,9 @@ class DeepSeekConversationEntity(
 
         # --- Construct final response ---
         intent_response = intent.IntentResponse(language=user_input.language)
-        speech_text = _final_speech_from_chat_log(chat_log.content)
+        speech_text = _final_speech_from_chat_log(
+            chat_log.content, thinking_enabled=bool(thinking_on)
+        )
         if not speech_text:
             LOGGER.warning(
                 "DeepSeek: empty speech after tool loop; tail=%s",
