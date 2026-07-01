@@ -95,6 +95,12 @@ def _read_log_tail(config_dir: str, max_lines: int) -> str:
     return "No home-assistant.log found under config.\n"
 
 
+def _write_report(path: str, body: str) -> None:
+    """Write the debug report file (runs in the executor)."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(body)
+
+
 def _ha_version() -> str:
     try:
         from homeassistant.const import __version__ as ver  # type: ignore[import-not-found]
@@ -216,9 +222,7 @@ async def async_run_debug_suite(
         out["tests"] = flat_abort
         report_body = "\n".join(lines) + "\n" + _read_log_tail(hass.config.config_dir, log_tail_lines)
         path = hass.config.path(REPORT_FILENAME)
-        await hass.async_add_executor_job(
-            lambda p=path, b=report_body: open(p, "w", encoding="utf-8").write(b)
-        )
+        await hass.async_add_executor_job(_write_report, path, report_body)
         out["report_path"] = path
         return out
 
@@ -340,6 +344,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -368,6 +373,7 @@ async def async_run_debug_suite(
         **deepseek_chat_thinking_params(
             thinking_enabled=False,
             reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+            model=model,
         ),
     }
     await _complete("non_stream_no_thinking_user_sampling", args_nt)
@@ -381,6 +387,7 @@ async def async_run_debug_suite(
         **deepseek_chat_thinking_params(
             thinking_enabled=True,
             reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+            model=model,
         ),
     }
     await _complete("non_stream_thinking_only", args_t)
@@ -400,6 +407,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -419,6 +427,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -436,6 +445,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -452,6 +462,7 @@ async def async_run_debug_suite(
         **deepseek_chat_thinking_params(
             thinking_enabled=True,
             reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+            model=model,
         ),
     }
     await _complete("non_stream_thinking_plus_sampling_params_observational", args_conflict)
@@ -509,6 +520,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -523,6 +535,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=True,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -538,6 +551,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -554,6 +568,7 @@ async def async_run_debug_suite(
             **deepseek_chat_thinking_params(
                 thinking_enabled=False,
                 reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
+                model=model,
             ),
         },
     )
@@ -571,6 +586,7 @@ async def async_run_debug_suite(
                     reasoning_effort=str(
                         opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)
                     ),
+                    model=model,
                 ),
             )
             return (r.choices[0].message.content or "").strip()
@@ -637,9 +653,7 @@ async def async_run_debug_suite(
 
     report_body = "\n".join(lines)
     path = hass.config.path(REPORT_FILENAME)
-    await hass.async_add_executor_job(
-        lambda p=path, b=report_body: open(p, "w", encoding="utf-8").write(b)
-    )
+    await hass.async_add_executor_job(_write_report, path, report_body)
     out["report_path"] = path
     LOGGER.info("DeepSeek exhaustive debug report written to %s", path)
 
