@@ -58,10 +58,9 @@ MAX_TOKENS_UPPER_BOUND = 1_000_000
 DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"
 
 
-def deepseek_chat_extra_body(*, thinking_enabled: bool) -> dict[str, Any]:
-    """Build OpenAI-SDK extra_body for DeepSeek thinking/reasoning toggle."""
-    thinking_type = "enabled" if thinking_enabled else "disabled"
-    return {"thinking": {"type": thinking_type}}
+def deepseek_chat_extra_body() -> dict[str, Any]:
+    """Build OpenAI-SDK extra_body for DeepSeek thinking mode (enabled only)."""
+    return {"thinking": {"type": "enabled"}}
 
 
 def coerce_max_tokens(value: Any, *, fallback: int = RECOMMENDED_MAX_TOKENS) -> int:
@@ -83,13 +82,17 @@ def normalized_reasoning_effort(value: Any) -> str:
 def deepseek_chat_thinking_params(
     *, thinking_enabled: bool, reasoning_effort: str = RECOMMENDED_REASONING_EFFORT
 ) -> dict[str, Any]:
-    """kwargs for chat.completions.create matching DeepSeek thinking docs."""
-    params: dict[str, Any] = {
-        "extra_body": deepseek_chat_extra_body(thinking_enabled=thinking_enabled),
+    """kwargs for chat.completions.create matching DeepSeek thinking docs.
+
+    When thinking is off, returns nothing so generic OpenAI-compatible endpoints
+    are not sent DeepSeek-only extra_body fields (conversation + generate_content).
+    """
+    if not thinking_enabled:
+        return {}
+    return {
+        "extra_body": deepseek_chat_extra_body(),
+        "reasoning_effort": normalized_reasoning_effort(reasoning_effort),
     }
-    if thinking_enabled:
-        params["reasoning_effort"] = normalized_reasoning_effort(reasoning_effort)
-    return params
 
 
 def build_chat_completion_args(
