@@ -7,12 +7,15 @@ All notable changes to this integration.
 ### Added
 
 - **Reauthentication** when your API key expires or is rejected — fix credentials in Home Assistant settings without removing and re-adding the integration.
+- **Reconfigure** (integration card ⋮ → Reconfigure) to change your API key or base URL while keeping Assist and model options unchanged.
 - **Token usage sensors** per config entry: cumulative prompt, completion, and total tokens, plus a “last request” sensor (with reasoning tokens as an attribute when the API reports them). Useful for cost tracking and troubleshooting.
 - **DeepSeek brand icons** in the integrations list and config flow (Home Assistant 2026.3+).
-- **More translations** for the `generate_content` service, invalid config entry errors, reasoning effort labels, and the debug notification (EN, DE, FR, ZH).
+- **More translations** for the `generate_content` service, invalid config entry errors, reasoning effort labels, reconfigure, options field hints, and the debug notification (EN, DE, FR, ZH).
 
 ### Improved
 
+- **Clearer configuration UX**: the gear icon opens Assist and model options directly; API key and base URL are changed only via Reconfigure (not mixed into options). API keys use a password field in setup, reauth, and reconfigure.
+- **Options form**: all fields stay visible (reasoning, reasoning effort, temperature, top_p); one OK saves everything — no form reload when toggling reasoning.
 - **Faster option changes**: updates to prompt, model, temperature, thinking, and similar options apply immediately in Assist without reloading the whole integration. Reload only runs for connection settings (base URL, API key).
 - **Quicker setup and reauth**: credentials are verified via `models.list` instead of a chat completion, so setup does not consume tokens.
 - **`generate_content` with reasoning**: temperature and top_p are no longer sent when reasoning is enabled (consistent with Assist).
@@ -20,4 +23,6 @@ All notable changes to this integration.
 
 ### Fixed
 
-- **Reasoning off**: DeepSeek-specific `extra_body` is only sent when reasoning is enabled, improving compatibility if you later point the integration at other OpenAI-compatible endpoints.
+- **Reasoning off on DeepSeek V4**: the API defaults to thinking enabled when `extra_body` is omitted; the integration now sends `thinking: disabled` explicitly and no longer shows the “Details” reasoning block in Assist when reasoning is turned off.
+- **Reasoning on**: `reasoning_effort` (e.g. low, high, xhigh) is sent correctly with `thinking: enabled`; temperature and top_p are omitted as required by the API.
+- **Reasoning off on other endpoints**: DeepSeek-specific `extra_body` is only sent for DeepSeek model IDs, so custom OpenAI-compatible gateways are not sent thinking fields unless the model id indicates DeepSeek.
