@@ -92,7 +92,7 @@
             },
             "assist": {
                 "title": "DeepSeek Options",
-                "description": "DeepSeek V4 uses one model for chat and reasoning: turn on “Enable reasoning” to send thinking in the API (extra_body). Reasoning effort only applies when reasoning is on. Temperature and top_p are omitted while reasoning is on. Legacy model IDs work until 2026-07-24.",
+                "description": "DeepSeek V4 uses one model for chat and reasoning. With reasoning on, the API sends thinking (extra_body) and reasoning effort; temperature and top_p are ignored. With reasoning off, temperature and top_p apply. All fields stay in this form so you can switch without reopening. Legacy model IDs work until 2026-07-24.",
                 "data": {
                     "base_url": "API Base URL",
                     "prompt": "System Prompt",

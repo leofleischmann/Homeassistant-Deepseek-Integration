@@ -58,11 +58,6 @@ from .const import (
     RECOMMENDED_TOP_P,
 )
 
-# Options flow: after toggling thinking, the form is shown once more with matching
-# fields. This context key records that refresh so the next OK saves instead of looping.
-_CTX_THINKING_SCHEMA_REFRESH = "deepseek_thinking_schema_refresh"
-
-
 def _normalize_llm_hass_api(value: Any) -> list[str] | None:
     """Normalize CONF_LLM_HASS_API to a list for multi-select, or None if unset."""
     if isinstance(value, list):
@@ -395,9 +390,6 @@ class DeepSeekOptionsFlow(OptionsFlow):
 
         errors: dict[str, str] = {}
 
-        if user_input is None:
-            self.context.pop(_CTX_THINKING_SCHEMA_REFRESH, None)
-
         if user_input is not None:
             # Handle CONF_LLM_HASS_API selection
             normalized = _normalize_llm_hass_api(user_input.get(CONF_LLM_HASS_API))
@@ -422,51 +414,6 @@ class DeepSeekOptionsFlow(OptionsFlow):
                         self.hass.config_entries.async_update_entry(config_entry, data=new_data)
 
             if not errors:
-                new_thinking = bool(
-                    user_input.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
-                )
-                saved_thinking = bool(
-                    config_entry.options.get(
-                        CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED
-                    )
-                )
-
-                if not new_thinking:
-                    user_input.pop(CONF_REASONING_EFFORT, None)
-
-                if new_thinking != saved_thinking:
-                    if self.context.get(_CTX_THINKING_SCHEMA_REFRESH) == new_thinking:
-                        # User already saw the updated form; persist on this OK.
-                        self.context.pop(_CTX_THINKING_SCHEMA_REFRESH, None)
-                        LOGGER.debug(
-                            "[Debug config_flow]: thinking_enabled confirmed as %s, "
-                            "saving options",
-                            new_thinking,
-                        )
-                    else:
-                        self.context[_CTX_THINKING_SCHEMA_REFRESH] = new_thinking
-                        LOGGER.debug(
-                            "[Debug config_flow]: thinking_enabled %s -> %s, "
-                            "refreshing options form once",
-                            saved_thinking,
-                            new_thinking,
-                        )
-                        schema = deepseek_config_option_schema(
-                            self.hass,
-                            config_entry.options,
-                            config_entry,
-                            thinking_enabled=new_thinking,
-                        )
-                        suggested = {**dict(config_entry.options), **user_input}
-                        return self.async_show_form(
-                            step_id="assist",
-                            data_schema=self.add_suggested_values_to_schema(
-                                vol.Schema(schema), suggested
-                            ),
-                            errors=errors,
-                        )
-
-                # Merge new user input with existing options before creating entry
                 updated_options = {**config_entry.options, **user_input}
                 result = self.async_create_entry(title="", data=updated_options)
 
@@ -481,18 +428,10 @@ class DeepSeekOptionsFlow(OptionsFlow):
 
                 return result
 
-        # Pass options from config_entry to the schema function
-        thinking_on = bool(
-            config_entry.options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
-        )
-        if user_input is not None and CONF_THINKING_ENABLED in user_input:
-            thinking_on = bool(user_input[CONF_THINKING_ENABLED])
-
         schema = deepseek_config_option_schema(
             self.hass,
             config_entry.options,
             config_entry,
-            thinking_enabled=thinking_on,
         )
         suggested = dict(config_entry.options)
         if user_input is not None:
@@ -510,14 +449,11 @@ def deepseek_config_option_schema(
     hass: HomeAssistant,
     options: dict[str, Any] | MappingProxyType[str, Any],
     config_entry: ConfigEntry | None = None,
-    *,
-    thinking_enabled: bool = DEFAULT_THINKING_ENABLED,
 ) -> VolDictType:
     """Return a schema for DeepSeek completion options.
 
-    Reasoning effort is only shown when ``thinking_enabled`` is True.
-    Temperature and top_p are only shown when reasoning is off (not sent by the API
-    while thinking is on). See const.build_chat_completion_args().
+    All fields stay visible regardless of the reasoning toggle. The API layer in
+    ``build_chat_completion_args()`` decides what is actually sent.
     """
     # Re-add HASS API selection
     hass_apis: list[SelectOptionDict] = [
@@ -582,18 +518,6 @@ def deepseek_config_option_schema(
             default=options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED),
         ): BooleanSelector(),
         vol.Optional(
-            CONF_STRIP_MARKDOWN,
-            description={
-                "suggested_value": options.get(
-                    CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN
-                )
-            },
-            default=options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN),
-        ): BooleanSelector(),
-    }
-
-    if thinking_enabled:
-        schema[vol.Optional(
             CONF_REASONING_EFFORT,
             description={
                 "suggested_value": options.get(
@@ -603,26 +527,35 @@ def deepseek_config_option_schema(
             default=options.get(
                 CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
             ),
-        )] = SelectSelector(
+        ): SelectSelector(
             SelectSelectorConfig(
                 options=reasoning_effort_options,
                 translation_key=CONF_REASONING_EFFORT,
             )
-        )
-    else:
-        schema[vol.Optional(
+        ),
+        vol.Optional(
             CONF_TOP_P,
             description={"suggested_value": options.get(CONF_TOP_P)},
             default=RECOMMENDED_TOP_P,
-        )] = NumberSelector(
+        ): NumberSelector(
             NumberSelectorConfig(min=0, max=1, step=0.05, mode="slider")
-        )
-        schema[vol.Optional(
+        ),
+        vol.Optional(
             CONF_TEMPERATURE,
             description={"suggested_value": options.get(CONF_TEMPERATURE)},
             default=RECOMMENDED_TEMPERATURE,
-        )] = NumberSelector(
+        ): NumberSelector(
             NumberSelectorConfig(min=0, max=2, step=0.05, mode="slider")
-        )
+        ),
+        vol.Optional(
+            CONF_STRIP_MARKDOWN,
+            description={
+                "suggested_value": options.get(
+                    CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN
+                )
+            },
+            default=options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN),
+        ): BooleanSelector(),
+    }
 
     return schema

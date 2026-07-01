@@ -92,7 +92,7 @@
             },
             "assist": {
                 "title": "DeepSeek-Optionen",
-                "description": "DeepSeek V4 nutzt ein Modell für Chat und Reasoning: „Reasoning aktivieren“ schaltet das API-Denken (extra_body) ein. Reasoning-Aufwand gilt nur bei aktiviertem Reasoning. Temperatur und Top-P werden bei aktivem Reasoning nicht gesendet. Legacy-Modell-IDs funktionieren bis 2026-07-24.",
+                "description": "DeepSeek V4 nutzt ein Modell für Chat und Reasoning. Bei aktivem Reasoning sendet die API Denken (extra_body) und Reasoning-Aufwand; Temperatur und Top-P werden ignoriert. Bei ausgeschaltetem Reasoning gelten Temperatur und Top-P. Alle Felder bleiben sichtbar, damit du umschalten kannst ohne den Dialog neu zu öffnen. Legacy-Modell-IDs funktionieren bis 2026-07-24.",
                 "data": {
                     "base_url": "API-Basis-URL",
                     "prompt": "System-Prompt",

@@ -92,7 +92,7 @@
             },
             "assist": {
                 "title": "Options DeepSeek",
-                "description": "DeepSeek V4 utilise un seul modèle pour le chat et le raisonnement : activez « Activer le raisonnement » pour envoyer la phase de réflexion à l’API (extra_body). L’effort de raisonnement ne s’applique que si le raisonnement est activé. La température et le top_p sont omis pendant le raisonnement. Les anciens identifiants de modèle fonctionnent jusqu’au 2026-07-24.",
+                "description": "DeepSeek V4 utilise un seul modèle pour le chat et le raisonnement. Avec le raisonnement activé, l’API envoie la réflexion (extra_body) et l’effort de raisonnement ; température et top_p sont ignorés. Sans raisonnement, température et top_p s’appliquent. Tous les champs restent visibles pour basculer sans rouvrir le dialogue. Les anciens identifiants de modèle fonctionnent jusqu’au 2026-07-24.",
                 "data": {
                     "base_url": "URL de base de l’API",
                     "prompt": "Invite système",

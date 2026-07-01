@@ -29,7 +29,7 @@ Community project — not part of Home Assistant Core.
 
 **Change API key:** integration **⋮ → Reconfigure**, or **Configure → API key & base URL**.
 
-When **reasoning is off**, you set temperature and top_p. When **reasoning is on**, you set reasoning effort instead (DeepSeek API behaviour).
+When **reasoning is on**, the API uses reasoning effort (temperature/top_p are ignored). When **off**, temperature and top_p apply. All option fields stay visible; one OK saves everything.
 
 ## Automations
 

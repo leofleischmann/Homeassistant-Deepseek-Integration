@@ -92,7 +92,7 @@
             },
             "assist": {
                 "title": "DeepSeek 选项",
-                "description": "DeepSeek V4 用同一模型兼顾对话与推理：开启「启用推理」后，API 会进入思考阶段（extra_body）。推理强度仅在启用推理时生效；启用推理时不发送 temperature 与 top_p。旧模型 ID 可使用至 2026-07-24。",
+                "description": "DeepSeek V4 用同一模型兼顾对话与推理。启用推理时 API 会发送思考（extra_body）与推理强度；temperature 与 top_p 会被忽略。关闭推理时则使用 temperature 与 top_p。所有字段始终显示，切换时无需重新打开对话框。旧模型 ID 可使用至 2026-07-24。",
                 "data": {
                     "base_url": "API 基础地址",
                     "prompt": "系统提示词",
