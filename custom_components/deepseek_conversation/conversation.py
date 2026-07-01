@@ -366,11 +366,13 @@ def _prime_assist_ui_after_tool_results(chat_log: conversation.ChatLog) -> None:
     """Prepare stock ``ha-assist-chat`` for the next stream after tool results.
 
     Assist sets ``currentDeltaRole`` to ``tool_result`` per tool-result delta.
-    Call this only after ``async_add_delta_content_stream`` finished and
-    ``unresponded_tool_results`` is true (tools are in ``chat_log.content``).
-    The next stream uses ``emit_start_role=False`` so the first thinking/content
-    chunk carries ``role`` in the same event. This listener-only repaint runs
-    between streams; it does not modify ``chat_log.content``.
+    After parallel tools the role stays on ``tool_result`` until reset; follow-up
+    thinking/content deltas are ignored unless ``currentDeltaRole === "assistant"``.
+
+    Call only after ``async_add_delta_content_stream`` finished and
+    ``unresponded_tool_results`` is true. Listener-only; does not touch
+    ``chat_log.content``. Each follow-up API round also yields ``role: assistant``
+    at stream start (Google Gemini pattern).
     """
     if chat_log.delta_listener is None:
         return
@@ -378,6 +380,9 @@ def _prime_assist_ui_after_tool_results(chat_log: conversation.ChatLog) -> None:
         "[Debug conversation]: priming Assist UI after tool results (listener only)"
     )
     chat_log.delta_listener(chat_log, {"role": "assistant"})
+    # Nudge main text and thinking so ha-assist-chat calls requestUpdate even
+    # before the next API stream arrives (ZWS is invisible in the UI).
+    chat_log.delta_listener(chat_log, {"content": "\u200b"})
     chat_log.delta_listener(chat_log, {"thinking_content": "\u200b"})
 
 
@@ -421,23 +426,21 @@ async def _transform_stream(
     result: AsyncStream[ChatCompletionChunk],
     *,
     thinking_enabled: bool = False,
-    emit_start_role: bool = True,
     usage_events: list[CompletionUsage] | None = None,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format.
 
-    First API round: emit a standalone ``{"role": "assistant"}`` like Google Gemini.
-    Follow-up rounds after tools: skip it so the first thinking/content delta
-    includes ``role`` in one event (stock Assist UI needs content in the same
-    delta to call ``requestUpdate`` after ``tool_result``).
+    Every API round starts with ``{"role": "assistant"}`` (same as Google Gemini
+    ``_transform_stream`` per iteration). That resets Assist ``currentDeltaRole``
+    after tool-result deltas so follow-up thinking/content is not dropped.
     """
     current_tool_calls: list[dict[str, Any]] = []
     current_tool_call_args_buffer: dict[int, str] = {}
     role: Literal["assistant"] | None = None
     role_emitted = False
-    if emit_start_role:
-        yield {"role": "assistant"}
-        role_emitted = True
+    LOGGER.debug("[Debug conversation]: yielding stream delta: {'role': 'assistant'}")
+    yield {"role": "assistant"}
+    role_emitted = True
     async for chunk in result:
         parsed_usage = completion_usage_from_api(getattr(chunk, "usage", None))
         if parsed_usage is not None:
@@ -772,7 +775,6 @@ class DeepSeekConversationEntity(
                         chat_log,
                         result,
                         thinking_enabled=bool(thinking_on),
-                        emit_start_role=_iteration == 0,
                         usage_events=iteration_usage,
                     ),
                 ):
@@ -839,7 +841,14 @@ class DeepSeekConversationEntity(
         speech_text = _final_speech_from_chat_log(
             chat_log.content, thinking_enabled=bool(thinking_on)
         )
-        if not speech_text:
+        if speech_text:
+            LOGGER.debug(
+                "[Debug conversation]: final speech after tool loop (%d chars): %.120s%s",
+                len(speech_text),
+                speech_text,
+                "…" if len(speech_text) > 120 else "",
+            )
+        else:
             LOGGER.warning(
                 "DeepSeek: empty speech after tool loop; tail=%s",
                 [(type(c).__name__, getattr(c, "role", None)) for c in chat_log.content[-6:]],
