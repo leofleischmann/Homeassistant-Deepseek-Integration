@@ -22,6 +22,7 @@ from homeassistant.helpers import device_registry as dr, intent, llm  # pyright:
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 
 from .api_errors import openai_exception_user_message
+from .context_trim import format_tool_result_content
 from .const import (
     build_chat_completion_args,
     coerce_max_tool_iterations,
@@ -250,6 +251,7 @@ def _convert_content_to_messages(
     *,
     model: str,
     thinking_enabled: bool,
+    options: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Convert conversation history to DeepSeek API message format.
 
@@ -288,7 +290,12 @@ def _convert_content_to_messages(
                 tool_calls = formatted_tool_calls
         elif isinstance(content, conversation.ToolResultContent):
             role = "tool"
-            message_content = json.dumps(content.tool_result, cls=_HAJSONEncoder)
+            message_content = format_tool_result_content(
+                content.tool_result,
+                json_encoder=_HAJSONEncoder,
+                options=options or {},
+                tool_name=content.tool_name,
+            )
             tool_call_id = content.tool_call_id
 
         if role:
@@ -739,7 +746,10 @@ class DeepSeekConversationEntity(
                 )
 
         initial_messages = _convert_content_to_messages(
-            chat_log.content, model=model, thinking_enabled=thinking_on
+            chat_log.content,
+            model=model,
+            thinking_enabled=thinking_on,
+            options=options,
         )
         try:
             await _apply_attachments_to_last_user_message(
@@ -810,7 +820,10 @@ class DeepSeekConversationEntity(
                 )
                 messages.extend(
                     _convert_content_to_messages(
-                        new_contents, model=model, thinking_enabled=thinking_on
+                        new_contents,
+                        model=model,
+                        thinking_enabled=thinking_on,
+                        options=options,
                     )
                 )
             else:

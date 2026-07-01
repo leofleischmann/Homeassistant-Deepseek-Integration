@@ -33,12 +33,18 @@ from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImp
 )
 from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
+from .context_trim import (
+    MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
+    coerce_max_tool_result_chars,
+)
 from .const import (
     CHAT_MODEL_OPTIONS,
     coerce_max_tokens,
     coerce_max_tool_iterations,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
+    CONF_CONTEXT_MANAGEMENT_ENABLED,
+    CONF_MAX_TOOL_RESULT_CHARS,
     CONF_MAX_TOKENS,
     CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
@@ -48,6 +54,7 @@ from .const import (
     CONF_THINKING_ENABLED,
     CONF_TOP_P,
     CONF_VISION_ENABLED,
+    DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
     DEFAULT_VISION_ENABLED,
     DEFAULT_STRIP_MARKDOWN,
     DEFAULT_SYSTEM_PROMPT,
@@ -60,6 +67,7 @@ from .const import (
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
+    RECOMMENDED_MAX_TOOL_RESULT_CHARS,
     MAX_TOOL_ITERATIONS_UPPER_BOUND,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
@@ -150,6 +158,8 @@ DEFAULT_OPTIONS = {
     CONF_THINKING_ENABLED: DEFAULT_THINKING_ENABLED,
     CONF_STRIP_MARKDOWN: DEFAULT_STRIP_MARKDOWN,
     CONF_VISION_ENABLED: DEFAULT_VISION_ENABLED,
+    CONF_CONTEXT_MANAGEMENT_ENABLED: DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
+    CONF_MAX_TOOL_RESULT_CHARS: RECOMMENDED_MAX_TOOL_RESULT_CHARS,
     CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
 }
 
@@ -544,6 +554,36 @@ def deepseek_config_option_schema(
             },
             default=options.get(CONF_VISION_ENABLED, DEFAULT_VISION_ENABLED),
         ): BooleanSelector(),
+        vol.Optional(
+            CONF_CONTEXT_MANAGEMENT_ENABLED,
+            description={
+                "suggested_value": options.get(
+                    CONF_CONTEXT_MANAGEMENT_ENABLED,
+                    DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
+                )
+            },
+            default=options.get(
+                CONF_CONTEXT_MANAGEMENT_ENABLED, DEFAULT_CONTEXT_MANAGEMENT_ENABLED
+            ),
+        ): BooleanSelector(),
+        vol.Optional(
+            CONF_MAX_TOOL_RESULT_CHARS,
+            description={
+                "suggested_value": options.get(CONF_MAX_TOOL_RESULT_CHARS)
+            },
+            default=coerce_max_tool_result_chars(
+                options.get(
+                    CONF_MAX_TOOL_RESULT_CHARS, RECOMMENDED_MAX_TOOL_RESULT_CHARS
+                )
+            ),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=0,
+                max=MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
+                mode="box",
+                step=500,
+            )
+        ),
     }
 
     return schema

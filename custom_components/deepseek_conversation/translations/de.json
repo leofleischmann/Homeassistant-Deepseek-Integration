@@ -119,6 +119,8 @@
                     "thinking_enabled": "Reasoning aktivieren",
                     "strip_markdown": "Markdown für Sprachassistenten entfernen",
                     "vision_enabled": "Vision erlauben",
+                    "context_management_enabled": "Kontext-Management",
+                    "max_tool_result_chars": "Max. Tool-Ergebnis (Zeichen)",
                     "reasoning_effort": "Reasoning-Aufwand"
                 },
                 "data_description": {
@@ -129,7 +131,9 @@
                     "top_p": "Nur wirksam, wenn Reasoning aus ist.",
                     "chat_model": "Legacy-IDs deepseek-chat und deepseek-reasoner funktionieren bis 2026-07-24.",
                     "max_tool_iterations": "Maximale API-Runden, wenn das Modell Home-Assistant-Tools aufruft (1–20). Pro Runde können ein oder mehrere Tools laufen.",
-                    "vision_enabled": "Wenn aktiv, kann Assist Bild-Anhänge senden und generate_content Dateipfade nutzen. Erfordert ein Vision-fähiges Modell (V4 Flash/Pro). Meldet SUPPORT_ATTACHMENTS an Home Assistant, sofern verfügbar."
+                    "vision_enabled": "Wenn aktiv, kann Assist Bild-Anhänge senden und generate_content Dateipfade nutzen. Erfordert ein Vision-fähiges Modell (V4 Flash/Pro). Meldet SUPPORT_ATTACHMENTS an Home Assistant, sofern verfügbar.",
+                    "context_management_enabled": "Wenn aktiv, werden große Home-Assistant-Tool-Ergebnisse (z. B. GetLiveContext) vor dem API-Aufruf gekürzt, um Kontextlimit-Fehler zu vermeiden.",
+                    "max_tool_result_chars": "Maximale Zeichen pro Tool-Ergebnis-JSON (Standard 12000). 0 = keine Kürzung. Nur wirksam, wenn Kontext-Management aktiv ist."
                 }
             }
         }
