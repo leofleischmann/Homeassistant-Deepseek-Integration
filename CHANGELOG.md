@@ -8,7 +8,7 @@ All notable changes to this integration.
 
 - **Reauthentication** when your API key expires or is rejected — fix credentials in Home Assistant settings without removing and re-adding the integration.
 - **Reconfigure** (integration card ⋮ → Reconfigure) to change your API key or base URL while keeping Assist and model options unchanged.
-- **Token usage sensors** per config entry: cumulative prompt, completion, and total tokens, plus a “last request” sensor (with reasoning tokens as an attribute when the API reports them). Useful for cost tracking and troubleshooting.
+- **Token usage sensors** per config entry: cumulative prompt, completion, total, reasoning, and API request counters, plus last-request total with dedicated prompt/completion sensors (reasoning remains on the last-request attributes when the API reports it). Counters reset after Reconfigure when the API key or base URL changes.
 - **DeepSeek brand icons** in the integrations list and config flow (Home Assistant 2026.3+).
 - **More translations** for the `generate_content` service, invalid config entry errors, reasoning effort labels, reconfigure, options field hints, and the debug notification (EN, DE, FR, ZH).
 

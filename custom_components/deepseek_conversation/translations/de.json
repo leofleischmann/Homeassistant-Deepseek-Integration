@@ -13,6 +13,18 @@
             },
             "last_request_tokens": {
                 "name": "Letzte Anfrage (Token)"
+            },
+            "reasoning_tokens": {
+                "name": "Reasoning-Token"
+            },
+            "api_requests": {
+                "name": "API-Anfragen"
+            },
+            "last_request_prompt_tokens": {
+                "name": "Letzte Anfrage Prompt-Token"
+            },
+            "last_request_completion_tokens": {
+                "name": "Letzte Anfrage Completion-Token"
             }
         }
     },

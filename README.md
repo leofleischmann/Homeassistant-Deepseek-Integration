@@ -10,7 +10,7 @@ Community project — not part of Home Assistant Core.
 
 - **Assist** (voice and text) with streaming, optional **Home Assistant tools**, and **reasoning** toggle
 - **Automations** via `conversation.process` (same agent as Assist) or service `deepseek_conversation.generate_content`
-- **Token sensors** per config entry (cumulative + last request); updated on Assist and `generate_content` calls
+- **Token sensors** per config entry (cumulative prompt, completion, total, reasoning, API requests; last request total plus prompt/completion breakdown); updated on Assist and `generate_content` calls. Counters reset when API key or base URL changes (Reconfigure).
 - Models **V4 Flash** (default) and **V4 Pro**; legacy ids until 2026-07-24
 
 **Requires:** Home Assistant 2026.1+, DeepSeek API key.

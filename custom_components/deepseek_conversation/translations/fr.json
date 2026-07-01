@@ -13,6 +13,18 @@
             },
             "last_request_tokens": {
                 "name": "Dernière requête (jetons)"
+            },
+            "reasoning_tokens": {
+                "name": "Jetons de raisonnement"
+            },
+            "api_requests": {
+                "name": "Requêtes API"
+            },
+            "last_request_prompt_tokens": {
+                "name": "Dernière requête (jetons prompt)"
+            },
+            "last_request_completion_tokens": {
+                "name": "Dernière requête (jetons complétion)"
             }
         }
     },

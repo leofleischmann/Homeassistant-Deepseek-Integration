@@ -13,6 +13,18 @@
             },
             "last_request_tokens": {
                 "name": "上次请求令牌"
+            },
+            "reasoning_tokens": {
+                "name": "推理令牌"
+            },
+            "api_requests": {
+                "name": "API 请求次数"
+            },
+            "last_request_prompt_tokens": {
+                "name": "上次请求提示词令牌"
+            },
+            "last_request_completion_tokens": {
+                "name": "上次请求补全令牌"
             }
         }
     },
