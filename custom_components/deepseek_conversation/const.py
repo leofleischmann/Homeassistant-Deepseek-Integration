@@ -21,6 +21,9 @@ CONF_REASONING_EFFORT = "reasoning_effort"
 CONF_STRIP_MARKDOWN = "strip_markdown"
 CONF_BASE_URL = "base_url"
 CONF_FILENAMES = "filenames"
+CONF_RESPONSE_FORMAT = "response_format"
+
+RESPONSE_FORMAT_JSON_OBJECT = "json_object"
 
 # Default system prompt (Jinja: ha_name, user_name, llm_context)
 DEFAULT_SYSTEM_PROMPT = """You are an assistant for Home Assistant, the open-source home automation platform.
@@ -135,6 +138,7 @@ def build_chat_completion_args(
     stream: bool,
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
+    response_format: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build kwargs for ``client.chat.completions.create``.
 
@@ -164,6 +168,45 @@ def build_chat_completion_args(
         args["tools"] = tools
     if tool_choice:
         args["tool_choice"] = tool_choice
+    if response_format is not None:
+        args["response_format"] = response_format
     if stream:
         args["stream_options"] = {"include_usage": True}
     return args
+
+
+def build_generate_content_completion_args(
+    *,
+    entry_options: Mapping[str, Any],
+    messages: list[dict[str, Any]],
+    service_data: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """Build completion kwargs for ``generate_content`` with optional per-call overrides.
+
+    Overrides: chat_model, temperature, thinking_enabled, max_tokens, response_format.
+    Unset fields fall back to the config entry options. Used only from __init__.py.
+    """
+    effective_options = dict(entry_options)
+    model = str(entry_options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
+
+    if override_model := service_data.get(CONF_CHAT_MODEL):
+        model = str(override_model).strip() or model
+    if CONF_TEMPERATURE in service_data:
+        effective_options[CONF_TEMPERATURE] = service_data[CONF_TEMPERATURE]
+    if CONF_THINKING_ENABLED in service_data:
+        effective_options[CONF_THINKING_ENABLED] = service_data[CONF_THINKING_ENABLED]
+    if CONF_MAX_TOKENS in service_data:
+        effective_options[CONF_MAX_TOKENS] = service_data[CONF_MAX_TOKENS]
+
+    response_format: dict[str, str] | None = None
+    if service_data.get(CONF_RESPONSE_FORMAT) == RESPONSE_FORMAT_JSON_OBJECT:
+        response_format = {"type": RESPONSE_FORMAT_JSON_OBJECT}
+
+    args = build_chat_completion_args(
+        model=model,
+        messages=messages,
+        options=effective_options,
+        stream=False,
+        response_format=response_format,
+    )
+    return model, args

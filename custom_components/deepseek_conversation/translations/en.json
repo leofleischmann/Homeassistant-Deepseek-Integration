@@ -154,7 +154,7 @@
     "services": {
         "generate_content": {
             "name": "Generate content",
-            "description": "Send a conversational prompt to DeepSeek and return the model reply.",
+            "description": "Send a prompt to DeepSeek and return the model reply. Optional per-call overrides for model, temperature, thinking, max_tokens, and JSON response format.",
             "fields": {
                 "config_entry": {
                     "name": "Integration entry",
@@ -163,6 +163,26 @@
                 "prompt": {
                     "name": "Prompt",
                     "description": "User message sent to the model."
+                },
+                "chat_model": {
+                    "name": "Model",
+                    "description": "Override the model for this call only. Uses the integration option when omitted."
+                },
+                "temperature": {
+                    "name": "Temperature",
+                    "description": "Override sampling temperature (0–2). Ignored when thinking is enabled for this call. Uses the integration option when omitted."
+                },
+                "thinking_enabled": {
+                    "name": "Enable reasoning",
+                    "description": "Override reasoning for this call only. When enabled, temperature and top_p from the integration are not sent."
+                },
+                "max_tokens": {
+                    "name": "Max tokens",
+                    "description": "Override the reply token limit for this call only."
+                },
+                "response_format": {
+                    "name": "Response format",
+                    "description": "Set to json_object to request a JSON object reply from the model."
                 },
                 "filenames": {
                     "name": "File paths",

@@ -36,16 +36,21 @@ from homeassistant.helpers.typing import ConfigType  # pyright: ignore[reportMis
 from .api_errors import openai_exception_user_message
 from .config_flow import async_probe_deepseek_client
 from .const import (
-    build_chat_completion_args,
+    build_generate_content_completion_args,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_FILENAMES,
+    CONF_MAX_TOKENS,
     CONF_PROMPT,
+    CONF_RESPONSE_FORMAT,
+    CONF_TEMPERATURE,
+    CONF_THINKING_ENABLED,
     DEFAULT_SYSTEM_PROMPT,
     DEEPSEEK_API_BASE_URL,
     DOMAIN,
     LOGGER,
-    RECOMMENDED_CHAT_MODEL,
+    MAX_TOKENS_UPPER_BOUND,
+    RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .debug import async_run_debug_suite
 from .types import DeepSeekConfigEntry, DeepSeekRuntimeData
@@ -108,7 +113,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 translation_placeholders={"config_entry": entry_id},
             )
 
-        model: str = entry.options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
         runtime: DeepSeekRuntimeData = entry.runtime_data
         client: openai.AsyncClient = runtime.client
 
@@ -164,11 +168,25 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         usage_payload: dict[str, int] | None = None
         response_text = ""
         try:
-            model_args = build_chat_completion_args(
-                model=model,
+            model, model_args = build_generate_content_completion_args(
+                entry_options=entry.options,
                 messages=messages,
-                options=entry.options,
-                stream=False,
+                service_data=call.data,
+            )
+            LOGGER.debug(
+                "[Debug generate_content]: model=%s overrides=%s",
+                model,
+                {
+                    k: call.data[k]
+                    for k in (
+                        CONF_CHAT_MODEL,
+                        CONF_TEMPERATURE,
+                        CONF_THINKING_ENABLED,
+                        CONF_MAX_TOKENS,
+                        CONF_RESPONSE_FORMAT,
+                    )
+                    if k in call.data
+                },
             )
             response = await client.chat.completions.create(**model_args)
             response_text = response.choices[0].message.content or ""
@@ -268,6 +286,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 vol.Required(CONF_PROMPT): cv.string,
                 vol.Optional(CONF_FILENAMES, default=[]): vol.All(
                     cv.ensure_list, [cv.string]
+                ),
+                vol.Optional(CONF_CHAT_MODEL): cv.string,
+                vol.Optional(CONF_TEMPERATURE): vol.All(
+                    vol.Coerce(float), vol.Range(min=0, max=2)
+                ),
+                vol.Optional(CONF_THINKING_ENABLED): cv.boolean,
+                vol.Optional(CONF_MAX_TOKENS): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=MAX_TOKENS_UPPER_BOUND)
+                ),
+                vol.Optional(CONF_RESPONSE_FORMAT): vol.In(
+                    [RESPONSE_FORMAT_JSON_OBJECT]
                 ),
             }
         ),

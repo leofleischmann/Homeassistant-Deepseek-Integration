@@ -11,6 +11,8 @@ All notable changes to this integration.
 - **Reconfigure** (integration card ⋮ → Reconfigure) to change your API key or base URL while keeping Assist and model options unchanged.
 - **More translations** for the `generate_content` service, invalid config entry errors, reasoning effort labels, reconfigure, options field hints, and the debug notification (EN, DE, FR, ZH).
 - **DeepSeek brand icons** in the integrations list and config flow (Home Assistant 2026.3+).
+- **Configurable max tool iterations** (1–20, default 10) in integration options for the Assist tool loop.
+- **`generate_content` per-call overrides**: optional `chat_model`, `temperature`, `thinking_enabled`, `max_tokens`, and `response_format: json_object`. Unset fields use the config entry options.
 
 ### Improved
 

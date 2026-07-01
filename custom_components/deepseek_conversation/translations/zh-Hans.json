@@ -154,7 +154,7 @@
     "services": {
         "generate_content": {
             "name": "生成内容",
-            "description": "向 DeepSeek 发送对话提示并返回模型回复。",
+            "description": "向 DeepSeek 发送提示并返回模型回复。可按单次调用覆盖模型、温度、推理、max_tokens 与 JSON 响应格式。",
             "fields": {
                 "config_entry": {
                     "name": "集成条目",
@@ -163,6 +163,26 @@
                 "prompt": {
                     "name": "提示词",
                     "description": "发送给模型的用户消息。"
+                },
+                "chat_model": {
+                    "name": "模型",
+                    "description": "仅本次调用覆盖模型；省略时使用集成选项。"
+                },
+                "temperature": {
+                    "name": "温度",
+                    "description": "仅本次调用覆盖温度（0–2）。若本次启用推理则忽略。"
+                },
+                "thinking_enabled": {
+                    "name": "启用推理",
+                    "description": "仅本次调用覆盖推理开关。启用时不发送集成的 temperature 与 top_p。"
+                },
+                "max_tokens": {
+                    "name": "最大令牌数",
+                    "description": "仅本次调用覆盖回复令牌上限。"
+                },
+                "response_format": {
+                    "name": "响应格式",
+                    "description": "设为 json_object 以请求模型返回 JSON 对象。"
                 },
                 "filenames": {
                     "name": "文件路径",

@@ -154,7 +154,7 @@
     "services": {
         "generate_content": {
             "name": "Générer du contenu",
-            "description": "Envoie une requête conversationnelle à DeepSeek et renvoie la réponse du modèle.",
+            "description": "Envoie une invite à DeepSeek et renvoie la réponse. Overrides optionnels par appel : modèle, température, raisonnement, max_tokens et format JSON.",
             "fields": {
                 "config_entry": {
                     "name": "Entrée d’intégration",
@@ -167,6 +167,26 @@
                 "filenames": {
                     "name": "Chemins de fichiers",
                     "description": "Chemins d’images locaux optionnels (doivent être autorisés dans allowlist_external_dirs)."
+                },
+                "chat_model": {
+                    "name": "Modèle",
+                    "description": "Remplace le modèle pour cet appel uniquement. Sinon, option de l’intégration."
+                },
+                "temperature": {
+                    "name": "Température",
+                    "description": "Remplace la température (0–2) pour cet appel. Ignoré si le raisonnement est activé pour cet appel."
+                },
+                "thinking_enabled": {
+                    "name": "Activer le raisonnement",
+                    "description": "Remplace le raisonnement pour cet appel. Si activé, température et top_p de l’intégration ne sont pas envoyés."
+                },
+                "max_tokens": {
+                    "name": "Jetons max.",
+                    "description": "Remplace la limite de jetons de la réponse pour cet appel uniquement."
+                },
+                "response_format": {
+                    "name": "Format de réponse",
+                    "description": "Définir sur json_object pour demander une réponse JSON au modèle."
                 }
             }
         },

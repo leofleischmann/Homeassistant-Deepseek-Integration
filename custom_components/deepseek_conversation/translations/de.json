@@ -154,7 +154,7 @@
     "services": {
         "generate_content": {
             "name": "Inhalt generieren",
-            "description": "Sendet eine Konversationsanfrage an DeepSeek und gibt die Antwort zurück.",
+            "description": "Sendet einen Prompt an DeepSeek und gibt die Antwort zurück. Optionale Overrides pro Aufruf für Modell, Temperatur, Reasoning, max_tokens und JSON-Antwortformat.",
             "fields": {
                 "config_entry": {
                     "name": "Integrations-Eintrag",
@@ -163,6 +163,26 @@
                 "prompt": {
                     "name": "Prompt",
                     "description": "Nutzer-Nachricht an das Modell."
+                },
+                "chat_model": {
+                    "name": "Modell",
+                    "description": "Modell nur für diesen Aufruf überschreiben. Ohne Angabe gilt die Integrations-Option."
+                },
+                "temperature": {
+                    "name": "Temperatur",
+                    "description": "Temperatur (0–2) nur für diesen Aufruf überschreiben. Wird ignoriert, wenn Reasoning für diesen Aufruf aktiv ist."
+                },
+                "thinking_enabled": {
+                    "name": "Reasoning aktivieren",
+                    "description": "Reasoning nur für diesen Aufruf überschreiben. Wenn aktiv, werden Temperatur und top_p der Integration nicht gesendet."
+                },
+                "max_tokens": {
+                    "name": "Max. Tokens",
+                    "description": "Token-Limit der Antwort nur für diesen Aufruf überschreiben."
+                },
+                "response_format": {
+                    "name": "Antwortformat",
+                    "description": "Auf json_object setzen, um eine JSON-Antwort vom Modell anzufordern."
                 },
                 "filenames": {
                     "name": "Dateipfade",

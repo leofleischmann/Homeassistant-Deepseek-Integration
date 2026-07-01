@@ -2,7 +2,7 @@
 
 generate_content:
   name: Generate content (DeepSeek) # Added (DeepSeek) for clarity
-  description: Sends a conversational query to DeepSeek. # Updated description
+  description: Sends a conversational query to DeepSeek. Optional per-call overrides for model, temperature, thinking, max_tokens, and JSON response format; unset fields use the integration options.
   fields:
     config_entry:
       required: true
@@ -15,6 +15,36 @@ generate_content:
         text:
           multiline: true
       example: "Hello, how can I help you?"
+    chat_model:
+      example: deepseek-v4-flash
+      selector:
+        text:
+    temperature:
+      example: 1.0
+      selector:
+        number:
+          min: 0
+          max: 2
+          step: 0.05
+          mode: slider
+    thinking_enabled:
+      example: false
+      selector:
+        boolean:
+    max_tokens:
+      example: 1500
+      selector:
+        number:
+          min: 1
+          max: 1000000
+          mode: box
+    response_format:
+      example: json_object
+      selector:
+        select:
+          options:
+            - label: JSON object
+              value: json_object
     # Keep filenames, but note its functionality depends on API support
     filenames:
       selector:
