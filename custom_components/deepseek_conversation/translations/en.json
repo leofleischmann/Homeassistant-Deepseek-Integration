@@ -121,6 +121,7 @@
                     "vision_enabled": "Allow vision",
                     "context_management_enabled": "Context management",
                     "max_tool_result_chars": "Max tool result size (chars)",
+                    "max_history_rounds": "Max conversation rounds",
                     "reasoning_effort": "Reasoning effort"
                 },
                 "data_description": {
@@ -133,7 +134,8 @@
                     "max_tool_iterations": "Maximum API rounds when the model calls Home Assistant tools (1–20). Each round can run one or more tools.",
                     "vision_enabled": "When on, Assist can send image attachments and generate_content can use filenames. Requires a vision-capable model (V4 Flash/Pro). Advertises SUPPORT_ATTACHMENTS to Home Assistant when available.",
                     "context_management_enabled": "When on, large Home Assistant tool results (e.g. GetLiveContext) are shortened before sending to the API to reduce context-limit errors.",
-                    "max_tool_result_chars": "Maximum characters per tool result JSON (default 12000). Set to 0 to disable truncation. Only applies when context management is enabled."
+                    "max_tool_result_chars": "Maximum characters per tool result JSON (default 12000). Set to 0 to disable truncation. Only applies when context management is enabled.",
+                    "max_history_rounds": "Maximum user turns kept in Assist history (default 0 = unlimited). Older complete rounds are dropped before each API call; the system prompt and the current round including tool chains stay intact."
                 }
             }
         }

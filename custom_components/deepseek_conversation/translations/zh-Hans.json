@@ -121,6 +121,7 @@
                     "vision_enabled": "允许视觉",
                     "context_management_enabled": "上下文管理",
                     "max_tool_result_chars": "工具结果最大字符数",
+                    "max_history_rounds": "最大对话轮数",
                     "reasoning_effort": "推理强度"
                 },
                 "data_description": {
@@ -133,7 +134,8 @@
                     "max_tool_iterations": "模型调用 Home Assistant 工具时的最大 API 轮数（1–20）。每轮可执行一个或多个工具。",
                     "vision_enabled": "启用后 Assist 可发送图片附件，generate_content 可使用 filenames。需要支持视觉的模型（V4 Flash/Pro）。在 Home Assistant 支持时声明 SUPPORT_ATTACHMENTS。",
                     "context_management_enabled": "启用后，过大的 Home Assistant 工具结果（如 GetLiveContext）会在发往 API 前截断，以减少上下文超限错误。",
-                    "max_tool_result_chars": "每个工具结果 JSON 的最大字符数（默认 12000）。设为 0 表示不截断。仅在启用上下文管理时生效。"
+                    "max_tool_result_chars": "每个工具结果 JSON 的最大字符数（默认 12000）。设为 0 表示不截断。仅在启用上下文管理时生效。",
+                    "max_history_rounds": "Assist 历史中保留的最大用户轮数（默认 0 = 不限制）。每次 API 调用前丢弃最旧的完整轮次；系统提示词与当前轮（含工具链）始终保留。"
                 }
             }
         }

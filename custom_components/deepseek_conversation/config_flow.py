@@ -34,7 +34,9 @@ from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImp
 from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
 from .context_trim import (
+    MAX_HISTORY_ROUNDS_UPPER_BOUND,
     MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
+    coerce_max_history_rounds,
     coerce_max_tool_result_chars,
 )
 from .const import (
@@ -45,6 +47,7 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_CONTEXT_MANAGEMENT_ENABLED,
     CONF_MAX_TOOL_RESULT_CHARS,
+    CONF_MAX_HISTORY_ROUNDS,
     CONF_MAX_TOKENS,
     CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
@@ -68,6 +71,7 @@ from .const import (
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
     RECOMMENDED_MAX_TOOL_RESULT_CHARS,
+    RECOMMENDED_MAX_HISTORY_ROUNDS,
     MAX_TOOL_ITERATIONS_UPPER_BOUND,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
@@ -160,6 +164,7 @@ DEFAULT_OPTIONS = {
     CONF_VISION_ENABLED: DEFAULT_VISION_ENABLED,
     CONF_CONTEXT_MANAGEMENT_ENABLED: DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
     CONF_MAX_TOOL_RESULT_CHARS: RECOMMENDED_MAX_TOOL_RESULT_CHARS,
+    CONF_MAX_HISTORY_ROUNDS: RECOMMENDED_MAX_HISTORY_ROUNDS,
     CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
 }
 
@@ -582,6 +587,20 @@ def deepseek_config_option_schema(
                 max=MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
                 mode="box",
                 step=500,
+            )
+        ),
+        vol.Optional(
+            CONF_MAX_HISTORY_ROUNDS,
+            description={"suggested_value": options.get(CONF_MAX_HISTORY_ROUNDS)},
+            default=coerce_max_history_rounds(
+                options.get(CONF_MAX_HISTORY_ROUNDS, RECOMMENDED_MAX_HISTORY_ROUNDS)
+            ),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=0,
+                max=MAX_HISTORY_ROUNDS_UPPER_BOUND,
+                mode="box",
+                step=1,
             )
         ),
     }

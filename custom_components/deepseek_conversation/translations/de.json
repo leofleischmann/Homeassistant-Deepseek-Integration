@@ -121,6 +121,7 @@
                     "vision_enabled": "Vision erlauben",
                     "context_management_enabled": "Kontext-Management",
                     "max_tool_result_chars": "Max. Tool-Ergebnis (Zeichen)",
+                    "max_history_rounds": "Max. Gesprächsrunden",
                     "reasoning_effort": "Reasoning-Aufwand"
                 },
                 "data_description": {
@@ -133,7 +134,8 @@
                     "max_tool_iterations": "Maximale API-Runden, wenn das Modell Home-Assistant-Tools aufruft (1–20). Pro Runde können ein oder mehrere Tools laufen.",
                     "vision_enabled": "Wenn aktiv, kann Assist Bild-Anhänge senden und generate_content Dateipfade nutzen. Erfordert ein Vision-fähiges Modell (V4 Flash/Pro). Meldet SUPPORT_ATTACHMENTS an Home Assistant, sofern verfügbar.",
                     "context_management_enabled": "Wenn aktiv, werden große Home-Assistant-Tool-Ergebnisse (z. B. GetLiveContext) vor dem API-Aufruf gekürzt, um Kontextlimit-Fehler zu vermeiden.",
-                    "max_tool_result_chars": "Maximale Zeichen pro Tool-Ergebnis-JSON (Standard 12000). 0 = keine Kürzung. Nur wirksam, wenn Kontext-Management aktiv ist."
+                    "max_tool_result_chars": "Maximale Zeichen pro Tool-Ergebnis-JSON (Standard 12000). 0 = keine Kürzung. Nur wirksam, wenn Kontext-Management aktiv ist.",
+                    "max_history_rounds": "Maximale Anzahl User-Nachrichten in der Assist-Historie (Standard 0 = unbegrenzt). Älteste vollständige Runden werden vor jedem API-Aufruf entfernt; System-Prompt und die aktuelle Runde inkl. Tool-Ketten bleiben erhalten."
                 }
             }
         }

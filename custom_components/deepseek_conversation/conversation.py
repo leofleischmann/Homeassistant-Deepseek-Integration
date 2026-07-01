@@ -22,7 +22,7 @@ from homeassistant.helpers import device_registry as dr, intent, llm  # pyright:
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 
 from .api_errors import openai_exception_user_message
-from .context_trim import format_tool_result_content
+from .context_trim import format_tool_result_content, trim_messages_for_api
 from .const import (
     build_chat_completion_args,
     coerce_max_tool_iterations,
@@ -787,9 +787,10 @@ class DeepSeekConversationEntity(
             # added content instead of rebuilt — so image attachments stay encoded
             # once (see ``_apply_attachments_to_last_user_message``).
             for _iteration in range(max_tool_iterations):
+                messages_for_api = trim_messages_for_api(messages, options=options)
                 model_args = build_chat_completion_args(
                     model=model,
-                    messages=messages,
+                    messages=messages_for_api,
                     options=options,
                     stream=True,
                     tools=tools,

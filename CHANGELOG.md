@@ -16,6 +16,7 @@ All notable changes to this integration.
 - **Vision in Assist**: image attachments on `UserContent` (Assist chat, AI Task) are sent to DeepSeek V4 as `image_url` parts; shared encoding with `generate_content` via `vision.py`. Legacy `deepseek-reasoner` is rejected when images are attached.
 - **Allow vision option**: toggle in integration options (default on). When off, image attachments and `generate_content` filenames are rejected. When on and Home Assistant supports it, the conversation entity advertises `SUPPORT_ATTACHMENTS` for the Assist attach UI.
 - **Context management (stage 1)**: optional shortening of large Home Assistant tool result JSON before API calls (default 12 000 chars per tool result). Toggle **Context management** in options; set **Max tool result size** to `0` to disable truncation. Debug: `[Debug context_trim]: truncated tool result …`.
+- **Context management (stage 2)**: optional **Max conversation rounds** (`max_history_rounds`, default `0` = unlimited). Drops oldest complete user turns before each API call while keeping the system prompt and the current round (including in-progress tool chains) intact.
 
 ### Improved
 
