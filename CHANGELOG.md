@@ -6,20 +6,20 @@ All notable changes to this integration.
 
 ### Added
 
+- **Token usage sensors** per config entry: cumulative prompt, completion, total, reasoning, and API request counters, plus last-request total with dedicated prompt/completion sensors (reasoning remains on the last-request attributes when the API reports it). **Reset usage** button on the device to zero all counters manually.
 - **Reauthentication** when your API key expires or is rejected — fix credentials in Home Assistant settings without removing and re-adding the integration.
 - **Reconfigure** (integration card ⋮ → Reconfigure) to change your API key or base URL while keeping Assist and model options unchanged.
-- **Token usage sensors** per config entry: cumulative prompt, completion, total, reasoning, and API request counters, plus last-request total with dedicated prompt/completion sensors (reasoning remains on the last-request attributes when the API reports it). **Reset usage** button on the device to zero all counters manually.
-- **DeepSeek brand icons** in the integrations list and config flow (Home Assistant 2026.3+).
 - **More translations** for the `generate_content` service, invalid config entry errors, reasoning effort labels, reconfigure, options field hints, and the debug notification (EN, DE, FR, ZH).
+- **DeepSeek brand icons** in the integrations list and config flow (Home Assistant 2026.3+).
 
 ### Improved
 
+- **More reliable device control**: Home Assistant tools with invalid schemas are skipped instead of being sent with empty parameters, which previously caused opaque API errors.
+- **Faster option changes**: updates to prompt, model, temperature, thinking, and similar options apply immediately in Assist without reloading the whole integration. Reload only runs for connection settings (base URL, API key).
 - **Clearer configuration UX**: the gear icon opens Assist and model options directly; API key and base URL are changed only via Reconfigure (not mixed into options). API keys use a password field in setup, reauth, and reconfigure.
 - **Options form**: all fields stay visible (reasoning, reasoning effort, temperature, top_p); one OK saves everything — no form reload when toggling reasoning.
-- **Faster option changes**: updates to prompt, model, temperature, thinking, and similar options apply immediately in Assist without reloading the whole integration. Reload only runs for connection settings (base URL, API key).
 - **Quicker setup and reauth**: credentials are verified via `models.list` instead of a chat completion, so setup does not consume tokens.
 - **`generate_content` with reasoning**: temperature and top_p are no longer sent when reasoning is enabled (consistent with Assist).
-- **More reliable device control**: Home Assistant tools with invalid schemas are skipped instead of being sent with empty parameters, which previously caused opaque API errors.
 
 ### Fixed
 
