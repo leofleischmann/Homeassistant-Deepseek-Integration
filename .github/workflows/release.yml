@@ -80,32 +80,60 @@ jobs:
         run: |
           echo "Tag ${{ steps.manifest.outputs.tag }} exists; skipping release."
 
-      - name: Generate release notes
+      - name: Read release notes from CHANGELOG.md
         if: steps.changed.outputs.changed == 'true' && steps.tagcheck.outputs.exists != 'true'
         id: notes
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.manifest.outputs.version }}
         run: |
           set -euo pipefail
-          tag="${{ steps.manifest.outputs.tag }}"
-          last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-          # Random delimiter so commit messages cannot accidentally close the
-          # multiline output value (GitHub heredoc syntax requires an UNQUOTED
-          # delimiter; plain "EOF" is fragile if a commit message contains it).
+          version="${RELEASE_VERSION}"
           delim="EOF_$(openssl rand -hex 16)"
-          {
-            echo "body<<${delim}"
-            echo "## Änderungen"
-            echo
-            if [ -n "$last_tag" ]; then
-              echo "**Vergleich:** $last_tag ... $tag"
+          body="$(python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"]
+          changelog = Path("CHANGELOG.md")
+          if changelog.is_file():
+              content = changelog.read_text(encoding="utf-8")
+              pattern = (
+                  rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)"
+              )
+              match = re.search(pattern, content, flags=re.MULTILINE | re.DOTALL)
+              if match:
+                  print(match.group(0).strip())
+                  raise SystemExit(0)
+          raise SystemExit(1)
+          PY
+          )" || body=""
+
+          if [ -z "$body" ]; then
+            echo "[Debug release]: CHANGELOG section for $version missing; using git log fallback"
+            last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            {
+              echo "body<<${delim}"
+              echo "## Änderungen"
               echo
-              git log --no-merges --pretty=format:"- %s (%h)" "$last_tag"..HEAD
-            else
-              git log --no-merges --pretty=format:"- %s (%h)"
-            fi
-            echo
-            echo "${delim}"
-          } >> "$GITHUB_OUTPUT"
+              if [ -n "$last_tag" ]; then
+                echo "**Vergleich:** $last_tag ... $version"
+                echo
+                git log --no-merges --pretty=format:"- %s (%h)" "$last_tag"..HEAD
+              else
+                git log --no-merges --pretty=format:"- %s (%h)"
+              fi
+              echo
+              echo "${delim}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "body<<${delim}"
+              echo "$body"
+              echo "${delim}"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create Git tag
         if: steps.changed.outputs.changed == 'true' && steps.tagcheck.outputs.exists != 'true'
@@ -120,4 +148,3 @@ jobs:
           tag_name: ${{ steps.manifest.outputs.tag }}
           name: ${{ steps.manifest.outputs.tag }}
           body: ${{ steps.notes.outputs.body }}
-
