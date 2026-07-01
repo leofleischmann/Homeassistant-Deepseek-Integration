@@ -40,3 +40,4 @@ All notable changes to this integration.
 - **Reasoning on**: `reasoning_effort` (e.g. low, high, xhigh) is sent correctly with `thinking: enabled`; temperature and top_p are omitted as required by the API.
 - **Reasoning off on other endpoints**: DeepSeek-specific `extra_body` is only sent for DeepSeek model IDs, so custom OpenAI-compatible gateways are not sent thinking fields unless the model id indicates DeepSeek.
 - **Vision attachments** use the resolved image MIME type instead of always sending `image/jpeg`.
+- **`generate_content` with filenames**: fixed image encoding (`async_add_executor_job` `strict` argument). The service now fails with a clear error when no image could be read instead of calling the API with text only (which caused hallucinated descriptions).

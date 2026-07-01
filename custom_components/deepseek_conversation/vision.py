@@ -179,10 +179,16 @@ async def async_image_parts_from_filenames(
     hass: HomeAssistant,
     filenames: list[str],
 ) -> list[dict[str, Any]]:
-    """Encode ``generate_content`` ``filenames`` paths (non-strict skip)."""
+    """Encode ``generate_content`` ``filenames`` paths.
+
+    Raises ``HomeAssistantError`` when paths were given but no image could be
+    encoded (missing file, disallowed path, or non-image type). Used from __init__.py.
+    """
     files: list[tuple[Path, str | None]] = []
+    disallowed: list[str] = []
     for filename in filenames:
         if not hass.config.is_allowed_path(filename):
+            disallowed.append(filename)
             LOGGER.warning(
                 "[Debug vision]: cannot read %s, path not allowed; "
                 "adjust allowlist_external_dirs in configuration.yaml",
@@ -190,7 +196,30 @@ async def async_image_parts_from_filenames(
             )
             continue
         files.append((Path(filename), None))
-    return await async_image_parts_from_paths(hass, files, strict=False)
+
+    if disallowed and not files:
+        raise HomeAssistantError(
+            "No filename path is allowed for Home Assistant to read. Add the "
+            "directory to allowlist_external_dirs in configuration.yaml "
+            f"(blocked: {', '.join(disallowed)})"
+        )
+
+    parts, total_bytes = await hass.async_add_executor_job(
+        _read_image_parts_from_paths, files, False
+    )
+    if not parts:
+        paths = ", ".join(str(path) for path, _ in files) or ", ".join(filenames)
+        raise HomeAssistantError(
+            "Could not read any image from filenames. Check that each file "
+            f"exists and is an image (JPEG, PNG, …): {paths}"
+        )
+
+    LOGGER.debug(
+        "[Debug vision]: %d attachment(s) from filenames, %d total bytes",
+        len(parts),
+        total_bytes,
+    )
+    return parts
 
 
 async def async_user_message_content(
