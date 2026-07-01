@@ -1,56 +1,41 @@
 """Conversation support for DeepSeek."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator, Callable
 import datetime
 import json
 import re
-# Removed Literal import as it might not be strictly needed now
-from typing import Any, AsyncGenerator, Callable, Literal, cast, Optional, Union, Dict, List
+from typing import Any, Literal
 
 import openai
-# Import necessary types for chat completions
 from openai import AsyncStream
 from openai.types.chat import ChatCompletionChunk
-from openai.types.chat.chat_completion import ChatCompletionMessage, ChatCompletion
 from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall
-
-# --- Import voluptuous_openapi ---
 from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
-# --- End Import ---
-import voluptuous as vol # Keep for basic schema validation if needed  # pyright: ignore[reportMissingImports]
 
 from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
-from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
-# --- Import CONF_LLM_HASS_API ---
-from homeassistant.const import MATCH_ALL, CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
-# --- End Import ---
+from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
-# --- Import HomeAssistantError --- Needed for exception handling
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
-# --- End Import ---
 from homeassistant.helpers import device_registry as dr, intent, llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 
 from .api_errors import openai_exception_user_message
-
-# Use the specific type alias if defined, otherwise generic ConfigEntry
-# from . import DeepSeekConfigEntry
-type DeepSeekConfigEntry = ConfigEntry
-
-# Updated imports from const
 from .const import (
+    build_chat_completion_args,
     CONF_CHAT_MODEL,
     CONF_PROMPT,
-    build_chat_completion_args,
-    DEFAULT_SYSTEM_PROMPT,
     CONF_STRIP_MARKDOWN,
     CONF_THINKING_ENABLED,
-    DEFAULT_THINKING_ENABLED,
     DEFAULT_STRIP_MARKDOWN,
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_THINKING_ENABLED,
     DOMAIN,
     LOGGER,
     RECOMMENDED_CHAT_MODEL,
 )
+from .types import DeepSeekConfigEntry
 
 # Max number of back and forth with the LLM for tool usage
 MAX_TOOL_ITERATIONS = 10
@@ -207,55 +192,44 @@ async def async_setup_entry(
     async_add_entities([agent])
 
 
-# --- Tool Formatting (Keep if using tools with DeepSeek) ---
 def _format_tool(
     tool: llm.Tool, custom_serializer: Callable[[Any], Any] | None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Format tool specification for OpenAI-compatible tool format."""
-    # --- Use voluptuous_openapi.convert for parameters ---
     try:
-        # Pass the voluptuous schema directly to convert
         parameters = convert(tool.parameters, custom_serializer=custom_serializer)
-    except Exception as e:
-        LOGGER.error("Error converting tool parameters for %s: %s", tool.name, e)
-        # Fallback or decide how to handle conversion errors
-        parameters = {"type": "object", "properties": {}} # Empty schema on error
-    # --- End Use ---
+    except Exception as err:
+        LOGGER.error("Error converting tool parameters for %s: %s", tool.name, err)
+        parameters = {"type": "object", "properties": {}}
 
     return {
         "type": "function",
         "function": {
             "name": tool.name,
             "description": tool.description,
-            "parameters": parameters, # Use the converted JSON schema
-        }
+            "parameters": parameters,
+        },
     }
-# --- End Tool Formatting ---
 
 
-# --- Message Conversion (Adapted for chat.completions) ---
-# --- MODIFIED: Removed system_prompt argument ---
 def _convert_content_to_messages(
     content_list: list[conversation.Content],
     *,
     model: str,
     thinking_enabled: bool,
 ) -> list[dict[str, Any]]:
-    """Convert conversation history (excluding system prompt) to DeepSeek API message format."""
-    messages = []
-    # --- REMOVED: Explicit system prompt addition ---
+    """Convert conversation history to DeepSeek API message format."""
+    messages: list[dict[str, Any]] = []
 
     for content in content_list:
-        role: Optional[Literal["user", "assistant", "tool"]] = None
+        role: Literal["user", "assistant", "tool", "system"] | None = None
         message_content: str | list[dict[str, Any]] | None = None
         tool_calls: list[ChatCompletionMessageToolCall] | None = None
         tool_call_id: str | None = None
 
-        # --- Include system messages ---
         if isinstance(content, conversation.SystemContent):
             role = "system"
             message_content = content.content
-        # --- End ADDED ---
 
         if isinstance(content, conversation.UserContent):
             role = "user"
@@ -281,7 +255,7 @@ def _convert_content_to_messages(
             tool_call_id = content.tool_call_id
 
         if role:
-            msg: Dict[str, Any] = {"role": role}
+            msg: dict[str, Any] = {"role": role}
             if message_content:
                 msg["content"] = message_content
             if isinstance(content, conversation.AssistantContent):
@@ -301,7 +275,6 @@ def _convert_content_to_messages(
             messages.append(msg)
 
     return messages
-# --- End Message Conversion ---
 
 
 def _final_speech_from_chat_log(content_list: list[conversation.Content]) -> str:
@@ -364,7 +337,6 @@ def _stream_delta_text(delta: Any, field: str) -> str | None:
     return None
 
 
-# --- Stream Transformation (Adapted for ChatCompletionChunk) ---
 async def _transform_stream(
     chat_log: conversation.ChatLog,
     result: AsyncStream[ChatCompletionChunk],
@@ -378,9 +350,9 @@ async def _transform_stream(
     as a sentinel — preventing a redundant role transition that would create
     an empty AssistantContent in chat_log.
     """
-    current_tool_calls: list[dict] = []
+    current_tool_calls: list[dict[str, Any]] = []
     current_tool_call_args_buffer: dict[int, str] = {}
-    role: Optional[Literal["assistant"]] = None
+    role: Literal["assistant"] | None = None
     role_emitted = role_already_emitted  # Track whether {"role": "assistant"} has been emitted for this stream
     async for chunk in result:
 
@@ -496,8 +468,6 @@ async def _transform_stream(
             else:
                  raise HomeAssistantError(f"finish_reason_{finish_reason}")
 
-# --- End Stream Transformation ---
-
 
 class DeepSeekConversationEntity(
     conversation.ConversationEntity, conversation.AbstractConversationAgent
@@ -580,44 +550,45 @@ class DeepSeekConversationEntity(
                 code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
             )
 
-        # --- Prepare tools if HASS API is available in chat_log ---
-        tools: list[Dict[str, Any]] | None = None
-        tool_choice: Optional[Union[str, Dict[str, Any]]] = None
-        hass_api_key = options.get(CONF_LLM_HASS_API) # Still useful for logging
+        tools: list[dict[str, Any]] | None = None
+        tool_choice: str | dict[str, Any] | None = None
+        hass_api_key = options.get(CONF_LLM_HASS_API)
 
-        if chat_log.llm_api:  # Set by async_provide_llm_data
+        if chat_log.llm_api:
             active_llm_api = chat_log.llm_api
             try:
-                 # --- Use _format_tool which now includes conversion ---
-                 tools = [
-                     _format_tool(tool, active_llm_api.custom_serializer)
-                     for tool in active_llm_api.tools
-                 ]
-                 # --- End Use ---
-                 tool_choice = "auto"
-                 # Log only tool names to avoid serialization errors
-                 tool_names = [t.get("function", {}).get("name", "unknown") for t in tools]
-                 LOGGER.debug("Sending tools to DeepSeek (from chat_log.llm_api): %s", tool_names)
-            except Exception as e:
-                 # Log error during tool formatting/conversion
-                 LOGGER.error("Error formatting tools: %s", e, exc_info=True)
-                 tools = None # Ensure tools are None if formatting failed
-                 tool_choice = None
+                tools = [
+                    _format_tool(tool, active_llm_api.custom_serializer)
+                    for tool in active_llm_api.tools
+                ]
+                tool_choice = "auto"
+                tool_names = [
+                    t.get("function", {}).get("name", "unknown") for t in tools
+                ]
+                LOGGER.debug(
+                    "Sending tools to DeepSeek (from chat_log.llm_api): %s",
+                    tool_names,
+                )
+            except Exception as err:
+                LOGGER.error("Error formatting tools: %s", err, exc_info=True)
+                tools = None
+                tool_choice = None
         elif hass_api_key:
             LOGGER.warning(
-                "HASS API '%s' selected in options, but chat_log.llm_api is None after async_provide_llm_data. Tools cannot be sent.",
+                "HASS API '%s' selected in options, but chat_log.llm_api is None "
+                "after async_provide_llm_data. Tools cannot be sent.",
                 hass_api_key,
             )
-        # --- End Tool Prep ---
 
         thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
 
-        # --- Convert chat history (NOW EXCLUDES system prompt) ---
         initial_messages = _convert_content_to_messages(
             chat_log.content, model=model, thinking_enabled=thinking_on
         )
-        LOGGER.debug("Sending messages to DeepSeek (excluding system): %s", json.dumps(initial_messages, indent=2, cls=_HAJSONEncoder))
-        # --- End Convert ---
+        LOGGER.debug(
+            "Sending messages to DeepSeek: %s",
+            json.dumps(initial_messages, indent=2, cls=_HAJSONEncoder),
+        )
 
         max_iterations_reached = False
         current_messages = list(initial_messages)
@@ -750,10 +721,9 @@ class DeepSeekConversationEntity(
             conversation_id=chat_log.conversation_id,
             continue_conversation=chat_log.continue_conversation,
         )
-        # --- End final response construction ---
 
     async def _async_entry_update_listener(
-        self, hass: HomeAssistant, entry: ConfigEntry
+        self, hass: HomeAssistant, entry: DeepSeekConfigEntry
     ) -> None:
         """Handle options update."""
         await hass.config_entries.async_reload(entry.entry_id)

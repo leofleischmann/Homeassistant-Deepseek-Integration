@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
@@ -16,9 +15,7 @@ from homeassistant.config_entries import (  # pyright: ignore[reportMissingImpor
     ConfigFlowResult,
     OptionsFlow,
 )
-# --- Import CONF_LLM_HASS_API ---
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
-# --- End Import ---
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
@@ -33,34 +30,32 @@ from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImp
 )
 from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
-# Updated imports from const
 from .const import (
     CHAT_MODEL_OPTIONS,
     coerce_max_tokens,
+    CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_MAX_TOKENS,
     CONF_PROMPT,
-    DEFAULT_SYSTEM_PROMPT,
     CONF_REASONING_EFFORT,
+    CONF_STRIP_MARKDOWN,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
-    CONF_STRIP_MARKDOWN,
     CONF_TOP_P,
-    CONF_BASE_URL,
-    DEFAULT_THINKING_ENABLED,
     DEFAULT_STRIP_MARKDOWN,
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_THINKING_ENABLED,
+    DEEPSEEK_API_BASE_URL,
     DOMAIN,
+    LOGGER,
+    MAX_TOKENS_UPPER_BOUND,
+    REASONING_EFFORT_SELECT,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
-    REASONING_EFFORT_SELECT,
-    DEEPSEEK_API_BASE_URL,
-    MAX_TOKENS_UPPER_BOUND,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 def _normalize_llm_hass_api(value: Any) -> list[str] | None:
@@ -104,12 +99,11 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema(
     }
 )
 
-# Add CONF_LLM_HASS_API back to default options if desired, e.g., default to Assist
 DEFAULT_OPTIONS = {
-    CONF_LLM_HASS_API: [llm.LLM_API_ASSIST], # Default to Assist API
+    CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
     CONF_PROMPT: DEFAULT_SYSTEM_PROMPT,
     CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
-    CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS, # Remember to increase this in UI!
+    CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS,
     CONF_TEMPERATURE: RECOMMENDED_TEMPERATURE,
     CONF_TOP_P: RECOMMENDED_TOP_P,
     CONF_THINKING_ENABLED: DEFAULT_THINKING_ENABLED,
@@ -131,7 +125,7 @@ async def async_probe_deepseek_client(client: openai.AsyncOpenAI) -> None:
         await client.with_options(timeout=_PROBE_TIMEOUT).models.list()
     except openai.APIStatusError as err:
         if err.status_code in (404, 405, 501):
-            _LOGGER.debug(
+            LOGGER.debug(
                 "DeepSeek base URL does not implement /models (%s); skipping probe",
                 err.status_code,
             )
@@ -184,13 +178,13 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
             if err.status_code in (401, 403):
                 errors["base"] = "invalid_auth"
             else:
-                _LOGGER.error("DeepSeek API status error during validation: %s", err)
+                LOGGER.error("DeepSeek API status error during validation: %s", err)
                 errors["base"] = "api_error"
         except openai.OpenAIError as e:
-            _LOGGER.error("DeepSeek API error during validation: %s", e)
+            LOGGER.error("DeepSeek API error during validation: %s", e)
             errors["base"] = "api_error"
         except Exception:
-            _LOGGER.exception("Unexpected exception during validation")
+            LOGGER.exception("Unexpected exception during validation")
             errors["base"] = "unknown"
         else:
             # Separate data (connection settings) from options (model settings)
@@ -243,13 +237,13 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                 if err.status_code in (401, 403):
                     errors["base"] = "invalid_auth"
                 else:
-                    _LOGGER.error("DeepSeek API status error during reauth: %s", err)
+                    LOGGER.error("DeepSeek API status error during reauth: %s", err)
                     errors["base"] = "api_error"
             except openai.OpenAIError as e:
-                _LOGGER.error("DeepSeek API error during reauth: %s", e)
+                LOGGER.error("DeepSeek API error during reauth: %s", e)
                 errors["base"] = "api_error"
             except Exception:
-                _LOGGER.exception("Unexpected exception during reauth")
+                LOGGER.exception("Unexpected exception during reauth")
                 errors["base"] = "unknown"
             else:
                 return self.async_update_reload_and_abort(
@@ -283,7 +277,7 @@ class DeepSeekOptionsFlow(OptionsFlow):
         try:
             config_entry = self.config_entry
         except AttributeError:
-            _LOGGER.error("config_entry not available in OptionsFlow")
+            LOGGER.error("config_entry not available in OptionsFlow")
             return self.async_abort(reason="config_entry_not_available")
         
         errors: dict[str, str] = {}
