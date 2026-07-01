@@ -577,6 +577,12 @@ async def _deepseek_tool_iteration_stream(
         )
         yield {"role": "assistant"}
 
+        # Role boundary finalizes the previous assistant turn and runs tools in chat_log.
+        if _iteration > 0:
+            current_messages = _convert_content_to_messages(
+                chat_log.content, model=model, thinking_enabled=thinking_on
+            )
+
         model_args = build_chat_completion_args(
             model=model,
             messages=current_messages,
@@ -589,6 +595,7 @@ async def _deepseek_tool_iteration_stream(
 
         result = await client.chat.completions.create(**model_args)
         iteration_usage: list[CompletionUsage] = []
+        iteration_had_tool_calls = False
         async for delta in _transform_stream(
             chat_log,
             result,
@@ -596,10 +603,15 @@ async def _deepseek_tool_iteration_stream(
             role_already_emitted=True,
             usage_events=iteration_usage,
         ):
+            if delta.get("tool_calls"):
+                iteration_had_tool_calls = True
             yield delta
         usage_sink.extend(iteration_usage)
 
-        if not chat_log.unresponded_tool_results:
+        # Do not use chat_log.unresponded_tool_results here: inside one chained
+        # stream, tools run when the next role boundary is processed or when the
+        # stream ends — not yet when _transform_stream finishes.
+        if not iteration_had_tool_calls:
             LOGGER.debug("Iteration %d finished. No tool calls.", _iteration + 1)
             return
 
@@ -607,14 +619,12 @@ async def _deepseek_tool_iteration_stream(
             "Iteration %d finished. Tool calls in flight, preparing next iteration.",
             _iteration + 1,
         )
-        current_messages = _convert_content_to_messages(
-            chat_log.content, model=model, thinking_enabled=thinking_on
-        )
 
     LOGGER.warning(
         "[Debug conversation]: max tool iterations (%d) reached in stream",
         MAX_TOOL_ITERATIONS,
     )
+    raise HomeAssistantError("max_tool_iterations")
 
 
 class DeepSeekConversationEntity(
@@ -827,21 +837,21 @@ class DeepSeekConversationEntity(
                 code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
             )
         except HomeAssistantError as err:
-            LOGGER.error("Error processing DeepSeek stream: %s", err)
-            error_msg = str(err)
-            if error_msg == "max_token":
-                error_msg = "Response truncated by token limit"
-            elif error_msg == "content_filter":
-                error_msg = "Response blocked by content filter"
-            return _intent_error_result(
-                language=user_input.language,
-                conversation_id=chat_log.conversation_id,
-                message=error_msg,
-                code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-            )
-
-        if chat_log.unresponded_tool_results:
-            max_iterations_reached = True
+            if str(err) == "max_tool_iterations":
+                max_iterations_reached = True
+            else:
+                LOGGER.error("Error processing DeepSeek stream: %s", err)
+                error_msg = str(err)
+                if error_msg == "max_token":
+                    error_msg = "Response truncated by token limit"
+                elif error_msg == "content_filter":
+                    error_msg = "Response blocked by content filter"
+                return _intent_error_result(
+                    language=user_input.language,
+                    conversation_id=chat_log.conversation_id,
+                    message=error_msg,
+                    code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
+                )
 
         if max_iterations_reached:
             LOGGER.warning(
