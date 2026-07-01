@@ -132,7 +132,7 @@
                     "top_p": "Utilisé uniquement si le raisonnement est désactivé.",
                     "chat_model": "Les anciens identifiants deepseek-chat et deepseek-reasoner fonctionnent jusqu’au 2026-07-24.",
                     "max_tool_iterations": "Nombre maximal de tours API lorsque le modèle appelle des outils Home Assistant (1–20). Chaque tour peut exécuter un ou plusieurs outils.",
-                    "vision_enabled": "Si activé, Assist peut envoyer des images en pièce jointe et generate_content peut utiliser des chemins de fichiers. Nécessite un modèle compatible vision (V4 Flash/Pro). Déclare SUPPORT_ATTACHMENTS à Home Assistant lorsque disponible.",
+                    "vision_enabled": "Si activé, Assist peut envoyer des images en pièce jointe et generate_content peut utiliser des chemins de fichiers. Fonctionne uniquement avec une URL de base OpenAI-compatible personnalisée prenant en charge le multimodal ; l’endpoint officiel api.deepseek.com est texte seul. Déclare SUPPORT_ATTACHMENTS à Home Assistant lorsque disponible.",
                     "context_management_enabled": "Si activé, les grands résultats d’outils Home Assistant (ex. GetLiveContext) sont raccourcis avant l’appel API pour limiter les erreurs de contexte.",
                     "max_tool_result_chars": "Nombre maximal de caractères par résultat JSON d’outil (défaut 12000). 0 = pas de troncature. Uniquement si la gestion du contexte est activée.",
                     "max_history_rounds": "Nombre maximal de tours utilisateur conservés dans l’historique Assist (défaut 0 = illimité). Les tours complets les plus anciens sont supprimés avant chaque appel API ; l’invite système et le tour en cours (y compris les chaînes d’outils) restent intacts."

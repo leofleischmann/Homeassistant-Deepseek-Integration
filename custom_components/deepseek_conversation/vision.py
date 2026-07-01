@@ -1,9 +1,10 @@
 """Shared vision/image encoding for Assist and generate_content.
 
 Used by conversation.py (UserContent.attachments from Assist / AI Task) and
-__init__.py (generate_content filenames). DeepSeek V4 expects OpenAI-style
-image_url content parts. Option CONF_VISION_ENABLED gates Assist attachments
-and generate_content filenames; see config_flow.py and conversation.py.
+__init__.py (generate_content filenames). OpenAI-style ``image_url`` content
+parts are sent when the configured base URL is not the official DeepSeek host
+(api.deepseek.com is text-only per API docs). Option CONF_VISION_ENABLED gates
+Assist attachments and generate_content filenames; see config_flow.py.
 """
 
 from __future__ import annotations
@@ -18,7 +19,41 @@ from homeassistant.components import conversation  # pyright: ignore[reportMissi
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
 
-from .const import CONF_VISION_ENABLED, DEFAULT_VISION_ENABLED, LOGGER
+from .const import (
+    CONF_VISION_ENABLED,
+    DEEPSEEK_API_BASE_URL,
+    DEFAULT_VISION_ENABLED,
+    LOGGER,
+)
+
+_VISION_UNSUPPORTED_OFFICIAL_API_MSG = (
+    "The official DeepSeek API (api.deepseek.com) only accepts plain text in "
+    "chat messages and rejects image_url parts. Image input requires a custom "
+    "OpenAI-compatible base URL with multimodal chat support (Reconfigure on "
+    "the integration card)."
+)
+
+
+def is_official_deepseek_api_base_url(base_url: str | None) -> bool:
+    """True for DeepSeek's hosted chat API, which does not accept image content."""
+    raw = (base_url or DEEPSEEK_API_BASE_URL).strip().lower()
+    while raw.endswith("/"):
+        raw = raw[:-1]
+    if raw.endswith("/v1"):
+        raw = raw[:-3]
+    while raw.endswith("/"):
+        raw = raw[:-1]
+    return raw in ("https://api.deepseek.com", "http://api.deepseek.com")
+
+
+def raise_if_vision_unsupported_for_api(base_url: str | None) -> None:
+    """Fail fast before encoding images when the endpoint cannot accept them."""
+    if is_official_deepseek_api_base_url(base_url):
+        LOGGER.debug(
+            "[Debug vision]: blocked image input for official API base_url=%r",
+            base_url,
+        )
+        raise HomeAssistantError(_VISION_UNSUPPORTED_OFFICIAL_API_MSG)
 
 # Home Assistant 2026.x may add this flag; getattr keeps older cores working.
 CONVERSATION_SUPPORT_ATTACHMENTS = getattr(

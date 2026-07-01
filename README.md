@@ -9,7 +9,7 @@ Community project — not part of Home Assistant Core.
 ## What you get
 
 - **Assist** (voice and text) with streaming, optional **Home Assistant tools**, and **reasoning** toggle
-- **Vision** (optional): image attachments in Assist and image paths in `generate_content` (V4 Flash/Pro; toggle in options)
+- **Vision** (optional): image attachments in Assist and paths in `generate_content` when using a **custom** OpenAI-compatible base URL with multimodal chat. The official `api.deepseek.com` endpoint is text-only (toggle in options).
 - **Context management** (optional): trim large tool results and limit Assist history rounds
 - **Automations** via `conversation.process` (same agent as Assist) or service `deepseek_conversation.generate_content`
 - **Token sensors** per config entry (cumulative prompt, completion, total, reasoning, API requests; last request total plus prompt/completion breakdown); updated on Assist and `generate_content` calls. Reset manually via the **Reset usage** button on the integration device.

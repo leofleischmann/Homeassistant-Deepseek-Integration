@@ -26,11 +26,13 @@ from .context_trim import format_tool_result_content, trim_messages_for_api
 from .const import (
     build_chat_completion_args,
     coerce_max_tool_iterations,
+    CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
     CONF_STRIP_MARKDOWN,
     CONF_THINKING_ENABLED,
+    DEEPSEEK_API_BASE_URL,
     DEFAULT_STRIP_MARKDOWN,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_THINKING_ENABLED,
@@ -46,6 +48,7 @@ from .vision import (
     conversation_entity_features_for_options,
     latest_user_attachments,
     model_supports_vision,
+    raise_if_vision_unsupported_for_api,
     vision_enabled_in_options,
 )
 
@@ -742,6 +745,17 @@ class DeepSeekConversationEntity(
                         f"The selected model ({model}) does not support image "
                         "attachments. Use deepseek-v4-flash or deepseek-v4-pro."
                     ),
+                    code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
+                )
+            try:
+                raise_if_vision_unsupported_for_api(
+                    self.entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+                )
+            except HomeAssistantError as err:
+                return _intent_error_result(
+                    language=user_input.language,
+                    conversation_id=chat_log.conversation_id,
+                    message=str(err),
                     code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
                 )
 

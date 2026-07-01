@@ -15,6 +15,13 @@ _CONTEXT_HINT = (
 def openai_exception_user_message(err: BaseException) -> str:
     """Return a short explanation for Assist / service callers."""
     text = str(err).lower()
+    if "image_url" in text and "unknown variant" in text:
+        return (
+            "The API endpoint does not accept image input (image_url content parts). "
+            "The official DeepSeek API (api.deepseek.com) is text-only. Use images "
+            "only with a vision-capable OpenAI-compatible gateway, or remove them "
+            "from the request."
+        )
     if isinstance(err, openai.BadRequestError):
         if any(
             w in text

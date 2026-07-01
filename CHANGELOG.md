@@ -6,7 +6,7 @@ All notable changes to this integration.
 
 ### Added
 
-- **Vision in Assist**: image attachments on `UserContent` (Assist chat, AI Task) are sent to DeepSeek V4 as `image_url` parts; shared encoding with `generate_content` via `vision.py`. Legacy `deepseek-reasoner` is rejected when images are attached.
+- **Vision in Assist** (custom base URL with multimodal chat): image attachments on `UserContent` (Assist chat, AI Task) are sent as OpenAI-style `image_url` parts; shared encoding with `generate_content` via `vision.py`. Legacy `deepseek-reasoner` is rejected when images are attached. The official `api.deepseek.com` endpoint is text-only and rejects image input.
 - **Allow vision option**: toggle in integration options (default on). When off, image attachments and `generate_content` filenames are rejected. When on and Home Assistant supports it, the conversation entity advertises `SUPPORT_ATTACHMENTS` for the Assist attach UI.
 - **Token usage monitoring** on the integration device (per config entry), updated after Assist and `generate_content` calls (`run_debug` does not count):
   - Cumulative sensors (persist across restarts): `prompt_tokens`, `completion_tokens`, `total_tokens`, `reasoning_tokens`, `api_requests`
@@ -41,3 +41,4 @@ All notable changes to this integration.
 - **Reasoning off on other endpoints**: DeepSeek-specific `extra_body` is only sent for DeepSeek model IDs, so custom OpenAI-compatible gateways are not sent thinking fields unless the model id indicates DeepSeek.
 - **Vision attachments** use the resolved image MIME type instead of always sending `image/jpeg`.
 - **`generate_content` with filenames**: fixed image encoding (`async_add_executor_job` `strict` argument). The service now fails with a clear error when no image could be read instead of calling the API with text only (which caused hallucinated descriptions).
+- **Vision on official DeepSeek API**: image requests are rejected before the API call with a clear error instead of an opaque 400 (`unknown variant image_url`). Applies to Assist attachments and `generate_content` filenames when the base URL is `api.deepseek.com`.

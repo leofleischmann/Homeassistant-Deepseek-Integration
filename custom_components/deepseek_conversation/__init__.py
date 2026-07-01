@@ -54,7 +54,12 @@ from .const import (
 from .debug import async_run_debug_suite
 from .types import DeepSeekConfigEntry, DeepSeekRuntimeData
 from .usage_metrics import UsageTracker, completion_usage_from_api
-from .vision import async_image_parts_from_filenames, vision_enabled_in_options
+from .vision import (
+    async_image_parts_from_filenames,
+    raise_if_vision_unsupported_for_api,
+    vision_enabled_in_options,
+)
+
 
 SERVICE_GENERATE_CONTENT = "generate_content"
 SERVICE_RUN_DEBUG = "run_debug"
@@ -122,6 +127,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     "Vision is disabled in DeepSeek options. Enable "
                     "'Allow vision' or remove filenames from the service call."
                 )
+            raise_if_vision_unsupported_for_api(
+                entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+            )
             user_content.extend(
                 await async_image_parts_from_filenames(hass, filenames)
             )
