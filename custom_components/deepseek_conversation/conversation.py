@@ -366,11 +366,11 @@ def _prime_assist_ui_after_tool_results(chat_log: conversation.ChatLog) -> None:
     """Prepare stock ``ha-assist-chat`` for the next stream after tool results.
 
     Assist sets ``currentDeltaRole`` to ``tool_result`` per tool-result delta.
-    A follow-up ``role: assistant`` delta alone does not call ``requestUpdate``;
-    the next stream therefore starts with ``emit_start_role=False`` so the first
-    thinking/content chunk carries ``role`` in the same event (see
-    ``_transform_stream``). This listener-only nudge is a belt-and-suspenders
-    repaint when the pipeline is between ``async_add_delta_content_stream`` calls.
+    Call this only after ``async_add_delta_content_stream`` finished and
+    ``unresponded_tool_results`` is true (tools are in ``chat_log.content``).
+    The next stream uses ``emit_start_role=False`` so the first thinking/content
+    chunk carries ``role`` in the same event. This listener-only repaint runs
+    between streams; it does not modify ``chat_log.content``.
     """
     if chat_log.delta_listener is None:
         return
@@ -564,6 +564,7 @@ class DeepSeekConversationEntity(
     """DeepSeek conversation agent."""
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_supports_streaming = True
 
     def __init__(self, entry: DeepSeekConfigEntry) -> None:
         """Initialize the agent."""
@@ -764,9 +765,6 @@ class DeepSeekConversationEntity(
                 )
 
             try:
-                if _iteration > 0:
-                    _prime_assist_ui_after_tool_results(chat_log)
-
                 iteration_usage: list[CompletionUsage] = []
                 async for _ in chat_log.async_add_delta_content_stream(
                     user_input.agent_id,
@@ -817,6 +815,7 @@ class DeepSeekConversationEntity(
                 "Iteration %d finished. Tool calls in flight, preparing next iteration.",
                 _iteration + 1,
             )
+            _prime_assist_ui_after_tool_results(chat_log)
             current_messages = _convert_content_to_messages(
                 chat_log.content, model=model, thinking_enabled=thinking_on
             )
