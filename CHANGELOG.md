@@ -2,6 +2,11 @@
 
 All notable changes to this integration.
 
+## [1.3.1] - 2026-07-02
+
+### Fixed
+- **HACS installation**: release zip no longer creates a nested `deepseek_conversation/deepseek_conversation/` folder; files extract correctly into `custom_components/deepseek_conversation/`.
+
 ## [1.3.0] - 2026-07-01
 
 ### Added
