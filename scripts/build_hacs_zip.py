@@ -1,4 +1,9 @@
-"""Build deepseek_conversation.zip for HACS zip_release (see hacs.json, release.yml)."""
+"""Build deepseek_conversation.zip for HACS zip_release (see hacs.json, release.yml).
+
+HACS extracts zip_release archives directly into custom_components/<domain>/.
+The zip must therefore contain integration files at the archive root (manifest.json, …),
+not wrapped in an extra deepseek_conversation/ folder.
+"""
 
 from __future__ import annotations
 
@@ -24,7 +29,7 @@ def main() -> None:
                 continue
             if "__pycache__" in path.parts or path.suffix == ".pyc":
                 continue
-            arc = path.relative_to(REPO_ROOT / "custom_components").as_posix()
+            arc = path.relative_to(SRC).as_posix()
             zf.write(path, arc)
             count += 1
 
@@ -34,22 +39,20 @@ def main() -> None:
 
 def _validate_zip(path: Path) -> None:
     """Fail fast if the archive does not match HACS zip_release expectations."""
-    required = (
-        "deepseek_conversation/manifest.json",
-        "deepseek_conversation/__init__.py",
-    )
+    required = ("manifest.json", "__init__.py")
+    banned_prefixes = ("custom_components/", "deepseek_conversation/")
     with zipfile.ZipFile(path) as zf:
         names = zf.namelist()
-        roots = {n.split("/")[0] for n in names if "/" in n}
-        if roots != {"deepseek_conversation"}:
-            raise SystemExit(
-                f"Invalid zip layout: expected only deepseek_conversation/ at root, got {roots}"
-            )
         missing = [entry for entry in required if entry not in names]
         if missing:
-            raise SystemExit(f"Zip missing required paths: {missing}")
-        if any(n.startswith("custom_components/") for n in names):
-            raise SystemExit("Zip must not include custom_components/ prefix (content_in_root: false)")
+            raise SystemExit(f"Zip missing required paths at archive root: {missing}")
+        if any(
+            name.startswith(prefix) for name in names for prefix in banned_prefixes
+        ):
+            raise SystemExit(
+                "Zip must contain integration files at archive root; "
+                "HACS already extracts into custom_components/<domain>/"
+            )
 
 
 if __name__ == "__main__":

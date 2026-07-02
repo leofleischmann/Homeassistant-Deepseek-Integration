@@ -4,6 +4,8 @@ name: Release
 # der Tag wird hier erstellt, wenn manifest.json in diesem Push geaendert wurde.
 #
 # HACS zip_release: deepseek_conversation.zip muss zu hacs.json "filename" passen.
+# Zip-Inhalt: manifest.json etc. direkt im Archiv-Root (scripts/build_hacs_zip.py).
+# HACS extrahiert nach custom_components/deepseek_conversation/ — kein Domain-Ordner im Zip.
 # HACS laedt dieses Asset bei Install/Update; GitHub download_count -> HACS-Anzeige.
 
 on:
