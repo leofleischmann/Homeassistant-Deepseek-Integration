@@ -54,7 +54,11 @@
                 "data": {
                     "api_key": "API Key",
                     "base_url": "API Base URL",
+                    "brave_api_key": "Brave Search API key (optional)",
                     "chat_model": "Model"
+                },
+                "data_description": {
+                    "brave_api_key": "Optional. Enables a Web Search (Brave) LLM API. After setup, select it under Configure → Home Assistant API together with Assist."
                 },
                 "description": "Connect to the DeepSeek API. Default model is DeepSeek V4 Flash. Legacy names deepseek-chat and deepseek-reasoner still work but are removed after 2026-07-24 — switch to V4 in options when ready."
             },
@@ -73,10 +77,12 @@
                 "description": "Update your API key or base URL. Assist and model settings stay unchanged.",
                 "data": {
                     "api_key": "API Key",
-                    "base_url": "API Base URL"
+                    "base_url": "API Base URL",
+                    "brave_api_key": "Brave Search API key (optional)"
                 },
                 "data_description": {
-                    "api_key": "API key from platform.deepseek.com"
+                    "api_key": "API key from platform.deepseek.com",
+                    "brave_api_key": "Leave empty to keep the current Brave key. Enter a new key to replace it. Enter a single dash (-) to remove web search."
                 }
             }
         },
@@ -125,7 +131,7 @@
                     "reasoning_effort": "Reasoning effort"
                 },
                 "data_description": {
-                    "llm_hass_api": "No selection = no device control",
+                    "llm_hass_api": "No selection = no device control. Add Web Search (Brave) here after you set a Brave API key via setup or Reconfigure.",
                     "thinking_enabled": "When on, the API uses reasoning effort; temperature and top_p are ignored.",
                     "reasoning_effort": "Only used when reasoning is enabled.",
                     "temperature": "Only used when reasoning is disabled.",

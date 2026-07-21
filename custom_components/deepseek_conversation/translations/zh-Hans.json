@@ -54,7 +54,11 @@
                 "data": {
                     "api_key": "API 密钥",
                     "base_url": "API 基础地址",
+                    "brave_api_key": "Brave Search API 密钥（可选）",
                     "chat_model": "模型"
+                },
+                "data_description": {
+                    "brave_api_key": "可选。启用 Web Search (Brave) LLM API。设置后请在配置 → Home Assistant API 中与 Assist 一并勾选。"
                 },
                 "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 与 deepseek-reasoner 仍可用，但将于 2026-07-24 停用——请适时在选项中改用 V4。"
             },
@@ -73,10 +77,12 @@
                 "description": "更新 API 密钥或基础地址。Assist 与模型选项保持不变。",
                 "data": {
                     "api_key": "API 密钥",
-                    "base_url": "API 基础地址"
+                    "base_url": "API 基础地址",
+                    "brave_api_key": "Brave Search API 密钥（可选）"
                 },
                 "data_description": {
-                    "api_key": "来自 platform.deepseek.com 的 API 密钥"
+                    "api_key": "来自 platform.deepseek.com 的 API 密钥",
+                    "brave_api_key": "留空以保留当前 Brave 密钥。输入新密钥以替换。输入单个短横线 (-) 以移除网页搜索。"
                 }
             }
         },
@@ -125,7 +131,7 @@
                     "reasoning_effort": "推理强度"
                 },
                 "data_description": {
-                    "llm_hass_api": "不选择 = 无设备控制",
+                    "llm_hass_api": "不选择 = 无设备控制。设置 Brave API 密钥（安装或重新配置）后，可在此添加 Web Search (Brave)。",
                     "thinking_enabled": "启用时 API 使用推理强度；temperature 与 top_p 会被忽略。",
                     "reasoning_effort": "仅在启用推理时生效。",
                     "temperature": "仅在关闭推理时生效。",

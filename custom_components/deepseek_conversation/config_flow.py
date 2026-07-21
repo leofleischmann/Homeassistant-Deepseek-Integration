@@ -44,6 +44,7 @@ from .const import (
     coerce_max_tokens,
     coerce_max_tool_iterations,
     CONF_BASE_URL,
+    CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
     CONF_CONTEXT_MANAGEMENT_ENABLED,
     CONF_MAX_TOOL_RESULT_CHARS,
@@ -120,11 +121,12 @@ def _base_url_selector() -> TextSelector:
 
 
 def get_user_step_schema() -> vol.Schema:
-    """Schema for initial config (API key, URL, V4 / legacy model)."""
+    """Schema for initial config (API key, URL, V4 / legacy model, optional Brave)."""
     return vol.Schema(
         {
             vol.Required(CONF_API_KEY): _api_key_selector(),
             vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): _base_url_selector(),
+            vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
             vol.Optional(
                 CONF_CHAT_MODEL, default=RECOMMENDED_CHAT_MODEL
             ): _chat_model_selector(),
@@ -140,7 +142,11 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema(
 
 
 def get_reconfigure_step_schema(entry: ConfigEntry) -> vol.Schema:
-    """Schema for reconfigure (API key + base URL stored in config entry data)."""
+    """Schema for reconfigure (DeepSeek key, base URL, optional Brave key).
+
+    Brave key: leave empty to keep the current key; enter ``-`` to remove it
+    (clears web search LLM API registration after reload).
+    """
     return vol.Schema(
         {
             vol.Required(CONF_API_KEY): _api_key_selector(),
@@ -148,6 +154,7 @@ def get_reconfigure_step_schema(entry: ConfigEntry) -> vol.Schema:
                 CONF_BASE_URL,
                 default=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
             ): _base_url_selector(),
+            vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
         }
     )
 
@@ -295,6 +302,12 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_API_KEY: user_input[CONF_API_KEY],
                 CONF_BASE_URL: user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
             }
+            brave_key = (user_input.get(CONF_BRAVE_API_KEY) or "").strip()
+            if brave_key:
+                entry_data[CONF_BRAVE_API_KEY] = brave_key
+                LOGGER.debug(
+                    "[Debug config_flow]: Brave Search key set on initial setup"
+                )
             # Move chat_model to options if provided
             entry_options = {**DEFAULT_OPTIONS}
             if CONF_CHAT_MODEL in user_input:
@@ -376,6 +389,24 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                 current_base_url=current_base_url,
             )
             if data_updates is not None:
+                brave_raw = (user_input.get(CONF_BRAVE_API_KEY) or "").strip()
+                if brave_raw == "-":
+                    # Full data replace to drop Brave key (data_updates alone only merges).
+                    new_data = {**reconfigure_entry.data, **data_updates}
+                    new_data.pop(CONF_BRAVE_API_KEY, None)
+                    LOGGER.debug(
+                        "[Debug config_flow]: reconfigure removing Brave Search key"
+                    )
+                    return self.async_update_reload_and_abort(
+                        reconfigure_entry,
+                        data=new_data,
+                    )
+                if brave_raw:
+                    data_updates[CONF_BRAVE_API_KEY] = brave_raw
+                    LOGGER.debug(
+                        "[Debug config_flow]: reconfigure updating Brave Search key"
+                    )
+                # Empty Brave field: keep existing key (do not include in data_updates).
                 LOGGER.debug(
                     "[Debug config_flow]: reconfigure successful, reloading entry"
                 )

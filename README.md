@@ -16,12 +16,12 @@ Use DeepSeek **V4 Flash** (default) or **V4 Pro** as the brain behind Assist: st
 | Area | What you get |
 |------|----------------|
 | **Assist** | Pick the agent in your voice assistant settings; same config for voice and text chat |
-| **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations) |
+| **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
 | **Automations** | `conversation.process` like Assist, or `deepseek_conversation.generate_content` for direct prompt → text |
 | **Usage** | Token sensors per config entry, last-request breakdown, manual **Reset usage** on the device |
-| **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key or base URL without losing options |
+| **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key, base URL, or optional Brave Search key without losing options |
 
 `generate_content` returns `text`, optional `reasoning`, and `usage` tokens. Per-call overrides: model, temperature, thinking, max_tokens, JSON mode.
 
@@ -40,11 +40,11 @@ Release download badge counts GitHub `deepseek_conversation.zip` assets, not the
 ## Setup
 
 1. **Settings → Devices & services → Add integration → DeepSeek Conversation**
-2. Enter API key (optional: custom base URL, model)
-3. Open **Configure** (gear): system prompt, model, reasoning, tools, context limits
+2. Enter API key (optional: custom base URL, model, Brave Search API key)
+3. Open **Configure** (gear): system prompt, model, reasoning, tools, context limits. If you set a Brave key, also select **Web Search (Brave)** under Home Assistant API
 4. Assign the agent to your Assist pipeline / voice assistant
 
-Change API key or base URL via the integration card **⋮ → Reconfigure** (not the gear).
+Change API key, base URL, or Brave Search key via the integration card **⋮ → Reconfigure** (not the gear).
 
 ## Automations
 
