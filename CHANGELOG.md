@@ -7,6 +7,9 @@ All notable changes to this integration.
 ### Added
 - **Optional Brave Search web tool**: set a Brave Search API key on setup or Reconfigure; a `Web Search (Brave)` LLM API is registered and can be enabled under Configure → Home Assistant API alongside Assist. Assist-only (`generate_content` stays without tools).
 
+### Fixed
+- **Config entry reload**: Reconfigure/Reauth use `async_update_and_abort`; the conversation update listener schedules reload when `entry.data` changes. Avoids the Home Assistant warning that this pattern breaks in 2026.12.
+
 ## [1.3.1] - 2026-07-02
 
 ### Fixed

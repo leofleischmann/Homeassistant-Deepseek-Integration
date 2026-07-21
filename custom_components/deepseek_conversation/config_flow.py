@@ -267,6 +267,19 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 2
 
+    def _async_update_entry_and_abort(
+        self, entry: ConfigEntry, **kwargs: Any
+    ) -> ConfigFlowResult:
+        """Update entry data; reload is owned by the conversation update listener.
+
+        Prefer ``async_update_and_abort`` (HA 2026.x) so we do not combine an
+        update listener with ``async_update_reload_and_abort`` (breaks in 2026.12).
+        Older cores fall back to reload_and_abort; the listener then skips reload.
+        """
+        if hasattr(self, "async_update_and_abort"):
+            return self.async_update_and_abort(entry, **kwargs)
+        return self.async_update_reload_and_abort(entry, **kwargs)
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -362,7 +375,7 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                 LOGGER.exception("Unexpected exception during reauth")
                 errors["base"] = "unknown"
             else:
-                return self.async_update_reload_and_abort(
+                return self._async_update_entry_and_abort(
                     reauth_entry,
                     data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
                 )
@@ -397,7 +410,9 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                     LOGGER.debug(
                         "[Debug config_flow]: reconfigure removing Brave Search key"
                     )
-                    return self.async_update_reload_and_abort(
+                    # Update only; conversation update listener schedules reload
+                    # when entry.data changes (avoids HA 2026.12 listener+reload warning).
+                    return self._async_update_entry_and_abort(
                         reconfigure_entry,
                         data=new_data,
                     )
@@ -408,9 +423,9 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
                 # Empty Brave field: keep existing key (do not include in data_updates).
                 LOGGER.debug(
-                    "[Debug config_flow]: reconfigure successful, reloading entry"
+                    "[Debug config_flow]: reconfigure successful; listener will reload"
                 )
-                return self.async_update_reload_and_abort(
+                return self._async_update_entry_and_abort(
                     reconfigure_entry,
                     data_updates=data_updates,
                 )
