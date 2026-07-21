@@ -15,6 +15,7 @@ from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMe
 from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
 
 from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
+from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
@@ -607,8 +608,8 @@ class DeepSeekConversationEntity(
         """Refresh entity flags from options without a config-entry reload.
 
         Assist reads prompt/model/temperature from ``entry.options`` each turn.
-        Reload is only needed for connection data (base_url, API key); see
-        config_flow.py (base_url) and reauth (API key).
+        Connection data (base_url, API key, Brave key) triggers reload via
+        ``_async_entry_update_listener`` after config_flow ``async_update_and_abort``.
         """
         self._attr_supported_features = conversation_entity_features_for_options(
             entry.options,
@@ -941,12 +942,34 @@ class DeepSeekConversationEntity(
     async def _async_entry_update_listener(
         self, hass: HomeAssistant, entry: DeepSeekConfigEntry
     ) -> None:
-        """Apply option changes in memory without reloading the config entry."""
+        """Handle config entry updates.
+
+        Options: apply in memory (no reload).
+        Data (API key, base URL, Brave key): schedule reload so the OpenAI client
+        and optional web_search API are rebuilt. Config flow uses
+        ``async_update_and_abort`` (not reload_and_abort) so this listener owns
+        the reload and avoids the HA 2026.12 double-reload warning.
+        """
+        data_changed = dict(entry.data) != dict(self.entry.data)
         self.entry = entry
+        if data_changed and hasattr(ConfigFlow, "async_update_and_abort"):
+            # Flow used async_update_and_abort; this listener owns the reload.
+            LOGGER.debug(
+                "[Debug conversation]: entry.data changed; scheduling config entry reload"
+            )
+            await hass.config_entries.async_reload(entry.entry_id)
+            return
+
         self._sync_entity_attributes_from_entry(entry)
         self.async_write_ha_state()
-        LOGGER.debug(
-            "[Debug conversation]: Options applied in-memory (no reload); "
-            "base_url/API key changes trigger reload via config_flow/reauth"
-        )
+        if data_changed:
+            # Legacy HA: config_flow already scheduled reload via reload_and_abort.
+            LOGGER.debug(
+                "[Debug conversation]: entry.data changed on legacy core; "
+                "reload already scheduled by config flow"
+            )
+        else:
+            LOGGER.debug(
+                "[Debug conversation]: Options applied in-memory (no reload)"
+            )
 

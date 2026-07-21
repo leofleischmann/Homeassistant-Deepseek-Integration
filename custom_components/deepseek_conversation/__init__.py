@@ -59,6 +59,7 @@ from .vision import (
     raise_if_vision_unsupported_for_api,
     vision_enabled_in_options,
 )
+from .web_search import async_register_web_search_api
 
 
 SERVICE_GENERATE_CONTENT = "generate_content"
@@ -342,6 +343,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> 
         raise ConfigEntryNotReady(f"DeepSeek API error: {err}") from err
 
     entry.runtime_data = DeepSeekRuntimeData(client=client, usage=UsageTracker())
+
+    # Optional Brave web_search LLM API (see web_search.py); only when key in entry.data.
+    async_register_web_search_api(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

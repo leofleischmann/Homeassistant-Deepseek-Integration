@@ -24,6 +24,7 @@ CONF_CONTEXT_MANAGEMENT_ENABLED = "context_management_enabled"
 CONF_MAX_TOOL_RESULT_CHARS = "max_tool_result_chars"
 CONF_MAX_HISTORY_ROUNDS = "max_history_rounds"
 CONF_BASE_URL = "base_url"
+CONF_BRAVE_API_KEY = "brave_api_key"
 CONF_FILENAMES = "filenames"
 CONF_RESPONSE_FORMAT = "response_format"
 

@@ -54,7 +54,11 @@
                 "data": {
                     "api_key": "Clé API",
                     "base_url": "URL de base de l’API",
+                    "brave_api_key": "Clé API Brave Search (optionnel)",
                     "chat_model": "Modèle"
+                },
+                "data_description": {
+                    "brave_api_key": "Optionnel. Active une API LLM Web Search (Brave). Ensuite, sélectionnez-la sous Configurer → API Home Assistant avec Assist."
                 },
                 "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4 Flash. Les anciens noms deepseek-chat et deepseek-reasoner fonctionnent encore mais seront retirés après le 2026-07-24 — passez à V4 dans les options quand vous êtes prêt."
             },
@@ -73,10 +77,12 @@
                 "description": "Mettez à jour la clé API ou l’URL de base. Les options Assist et modèle restent inchangées.",
                 "data": {
                     "api_key": "Clé API",
-                    "base_url": "URL de base de l’API"
+                    "base_url": "URL de base de l’API",
+                    "brave_api_key": "Clé API Brave Search (optionnel)"
                 },
                 "data_description": {
-                    "api_key": "Clé API depuis platform.deepseek.com"
+                    "api_key": "Clé API depuis platform.deepseek.com",
+                    "brave_api_key": "Laissez vide pour conserver la clé Brave actuelle. Saisissez une nouvelle clé pour la remplacer. Saisissez un tiret (-) pour retirer la recherche web."
                 }
             }
         },
@@ -125,7 +131,7 @@
                     "max_history_rounds": "Tours de conversation max."
                 },
                 "data_description": {
-                    "llm_hass_api": "Aucune sélection = aucun contrôle",
+                    "llm_hass_api": "Aucune sélection = aucun contrôle. Ajoutez Web Search (Brave) ici après avoir défini une clé Brave via la configuration ou Reconfigurer.",
                     "thinking_enabled": "Si activé, l’API utilise l’effort de raisonnement ; température et top_p sont ignorés.",
                     "reasoning_effort": "Utilisé uniquement si le raisonnement est activé.",
                     "temperature": "Utilisé uniquement si le raisonnement est désactivé.",
