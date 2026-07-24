@@ -2,6 +2,11 @@
 
 All notable changes to this integration.
 
+## [Unreleased]
+
+### Added
+- **AI Task entity**: `ai_task.generate_data` in automations (plain text or structured JSON via `structure:`). Shares the streaming Assist pipeline, usage sensors (`source=ai_task`), and optional image attachments when vision is enabled.
+
 ## [1.3.2] - 2026-07-21
 
 ### Added

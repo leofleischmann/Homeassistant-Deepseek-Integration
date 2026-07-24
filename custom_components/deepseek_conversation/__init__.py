@@ -65,7 +65,7 @@ from .web_search import async_register_web_search_api
 SERVICE_GENERATE_CONTENT = "generate_content"
 SERVICE_RUN_DEBUG = "run_debug"
 
-PLATFORMS = (Platform.CONVERSATION, Platform.SENSOR, Platform.BUTTON)
+PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR, Platform.BUTTON)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 

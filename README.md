@@ -19,7 +19,7 @@ Use DeepSeek **V4 Flash** (default) or **V4 Pro** as the brain behind Assist: st
 | **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
-| **Automations** | `conversation.process` like Assist, or `deepseek_conversation.generate_content` for direct prompt → text |
+| **Automations** | `ai_task.generate_data` (recommended), `conversation.process` like Assist, or `deepseek_conversation.generate_content` for direct prompt → text |
 | **Usage** | Token sensors per config entry, last-request breakdown, manual **Reset usage** on the device |
 | **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key, base URL, or optional Brave Search key without losing options |
 
@@ -48,6 +48,45 @@ Change API key, base URL, or Brave Search key via the integration card **⋮ →
 
 ## Automations
 
+### AI Task entity (recommended)
+
+Pick the integration's AI Task entity in the visual automation editor or use `ai_task.generate_data`. Plain text:
+
+```yaml
+action: ai_task.generate_data
+data:
+  task_name: weather_summary
+  instructions: >-
+    Today's forecast: {{ states('weather.home') }}.
+    Summarise it in one short sentence.
+  entity_id: ai_task.deepseek_conversation
+response_variable: result
+# result.data holds the generated text
+```
+
+Structured (JSON) output — invalid JSON fails the step with a clear error:
+
+```yaml
+action: ai_task.generate_data
+data:
+  task_name: forecast_extract
+  instructions: "From {{ states('weather.home') }}, produce structured data."
+  entity_id: ai_task.deepseek_conversation
+  structure:
+    summary:
+      selector:
+        text:
+    high_c:
+      selector:
+        number:
+response_variable: result
+# result.data.summary, result.data.high_c, …
+```
+
+Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow vision** and a custom multimodal base URL, you can attach images via the action's attachments field.
+
+### Other paths
+
 ```yaml
 # Like Assist: natural language, tools, integration options
 action: conversation.process
@@ -55,7 +94,7 @@ data:
   agent_id: conversation.deepseek
   text: "Turn off the living room lights."
 
-# Scripted call: prompt in, text (+ usage, optional reasoning) out
+# Legacy: direct prompt → text (+ usage, optional reasoning)
 action: deepseek_conversation.generate_content
 data:
   config_entry: <your config entry id>
