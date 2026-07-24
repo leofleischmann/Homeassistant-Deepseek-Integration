@@ -48,6 +48,7 @@ from .const import (
     RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .types import DeepSeekConfigEntry
+from .structured_output import build_response_format_for_schema
 from .usage_metrics import CompletionUsage, completion_usage_from_api
 from .vision import (
     async_user_message_content,
@@ -595,14 +596,16 @@ async def async_handle_chat_log(
     *,
     agent_id: str,
     force_json: bool = False,
+    response_schema: dict[str, Any] | None = None,
     usage_source: str = "assist",
 ) -> None:
     """Drive DeepSeek streaming chat completions against an HA ``ChatLog``.
 
     Shared by the conversation agent and the AI Task entity. Loops until the
     model stops requesting tools or ``max_tool_iterations`` is hit. When
-    ``force_json`` is true, sets ``response_format=json_object`` for structured
-    AI Task output.
+    ``force_json`` is true, sets ``response_format`` for structured AI Task
+    output (``json_object`` on official DeepSeek, ``json_schema`` on custom
+    gateways when ``response_schema`` is provided).
     """
     options = entry.options
     runtime = entry.runtime_data
@@ -705,9 +708,15 @@ async def async_handle_chat_log(
         usage_source,
     )
 
-    response_format: dict[str, str] | None = None
+    response_format: dict[str, Any] | None = None
     if force_json:
-        response_format = {"type": RESPONSE_FORMAT_JSON_OBJECT}
+        if response_schema is not None:
+            response_format = build_response_format_for_schema(
+                response_schema,
+                base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+            )
+        else:
+            response_format = {"type": RESPONSE_FORMAT_JSON_OBJECT}
 
     all_usage: list[CompletionUsage] = []
     messages = initial_messages

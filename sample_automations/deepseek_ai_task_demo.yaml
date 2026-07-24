@@ -38,7 +38,8 @@ actions:
     data:
       task_name: demo_structured
       instructions: >-
-        Reply with a JSON object describing a fictional smart-home room.
+        Invent a fictional smart-home room. Return only the fields room_name
+        (text) and device_count (number) at the top level of the JSON object.
       entity_id: "{{ deepseek_ai_task_entity }}"
       structure:
         room_name:

@@ -66,7 +66,7 @@ response_variable: result
 # result.data holds the generated text
 ```
 
-Structured (JSON) output — invalid JSON fails the step with a clear error:
+Structured (JSON) output — the `structure` fields define the JSON shape (injected into the prompt; official DeepSeek uses `json_object` mode). Invalid JSON fails the step with a clear error:
 
 ```yaml
 action: ai_task.generate_data
