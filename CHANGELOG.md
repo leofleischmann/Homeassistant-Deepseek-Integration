@@ -5,7 +5,13 @@ All notable changes to this integration.
 ## [1.4.0] - 2026-07-24
 
 ### Added
-- **AI Task entity**: `ai_task.generate_data` in automations (plain text or structured JSON via `structure:`). Uses the same Configure system prompt and Home Assistant LLM APIs as Assist (per-call `llm_api` overrides). Shares the streaming pipeline, usage sensors (`source=ai_task`), and optional image attachments when vision is enabled.
+- **AI Task entity** for `ai_task.generate_data` in automations (plain text or structured JSON via `structure:`).
+- Same **Configure system prompt** and **Home Assistant LLM APIs** as Assist (`llm_api` on the action overrides).
+- **Usage sensors** track AI Task calls (`source=ai_task`).
+- **Vision attachments** on AI Task when Allow vision is on and the base URL supports multimodal chat.
+- Sample automation: `sample_automations/deepseek_ai_task_demo.yaml`.
+### Improved
+- Shared streaming chat loop (`async_handle_chat_log`) for Assist and AI Task.
 
 ## [1.3.2] - 2026-07-21
 
