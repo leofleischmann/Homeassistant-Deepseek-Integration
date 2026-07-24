@@ -19,7 +19,7 @@ Use DeepSeek **V4 Flash** (default) or **V4 Pro** as the brain behind Assist: st
 | **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
-| **Automations** | `ai_task.generate_data` (recommended), `conversation.process` like Assist, or `deepseek_conversation.generate_content` for direct prompt → text |
+| **Automations** | `ai_task.generate_data` (recommended, same prompt/tools as Assist), `conversation.process`, or `deepseek_conversation.generate_content` |
 | **Usage** | Token sensors per config entry, last-request breakdown, manual **Reset usage** on the device |
 | **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key, base URL, or optional Brave Search key without losing options |
 
@@ -50,7 +50,9 @@ Change API key, base URL, or Brave Search key via the integration card **⋮ →
 
 ### AI Task entity (recommended)
 
-Pick the integration's AI Task entity in the visual automation editor or use `ai_task.generate_data`. Plain text:
+Pick the integration's AI Task entity in the visual automation editor or use `ai_task.generate_data`. It uses the same **system prompt** and **Home Assistant API** tools (Configure → gear) as Assist; per-call `llm_api` on the action overrides the configured APIs.
+
+Plain text:
 
 ```yaml
 action: ai_task.generate_data

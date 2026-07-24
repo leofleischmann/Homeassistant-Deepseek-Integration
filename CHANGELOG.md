@@ -2,10 +2,10 @@
 
 All notable changes to this integration.
 
-## [Unreleased]
+## [1.4.0] - 2026-07-24
 
 ### Added
-- **AI Task entity**: `ai_task.generate_data` in automations (plain text or structured JSON via `structure:`). Shares the streaming Assist pipeline, usage sensors (`source=ai_task`), and optional image attachments when vision is enabled.
+- **AI Task entity**: `ai_task.generate_data` in automations (plain text or structured JSON via `structure:`). Uses the same Configure system prompt and Home Assistant LLM APIs as Assist (per-call `llm_api` overrides). Shares the streaming pipeline, usage sensors (`source=ai_task`), and optional image attachments when vision is enabled.
 
 ## [1.3.2] - 2026-07-21
 

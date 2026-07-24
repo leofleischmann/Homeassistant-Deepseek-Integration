@@ -3,6 +3,10 @@
 Registers an ``AITaskEntity`` per config entry on the same device as the
 conversation agent. Uses the shared streaming loop in ``conversation.py``
 (``async_handle_chat_log``). Platform setup is wired from ``__init__.py``.
+
+HA's ``AITaskEntity`` prepares the chat log with a generic system prompt;
+``_async_apply_entry_llm_options`` replaces ``content[0]`` with this entry's
+Configure prompt and LLM APIs (same as Assist) before the API call.
 """
 
 from __future__ import annotations
@@ -16,11 +20,11 @@ from homeassistant.components import ai_task, conversation  # pyright: ignore[re
 from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers import device_registry as dr  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers import device_registry as dr, llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 from homeassistant.util.json import json_loads  # pyright: ignore[reportMissingImports]
 
-from .const import DOMAIN
+from .const import CONF_LLM_HASS_API, CONF_PROMPT, DEFAULT_SYSTEM_PROMPT, DOMAIN
 from .conversation import async_handle_chat_log
 from .types import DeepSeekConfigEntry
 from .vision import ai_task_entity_features_for_options
@@ -39,6 +43,48 @@ def _parse_structured_task_response(text: str) -> Any:
     if match := _JSON_FENCE_RE.match(stripped):
         stripped = match.group(1).strip()
     return json_loads(stripped)
+
+
+async def _async_apply_entry_llm_options(
+    hass: HomeAssistant,
+    entry: DeepSeekConfigEntry,
+    chat_log: conversation.ChatLog,
+    task: ai_task.GenDataTask,
+) -> None:
+    """Apply this config entry's Assist prompt and LLM APIs to the AI Task chat log.
+
+    ``AITaskEntity`` (final) already called ``async_provide_llm_data`` with HA's
+    generic default. Calling it again replaces ``content[0]`` only; task
+    instructions and attachments in later content entries are preserved.
+    """
+    options = entry.options
+    user_llm_hass_api = (
+        task.llm_api
+        if task.llm_api is not None
+        else options.get(CONF_LLM_HASS_API)
+    )
+    user_llm_prompt = (options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
+
+    _LOGGER.debug(
+        "[Debug ai_task]: applying entry prompt (%d chars) llm_api=%r",
+        len(user_llm_prompt),
+        user_llm_hass_api,
+    )
+
+    try:
+        await chat_log.async_provide_llm_data(
+            llm_context=llm.LLMContext(
+                platform=DOMAIN,
+                context=None,
+                language=None,
+                assistant=DOMAIN,
+                device_id=None,
+            ),
+            user_llm_hass_api=user_llm_hass_api,
+            user_llm_prompt=user_llm_prompt,
+        )
+    except conversation.ConverseError as err:
+        raise HomeAssistantError(f"Error preparing context: {err}") from err
 
 
 async def async_setup_entry(
@@ -101,6 +147,9 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
             task.name,
             task.structure is not None,
         )
+
+        await _async_apply_entry_llm_options(self.hass, self.entry, chat_log, task)
+
         await async_handle_chat_log(
             self.hass,
             self.entry,
