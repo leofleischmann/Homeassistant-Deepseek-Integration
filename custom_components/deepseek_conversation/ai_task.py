@@ -18,13 +18,14 @@ from typing import Any
 
 from homeassistant.components import ai_task, conversation  # pyright: ignore[reportMissingImports]
 from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
+from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import device_registry as dr, llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 from homeassistant.util.json import json_loads  # pyright: ignore[reportMissingImports]
 
-from .const import CONF_LLM_HASS_API, CONF_PROMPT, DEFAULT_SYSTEM_PROMPT, DOMAIN
+from .const import CONF_PROMPT, DEFAULT_SYSTEM_PROMPT, DOMAIN
 from .conversation import async_handle_chat_log
 from .types import DeepSeekConfigEntry
 from .vision import ai_task_entity_features_for_options
