@@ -60,6 +60,16 @@ CONVERSATION_SUPPORT_ATTACHMENTS = getattr(
     conversation.ConversationEntityFeature, "SUPPORT_ATTACHMENTS", None
 )
 
+try:
+    from homeassistant.components import ai_task  # pyright: ignore[reportMissingImports]
+
+    AI_TASK_SUPPORT_ATTACHMENTS = getattr(
+        ai_task.AITaskEntityFeature, "SUPPORT_ATTACHMENTS", None
+    )
+except ImportError:
+    ai_task = None  # type: ignore[assignment,misc]
+    AI_TASK_SUPPORT_ATTACHMENTS = None
+
 
 def vision_enabled_in_options(options: Mapping[str, Any]) -> bool:
     """Whether image input is allowed for this config entry."""
@@ -80,6 +90,24 @@ def conversation_entity_features_for_options(
         and CONVERSATION_SUPPORT_ATTACHMENTS is not None
     ):
         features |= CONVERSATION_SUPPORT_ATTACHMENTS
+    return features
+
+
+def ai_task_entity_features_for_options(
+    options: Mapping[str, Any],
+) -> int:
+    """Build ``AITaskEntityFeature`` flags from entry options.
+
+    Returns an int bitmask when ``ai_task`` is unavailable on older cores.
+    """
+    if ai_task is None:
+        return 0
+    features = ai_task.AITaskEntityFeature.GENERATE_DATA
+    if (
+        vision_enabled_in_options(options)
+        and AI_TASK_SUPPORT_ATTACHMENTS is not None
+    ):
+        features |= AI_TASK_SUPPORT_ATTACHMENTS
     return features
 
 

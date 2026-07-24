@@ -147,7 +147,7 @@ def build_chat_completion_args(
     stream: bool,
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
-    response_format: dict[str, str] | None = None,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build kwargs for ``client.chat.completions.create``.
 

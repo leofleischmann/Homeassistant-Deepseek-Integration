@@ -1,0 +1,64 @@
+# AI Task demo — plain text and structured output.
+# Trigger: Developer tools → Events → deepseek_ai_task_demo
+#
+# Resolves the first ai_task.* entity for deepseek_conversation automatically.
+# Results: persistent notification + logbook. Token sensors update after each call.
+
+alias: DeepSeek AI Task demo
+description: Demonstrates ai_task.generate_data (plain + structured).
+mode: single
+
+triggers:
+  - trigger: event
+    event_type: deepseek_ai_task_demo
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set ns = namespace(ok=false) %}
+      {% for e in integration_entities('deepseek_conversation') %}
+        {% if e.startswith('ai_task.') %}{% set ns.ok = true %}{% endif %}
+      {% endfor %}
+      {{ ns.ok }}
+
+actions:
+  - variables:
+      deepseek_ai_task_entity: >-
+        {% for e in integration_entities('deepseek_conversation') %}
+        {%- if e.startswith('ai_task.') %}{{ e }}{% break %}{% endif %}
+        {% endfor %}
+  - action: ai_task.generate_data
+    data:
+      task_name: demo_summary
+      instructions: >-
+        In one short sentence, describe what Home Assistant is in plain language.
+      entity_id: "{{ deepseek_ai_task_entity }}"
+    response_variable: plain_result
+  - action: ai_task.generate_data
+    data:
+      task_name: demo_structured
+      instructions: >-
+        Invent a fictional smart-home room. Return only the fields room_name
+        (text) and device_count (number) at the top level of the JSON object.
+      entity_id: "{{ deepseek_ai_task_entity }}"
+      structure:
+        room_name:
+          selector:
+            text:
+        device_count:
+          selector:
+            number:
+    response_variable: structured_result
+  - action: persistent_notification.create
+    data:
+      title: DeepSeek AI Task demo
+      message: >-
+        Plain: {{ plain_result.data }}
+
+        Structured room: {{ structured_result.data.room_name }}
+        ({{ structured_result.data.device_count }} devices)
+  - action: logbook.log
+    data:
+      name: DeepSeek AI Task
+      message: >-
+        plain={{ plain_result.data }} structured={{ structured_result.data }}

@@ -1,4 +1,8 @@
-"""Conversation support for DeepSeek."""
+"""Conversation support for DeepSeek.
+
+The shared API loop in ``async_handle_chat_log`` is used by Assist
+(``DeepSeekConversationEntity``) and the AI Task entity (``ai_task.py``).
+"""
 
 from __future__ import annotations
 
@@ -41,8 +45,13 @@ from .const import (
     LOGGER,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
+    RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .types import DeepSeekConfigEntry
+from .structured_output import (
+    append_structure_guidance_to_last_user_message,
+    build_response_format_for_schema,
+)
 from .usage_metrics import CompletionUsage, completion_usage_from_api
 from .vision import (
     async_user_message_content,
@@ -583,6 +592,229 @@ async def _transform_stream(
                  raise HomeAssistantError(f"finish_reason_{finish_reason}")
 
 
+async def async_handle_chat_log(
+    hass: HomeAssistant,
+    entry: DeepSeekConfigEntry,
+    chat_log: conversation.ChatLog,
+    *,
+    agent_id: str,
+    force_json: bool = False,
+    response_schema: dict[str, Any] | None = None,
+    usage_source: str = "assist",
+) -> None:
+    """Drive DeepSeek streaming chat completions against an HA ``ChatLog``.
+
+    Shared by the conversation agent and the AI Task entity. Loops until the
+    model stops requesting tools or ``max_tool_iterations`` is hit. When
+    ``force_json`` is true, sets ``response_format`` for structured AI Task
+    output (``json_object`` on official DeepSeek, ``json_schema`` on custom
+    gateways when ``response_schema`` is provided).
+    """
+    options = entry.options
+    runtime = entry.runtime_data
+    if runtime is None or runtime.client is None:
+        LOGGER.error("DeepSeek client not available in runtime_data.")
+        raise HomeAssistantError("DeepSeek client not available")
+
+    client: openai.AsyncClient = runtime.client
+    model = options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
+
+    tools: list[dict[str, Any]] | None = None
+    tool_choice: str | dict[str, Any] | None = None
+    hass_api_key = options.get(CONF_LLM_HASS_API)
+
+    if chat_log.llm_api:
+        active_llm_api = chat_log.llm_api
+        registered = list(active_llm_api.tools)
+        tools, skipped_tools = _format_tools_for_api(
+            registered, active_llm_api.custom_serializer
+        )
+        if skipped_tools:
+            LOGGER.warning(
+                "[Debug conversation]: %d of %d tool(s) skipped (schema "
+                "conversion failed): %s",
+                len(skipped_tools),
+                len(registered),
+                ", ".join(skipped_tools),
+            )
+        if tools:
+            tool_choice = "auto"
+            tool_names = [
+                t.get("function", {}).get("name", "unknown") for t in tools
+            ]
+            LOGGER.debug(
+                "Sending tools to DeepSeek (from chat_log.llm_api): %s",
+                tool_names,
+            )
+        elif registered:
+            LOGGER.error(
+                "[Debug conversation]: All %d tool(s) failed schema conversion; "
+                "cannot call Home Assistant tools",
+                len(registered),
+            )
+            raise HomeAssistantError(
+                "Home Assistant tools could not be prepared for the API. "
+                "Check the log for skipped tool names."
+            )
+    elif hass_api_key and usage_source == "assist":
+        LOGGER.warning(
+            "HASS API '%s' selected in options, but chat_log.llm_api is None "
+            "after async_provide_llm_data. Tools cannot be sent.",
+            hass_api_key,
+        )
+
+    thinking_on = bool(options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED))
+    api_options: dict[str, Any] = dict(options)
+    if force_json:
+        # Structured AI Task output must land in ``content``; thinking mode can
+        # leave the final answer in reasoning_content only (see generate_content).
+        thinking_on = False
+        api_options[CONF_THINKING_ENABLED] = False
+
+    attachments = latest_user_attachments(chat_log.content)
+    if attachments:
+        if not vision_enabled_in_options(options):
+            raise HomeAssistantError(
+                "Vision is disabled in DeepSeek options. Enable "
+                "'Allow vision' to send image attachments."
+            )
+        if not model_supports_vision(model):
+            raise HomeAssistantError(
+                f"The selected model ({model}) does not support image "
+                "attachments. Use deepseek-v4-flash or deepseek-v4-pro."
+            )
+        raise_if_vision_unsupported_for_api(
+            entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+        )
+
+    initial_messages = _convert_content_to_messages(
+        chat_log.content,
+        model=model,
+        thinking_enabled=thinking_on,
+        options=options,
+    )
+    await _apply_attachments_to_last_user_message(
+        hass, chat_log.content, initial_messages
+    )
+    if response_schema is not None:
+        append_structure_guidance_to_last_user_message(
+            initial_messages, response_schema
+        )
+    LOGGER.debug(
+        "Sending messages to DeepSeek: %s",
+        json.dumps(initial_messages, indent=2, cls=_HAJSONEncoder),
+    )
+
+    max_tool_iterations = coerce_max_tool_iterations(
+        options.get(CONF_MAX_TOOL_ITERATIONS, RECOMMENDED_MAX_TOOL_ITERATIONS)
+    )
+    LOGGER.debug(
+        "[Debug conversation]: max_tool_iterations=%d force_json=%s usage_source=%s",
+        max_tool_iterations,
+        force_json,
+        usage_source,
+    )
+
+    response_format: dict[str, Any] | None = None
+    if force_json:
+        if response_schema is not None:
+            response_format = build_response_format_for_schema(
+                response_schema,
+                base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+            )
+        else:
+            response_format = {"type": RESPONSE_FORMAT_JSON_OBJECT}
+
+    all_usage: list[CompletionUsage] = []
+    messages = initial_messages
+    try:
+        for _iteration in range(max_tool_iterations):
+            messages_for_api = trim_messages_for_api(messages, options=api_options)
+            model_args = build_chat_completion_args(
+                model=model,
+                messages=messages_for_api,
+                options=api_options,
+                stream=True,
+                tools=tools,
+                tool_choice=tool_choice,
+                response_format=response_format,
+            )
+            LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
+            result = await client.chat.completions.create(**model_args)
+            new_contents = [
+                content
+                async for content in chat_log.async_add_delta_content_stream(
+                    agent_id,
+                    _transform_stream(
+                        chat_log,
+                        result,
+                        thinking_enabled=thinking_on,
+                        usage_events=all_usage,
+                    ),
+                )
+            ]
+
+            if not chat_log.unresponded_tool_results:
+                LOGGER.debug("Iteration %d finished. No tool calls.", _iteration + 1)
+                break
+
+            LOGGER.debug(
+                "Iteration %d finished. Tool results in, extending messages.",
+                _iteration + 1,
+            )
+            messages.extend(
+                _convert_content_to_messages(
+                    new_contents,
+                    model=model,
+                    thinking_enabled=thinking_on,
+                    options=options,
+                )
+            )
+        else:
+            LOGGER.warning(
+                "Max tool iterations (%d) reached for conversation %s",
+                max_tool_iterations,
+                chat_log.conversation_id,
+            )
+            raise HomeAssistantError("Maximum tool iterations reached")
+
+        for usage in all_usage:
+            runtime.usage.record(usage, source=usage_source)
+    except openai.AuthenticationError as err:
+        LOGGER.error("DeepSeek API key rejected: %s", err)
+        entry.async_start_reauth(hass)
+        raise HomeAssistantError(
+            "Authentication failed — check the DeepSeek API key"
+        ) from err
+    except (
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.BadRequestError,
+        openai.APIStatusError,
+        openai.OpenAIError,
+    ) as err:
+        LOGGER.error("DeepSeek API error: %s", err)
+        _code, message = _classify_openai_error(err)
+        raise HomeAssistantError(message) from err
+    except TypeError as err:
+        LOGGER.error(
+            "TypeError during DeepSeek API call (likely tool serialization): %s",
+            err,
+            exc_info=True,
+        )
+        raise HomeAssistantError(f"Failed to send request: {err}") from err
+    except HomeAssistantError:
+        raise
+    except Exception as err:
+        LOGGER.error("Error processing DeepSeek stream: %s", err)
+        error_msg = str(err)
+        if error_msg == "max_token":
+            raise HomeAssistantError("Response truncated by token limit") from err
+        if error_msg == "content_filter":
+            raise HomeAssistantError("Response blocked by content filter") from err
+        raise HomeAssistantError(error_msg) from err
+
+
 class DeepSeekConversationEntity(
     conversation.ConversationEntity, conversation.AbstractConversationAgent
 ):
@@ -655,8 +887,7 @@ class DeepSeekConversationEntity(
                 message="DeepSeek client not available",
                 code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
             )
-        client: openai.AsyncClient = runtime.client
-        model = options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
+        thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
 
         try:
             await chat_log.async_provide_llm_data(
@@ -675,238 +906,19 @@ class DeepSeekConversationEntity(
                 code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
             )
 
-        tools: list[dict[str, Any]] | None = None
-        tool_choice: str | dict[str, Any] | None = None
-        hass_api_key = options.get(CONF_LLM_HASS_API)
-
-        if chat_log.llm_api:
-            active_llm_api = chat_log.llm_api
-            registered = list(active_llm_api.tools)
-            tools, skipped_tools = _format_tools_for_api(
-                registered, active_llm_api.custom_serializer
-            )
-            if skipped_tools:
-                LOGGER.warning(
-                    "[Debug conversation]: %d of %d tool(s) skipped (schema "
-                    "conversion failed): %s",
-                    len(skipped_tools),
-                    len(registered),
-                    ", ".join(skipped_tools),
-                )
-            if tools:
-                tool_choice = "auto"
-                tool_names = [
-                    t.get("function", {}).get("name", "unknown") for t in tools
-                ]
-                LOGGER.debug(
-                    "Sending tools to DeepSeek (from chat_log.llm_api): %s",
-                    tool_names,
-                )
-            elif registered:
-                LOGGER.error(
-                    "[Debug conversation]: All %d tool(s) failed schema conversion; "
-                    "cannot call Home Assistant tools",
-                    len(registered),
-                )
-                return _intent_error_result(
-                    language=user_input.language,
-                    conversation_id=chat_log.conversation_id,
-                    message=(
-                        "Home Assistant tools could not be prepared for the API. "
-                        "Check the log for skipped tool names."
-                    ),
-                    code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-                )
-        elif hass_api_key:
-            LOGGER.warning(
-                "HASS API '%s' selected in options, but chat_log.llm_api is None "
-                "after async_provide_llm_data. Tools cannot be sent.",
-                hass_api_key,
-            )
-
-        thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
-
-        attachments = latest_user_attachments(chat_log.content)
-        if attachments:
-            if not vision_enabled_in_options(options):
-                return _intent_error_result(
-                    language=user_input.language,
-                    conversation_id=chat_log.conversation_id,
-                    message=(
-                        "Vision is disabled in DeepSeek options. Enable "
-                        "'Allow vision' to send image attachments."
-                    ),
-                    code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-                )
-            if not model_supports_vision(model):
-                return _intent_error_result(
-                    language=user_input.language,
-                    conversation_id=chat_log.conversation_id,
-                    message=(
-                        f"The selected model ({model}) does not support image "
-                        "attachments. Use deepseek-v4-flash or deepseek-v4-pro."
-                    ),
-                    code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-                )
-            try:
-                raise_if_vision_unsupported_for_api(
-                    self.entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
-                )
-            except HomeAssistantError as err:
-                return _intent_error_result(
-                    language=user_input.language,
-                    conversation_id=chat_log.conversation_id,
-                    message=str(err),
-                    code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-                )
-
-        initial_messages = _convert_content_to_messages(
-            chat_log.content,
-            model=model,
-            thinking_enabled=thinking_on,
-            options=options,
-        )
         try:
-            await _apply_attachments_to_last_user_message(
-                self.hass, chat_log.content, initial_messages
+            await async_handle_chat_log(
+                self.hass,
+                self.entry,
+                chat_log,
+                agent_id=user_input.agent_id,
+                usage_source="assist",
             )
         except HomeAssistantError as err:
-            LOGGER.error("[Debug vision]: attachment handling failed: %s", err)
             return _intent_error_result(
                 language=user_input.language,
                 conversation_id=chat_log.conversation_id,
                 message=str(err),
-                code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-            )
-        LOGGER.debug(
-            "Sending messages to DeepSeek: %s",
-            json.dumps(initial_messages, indent=2, cls=_HAJSONEncoder),
-        )
-
-        max_tool_iterations = coerce_max_tool_iterations(
-            options.get(CONF_MAX_TOOL_ITERATIONS, RECOMMENDED_MAX_TOOL_ITERATIONS)
-        )
-        LOGGER.debug(
-            "[Debug conversation]: max_tool_iterations=%d",
-            max_tool_iterations,
-        )
-        max_iterations_reached = False
-        all_usage: list[CompletionUsage] = []
-        messages = initial_messages
-        try:
-            # One API round per iteration, mirroring the stock Ollama/OpenAI
-            # integrations: a fresh ``async_add_delta_content_stream`` per round
-            # (the stream ending finalizes the assistant message and runs any tool
-            # calls), each round's first delta carries ``role`` so the Assist UI
-            # starts a clean message, and ``messages`` is extended with the newly
-            # added content instead of rebuilt — so image attachments stay encoded
-            # once (see ``_apply_attachments_to_last_user_message``).
-            for _iteration in range(max_tool_iterations):
-                messages_for_api = trim_messages_for_api(messages, options=options)
-                model_args = build_chat_completion_args(
-                    model=model,
-                    messages=messages_for_api,
-                    options=options,
-                    stream=True,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                )
-                LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
-                result = await client.chat.completions.create(**model_args)
-                new_contents = [
-                    content
-                    async for content in chat_log.async_add_delta_content_stream(
-                        user_input.agent_id,
-                        _transform_stream(
-                            chat_log,
-                            result,
-                            thinking_enabled=bool(thinking_on),
-                            usage_events=all_usage,
-                        ),
-                    )
-                ]
-
-                if not chat_log.unresponded_tool_results:
-                    LOGGER.debug("Iteration %d finished. No tool calls.", _iteration + 1)
-                    break
-
-                LOGGER.debug(
-                    "Iteration %d finished. Tool results in, extending messages.",
-                    _iteration + 1,
-                )
-                messages.extend(
-                    _convert_content_to_messages(
-                        new_contents,
-                        model=model,
-                        thinking_enabled=thinking_on,
-                        options=options,
-                    )
-                )
-            else:
-                max_iterations_reached = True
-            for usage in all_usage:
-                runtime.usage.record(usage, source="assist")
-        except openai.AuthenticationError as err:
-            LOGGER.error("DeepSeek API key rejected: %s", err)
-            self.entry.async_start_reauth(self.hass)
-            code, message = _classify_openai_error(err)
-            return _intent_error_result(
-                language=user_input.language,
-                conversation_id=chat_log.conversation_id,
-                message=message,
-                code=code,
-            )
-        except (
-            openai.RateLimitError,
-            openai.APIConnectionError,
-            openai.BadRequestError,
-            openai.APIStatusError,
-            openai.OpenAIError,
-        ) as err:
-            LOGGER.error("DeepSeek API error: %s", err)
-            code, message = _classify_openai_error(err)
-            return _intent_error_result(
-                language=user_input.language,
-                conversation_id=chat_log.conversation_id,
-                message=message,
-                code=code,
-            )
-        except TypeError as err:
-            LOGGER.error(
-                "TypeError during DeepSeek API call (likely tool serialization): %s",
-                err,
-                exc_info=True,
-            )
-            return _intent_error_result(
-                language=user_input.language,
-                conversation_id=chat_log.conversation_id,
-                message=f"Failed to send request: {err}",
-                code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-            )
-        except HomeAssistantError as err:
-            LOGGER.error("Error processing DeepSeek stream: %s", err)
-            error_msg = str(err)
-            if error_msg == "max_token":
-                error_msg = "Response truncated by token limit"
-            elif error_msg == "content_filter":
-                error_msg = "Response blocked by content filter"
-            return _intent_error_result(
-                language=user_input.language,
-                conversation_id=chat_log.conversation_id,
-                message=error_msg,
-                code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
-            )
-
-        if max_iterations_reached:
-            LOGGER.warning(
-                "Max tool iterations (%d) reached for conversation %s",
-                max_tool_iterations,
-                chat_log.conversation_id,
-            )
-            return _intent_error_result(
-                language=user_input.language,
-                conversation_id=chat_log.conversation_id,
-                message="Maximum tool iterations reached",
                 code=intent.IntentResponseErrorCode.FAILED_TO_HANDLE,
             )
 
