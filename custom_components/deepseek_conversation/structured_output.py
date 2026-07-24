@@ -8,6 +8,7 @@ DeepSeek). Used by ``ai_task.py`` and ``conversation.py`` (``force_json``).
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 import logging
 from typing import Any
 
@@ -16,7 +17,6 @@ from voluptuous_openapi import convert
 
 from homeassistant.components import conversation  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers.json import json_dumps  # pyright: ignore[reportMissingImports]
 
 from .const import DEEPSEEK_API_BASE_URL, RESPONSE_FORMAT_JSON_OBJECT
 from .vision import is_official_deepseek_api_base_url
@@ -104,8 +104,8 @@ def apply_structure_guidance_to_chat_log(
 
 
 def _structure_guidance_suffix(schema: dict[str, Any]) -> str:
-    example = json_dumps(_example_from_schema(schema), indent=2)
-    schema_text = json_dumps(schema, indent=2)
+    example = json.dumps(_example_from_schema(schema), indent=2)
+    schema_text = json.dumps(schema, indent=2)
     return (
         "\n\nYou must reply with a single JSON object only (no markdown fences). "
         "Use exactly these top-level field names and value types:\n"
