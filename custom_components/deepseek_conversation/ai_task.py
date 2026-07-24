@@ -27,7 +27,7 @@ from homeassistant.util.json import json_loads  # pyright: ignore[reportMissingI
 
 from .const import CONF_PROMPT, DEFAULT_SYSTEM_PROMPT, DOMAIN
 from .conversation import async_handle_chat_log
-from .structured_output import apply_structure_guidance_to_chat_log
+from .structured_output import structure_schema_for_task
 from .types import DeepSeekConfigEntry
 from .vision import ai_task_entity_features_for_options
 
@@ -154,9 +154,7 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
 
         response_schema = None
         if task.structure is not None:
-            response_schema = apply_structure_guidance_to_chat_log(
-                chat_log, task.structure
-            )
+            response_schema = structure_schema_for_task(chat_log, task.structure)
 
         await async_handle_chat_log(
             self.hass,

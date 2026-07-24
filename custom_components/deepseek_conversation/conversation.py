@@ -48,7 +48,10 @@ from .const import (
     RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .types import DeepSeekConfigEntry
-from .structured_output import build_response_format_for_schema
+from .structured_output import (
+    append_structure_guidance_to_last_user_message,
+    build_response_format_for_schema,
+)
 from .usage_metrics import CompletionUsage, completion_usage_from_api
 from .vision import (
     async_user_message_content,
@@ -693,6 +696,10 @@ async def async_handle_chat_log(
     await _apply_attachments_to_last_user_message(
         hass, chat_log.content, initial_messages
     )
+    if response_schema is not None:
+        append_structure_guidance_to_last_user_message(
+            initial_messages, response_schema
+        )
     LOGGER.debug(
         "Sending messages to DeepSeek: %s",
         json.dumps(initial_messages, indent=2, cls=_HAJSONEncoder),

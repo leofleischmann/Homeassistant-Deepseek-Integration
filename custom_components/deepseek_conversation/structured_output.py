@@ -67,16 +67,11 @@ def build_response_format_for_schema(
     }
 
 
-def apply_structure_guidance_to_chat_log(
+def structure_schema_for_task(
     chat_log: conversation.ChatLog,
     structure: vol.Schema,
 ) -> dict[str, Any]:
-    """Append JSON schema guidance to the last user message; return the schema.
-
-    DeepSeek JSON mode requires the word ``json`` in the prompt and benefits from
-    an explicit field list. OpenAI-compatible proxies with ``json_schema`` still
-    get clearer instructions from the same suffix.
-    """
+    """Convert an AI Task ``structure`` to OpenAPI/JSON Schema for the API call."""
     custom_serializer = (
         chat_log.llm_api.custom_serializer
         if chat_log.llm_api
@@ -85,23 +80,41 @@ def apply_structure_guidance_to_chat_log(
     schema = structure_to_openapi_schema(
         structure, custom_serializer=custom_serializer
     )
-    suffix = _structure_guidance_suffix(schema)
-
-    for content in reversed(chat_log.content):
-        if isinstance(content, conversation.UserContent):
-            content.content = (content.content or "").rstrip() + suffix
-            _LOGGER.debug(
-                "[Debug structured_output]: appended schema guidance (%d chars) "
-                "to user message",
-                len(suffix),
-            )
-            return schema
-
-    _LOGGER.warning(
-        "[Debug structured_output]: no UserContent in chat log; schema not injected"
+    _LOGGER.debug(
+        "[Debug structured_output]: built schema with %d top-level properties",
+        len(schema.get("properties", {}))
+        if isinstance(schema.get("properties"), dict)
+        else 0,
     )
     return schema
 
+
+def append_structure_guidance_to_last_user_message(
+    messages: list[dict[str, Any]],
+    schema: dict[str, Any],
+) -> None:
+    """Append JSON schema guidance to the last user API message.
+
+    ``UserContent`` in the chat log is frozen; mirror ``_apply_attachments_to_last_user_message``
+    and patch the converted messages instead.
+    """
+    suffix = _structure_guidance_suffix(schema)
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        text = message.get("content")
+        if not isinstance(text, str):
+            continue
+        message["content"] = text.rstrip() + suffix
+        _LOGGER.debug(
+            "[Debug structured_output]: appended schema guidance (%d chars) "
+            "to last user API message",
+            len(suffix),
+        )
+        return
+    _LOGGER.warning(
+        "[Debug structured_output]: no user API message found; schema not injected"
+    )
 
 def _structure_guidance_suffix(schema: dict[str, Any]) -> str:
     example = json.dumps(_example_from_schema(schema), indent=2)
