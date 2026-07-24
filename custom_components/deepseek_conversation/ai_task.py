@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from json import JSONDecodeError
 import logging
+import re
+from typing import Any
 
 from homeassistant.components import ai_task, conversation  # pyright: ignore[reportMissingImports]
+from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import device_registry as dr  # pyright: ignore[reportMissingImports]
@@ -23,6 +26,19 @@ from .types import DeepSeekConfigEntry
 from .vision import ai_task_entity_features_for_options
 
 _LOGGER = logging.getLogger(__name__)
+
+_JSON_FENCE_RE = re.compile(
+    r"^```(?:json)?\s*\n?(.*?)\n?```\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _parse_structured_task_response(text: str) -> Any:
+    """Parse JSON from a structured AI Task reply, tolerating markdown fences."""
+    stripped = text.strip()
+    if match := _JSON_FENCE_RE.match(stripped):
+        stripped = match.group(1).strip()
+    return json_loads(stripped)
 
 
 async def async_setup_entry(
@@ -47,10 +63,6 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
         self._attr_unique_id = f"{entry.entry_id}_ai_task"
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="DeepSeek",
-            model=entry.options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
-            entry_type=dr.DeviceEntryType.SERVICE,
         )
         self._sync_features_from_entry(entry)
 
@@ -59,6 +71,24 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
         self._attr_supported_features = ai_task_entity_features_for_options(
             entry.options
         )
+
+    async def async_added_to_hass(self) -> None:
+        """Register option updates (vision flag -> SUPPORT_ATTACHMENTS)."""
+        await super().async_added_to_hass()
+        self.entry.async_on_unload(
+            self.entry.add_update_listener(self._async_entry_update_listener)
+        )
+
+    async def _async_entry_update_listener(
+        self, hass: HomeAssistant, entry: DeepSeekConfigEntry
+    ) -> None:
+        """Apply option changes without a full config-entry reload."""
+        data_changed = dict(entry.data) != dict(self.entry.data)
+        self.entry = entry
+        if data_changed and hasattr(ConfigFlow, "async_update_and_abort"):
+            return
+        self._sync_features_from_entry(entry)
+        self.async_write_ha_state()
 
     async def _async_generate_data(
         self,
@@ -86,6 +116,13 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
             )
 
         text = chat_log.content[-1].content or ""
+        if not text.strip() and task.structure is None:
+            thinking = getattr(chat_log.content[-1], "thinking_content", None)
+            if isinstance(thinking, str) and thinking.strip():
+                _LOGGER.debug(
+                    "[Debug ai_task]: using thinking_content as plain-text fallback"
+                )
+                text = thinking.strip()
 
         if task.structure is None:
             return ai_task.GenDataTaskResult(
@@ -94,7 +131,7 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
             )
 
         try:
-            data = json_loads(text)
+            data = _parse_structured_task_response(text)
         except JSONDecodeError as err:
             _LOGGER.error(
                 "[Debug ai_task]: failed to parse JSON response: %s. Response: %s",

@@ -1,34 +1,45 @@
 # AI Task demo — plain text and structured output.
 # Trigger: Developer tools → Events → deepseek_ai_task_demo
 #
-# Resolves the first loaded deepseek_conversation config entry and its AI Task entity.
+# Resolves the first ai_task.* entity for deepseek_conversation automatically.
 # Results: persistent notification + logbook. Token sensors update after each call.
 
 alias: DeepSeek AI Task demo
 description: Demonstrates ai_task.generate_data (plain + structured).
 mode: single
-trigger:
-  - platform: event
+
+triggers:
+  - trigger: event
     event_type: deepseek_ai_task_demo
-action:
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set ns = namespace(ok=false) %}
+      {% for e in integration_entities('deepseek_conversation') %}
+        {% if e.startswith('ai_task.') %}{% set ns.ok = true %}{% endif %}
+      {% endfor %}
+      {{ ns.ok }}
+
+actions:
   - variables:
-      entry_id: >-
-        {{ config_entries('deepseek_conversation') | first }}
-      ai_task_entity: >-
-        {{ device_entities(device_id(entry_id)) | select('search', 'ai_task') | first }}
+      deepseek_ai_task_entity: >-
+        {% for e in integration_entities('deepseek_conversation') %}
+        {%- if e.startswith('ai_task.') %}{{ e }}{% break %}{% endif %}
+        {% endfor %}
   - action: ai_task.generate_data
     data:
       task_name: demo_summary
       instructions: >-
         In one short sentence, describe what Home Assistant is in plain language.
-      entity_id: "{{ ai_task_entity }}"
+      entity_id: "{{ deepseek_ai_task_entity }}"
     response_variable: plain_result
   - action: ai_task.generate_data
     data:
       task_name: demo_structured
       instructions: >-
         Reply with a JSON object describing a fictional smart-home room.
-      entity_id: "{{ ai_task_entity }}"
+      entity_id: "{{ deepseek_ai_task_entity }}"
       structure:
         room_name:
           selector:

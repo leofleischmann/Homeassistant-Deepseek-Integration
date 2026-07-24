@@ -657,7 +657,13 @@ async def async_handle_chat_log(
             hass_api_key,
         )
 
-    thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
+    thinking_on = bool(options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED))
+    api_options: dict[str, Any] = dict(options)
+    if force_json:
+        # Structured AI Task output must land in ``content``; thinking mode can
+        # leave the final answer in reasoning_content only (see generate_content).
+        thinking_on = False
+        api_options[CONF_THINKING_ENABLED] = False
 
     attachments = latest_user_attachments(chat_log.content)
     if attachments:
@@ -707,11 +713,11 @@ async def async_handle_chat_log(
     messages = initial_messages
     try:
         for _iteration in range(max_tool_iterations):
-            messages_for_api = trim_messages_for_api(messages, options=options)
+            messages_for_api = trim_messages_for_api(messages, options=api_options)
             model_args = build_chat_completion_args(
                 model=model,
                 messages=messages_for_api,
-                options=options,
+                options=api_options,
                 stream=True,
                 tools=tools,
                 tool_choice=tool_choice,
@@ -726,7 +732,7 @@ async def async_handle_chat_log(
                     _transform_stream(
                         chat_log,
                         result,
-                        thinking_enabled=bool(thinking_on),
+                        thinking_enabled=thinking_on,
                         usage_events=all_usage,
                     ),
                 )
