@@ -650,10 +650,10 @@ async def async_handle_chat_log(
                 "Home Assistant tools could not be prepared for the API. "
                 "Check the log for skipped tool names."
             )
-    elif hass_api_key:
+    elif hass_api_key and usage_source == "assist":
         LOGGER.warning(
-            "HASS API '%s' selected in options, but chat_log.llm_api is None. "
-            "Tools cannot be sent.",
+            "HASS API '%s' selected in options, but chat_log.llm_api is None "
+            "after async_provide_llm_data. Tools cannot be sent.",
             hass_api_key,
         )
 

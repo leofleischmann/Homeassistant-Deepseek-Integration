@@ -20,7 +20,7 @@ from homeassistant.helpers import device_registry as dr  # pyright: ignore[repor
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 from homeassistant.util.json import json_loads  # pyright: ignore[reportMissingImports]
 
-from .const import CONF_CHAT_MODEL, DOMAIN, RECOMMENDED_CHAT_MODEL
+from .const import DOMAIN
 from .conversation import async_handle_chat_log
 from .types import DeepSeekConfigEntry
 from .vision import ai_task_entity_features_for_options
@@ -110,6 +110,9 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
             usage_source="ai_task",
         )
 
+        if not chat_log.content:
+            raise HomeAssistantError("DeepSeek returned no assistant response")
+
         if not isinstance(chat_log.content[-1], conversation.AssistantContent):
             raise HomeAssistantError(
                 "Last content in chat log is not an AssistantContent"
@@ -135,6 +138,15 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
         except JSONDecodeError as err:
             _LOGGER.error(
                 "[Debug ai_task]: failed to parse JSON response: %s. Response: %s",
+                err,
+                text,
+            )
+            raise HomeAssistantError(
+                "DeepSeek returned a non-JSON response for a structured task"
+            ) from err
+        except (TypeError, ValueError) as err:
+            _LOGGER.error(
+                "[Debug ai_task]: structured response is not valid JSON: %s. Response: %s",
                 err,
                 text,
             )
