@@ -17,6 +17,9 @@
             "reasoning_tokens": {
                 "name": "Jetons de raisonnement"
             },
+            "cache_hit_tokens": {
+                "name": "Jetons servis par le cache"
+            },
             "api_requests": {
                 "name": "Requêtes API"
             },

@@ -17,6 +17,9 @@
             "reasoning_tokens": {
                 "name": "Reasoning-Token"
             },
+            "cache_hit_tokens": {
+                "name": "Cache-Treffer-Token"
+            },
             "api_requests": {
                 "name": "API-Anfragen"
             },

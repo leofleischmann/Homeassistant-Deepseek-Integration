@@ -17,6 +17,8 @@ class DeepSeekRuntimeData:
 
     client: openai.AsyncClient
     usage: UsageTracker
+    http_version: str | None = None
+    warned_unexpected_reasoning: bool = False
 
 
 DeepSeekConfigEntry: TypeAlias = ConfigEntry[DeepSeekRuntimeData]

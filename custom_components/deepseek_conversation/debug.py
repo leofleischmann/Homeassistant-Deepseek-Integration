@@ -43,6 +43,7 @@ from .const import (
     coerce_max_tokens,
     deepseek_chat_thinking_params,
 )
+from .usage_metrics import completion_usage_from_api
 
 REPORT_FILENAME = "deepseek_conversation_debug_report.txt"
 LOG_CANDIDATES = ("home-assistant.log", "home-assistant.log.1")
@@ -155,6 +156,73 @@ def _choice_meta(resp: Any) -> dict[str, Any]:
     return meta
 
 
+async def _latency_profile(
+    client: openai.AsyncOpenAI,
+    model: str,
+    opts: dict[str, Any],
+    out: dict[str, Any],
+    log: Callable[[str], None],
+) -> None:
+    """Time identical minimal requests to separate fixed cost from variance.
+
+    Fires three back-to-back requests, then one after a pause longer than the
+    httpx keep-alive window. Interpreting the numbers:
+
+    * back-to-back calls all similar and the delayed one much slower — the
+      connection setup (DNS/TCP/TLS, or a proxy's own upstream handshake)
+      dominates, not inference;
+    * all four similar — the floor is provider-side inference/queueing;
+    * high spread between identical back-to-back calls — the endpoint queues or
+      routes requests unevenly, which is what makes some voice commands slow.
+    """
+    prompt = [{"role": "user", "content": "Reply with the single word: ok"}]
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": prompt,
+        "max_tokens": 4,
+        "stream": False,
+        **deepseek_chat_thinking_params(
+            thinking_enabled=False,
+            reasoning_effort=str(
+                opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)
+            ),
+            model=model,
+        ),
+    }
+
+    async def _one() -> float:
+        t0 = time.perf_counter()
+        await client.with_options(timeout=60.0).chat.completions.create(**kwargs)
+        return time.perf_counter() - t0
+
+    result: dict[str, Any] = {"ok": False}
+    try:
+        warm = [round(await _one(), 3) for _ in range(3)]
+        # Longer than homeassistant.helpers.httpx_client.KEEP_ALIVE_TIMEOUT (15 s)
+        # so the pooled connection is certainly gone.
+        log("latency_profile: idling 16 s to force a reconnect for the next call")
+        await asyncio.sleep(16)
+        cold = round(await _one(), 3)
+        spread = round(max(warm) - min(warm), 3)
+        result = {
+            "ok": True,
+            "back_to_back_seconds": warm,
+            "after_18s_idle_seconds": cold,
+            "back_to_back_spread_seconds": spread,
+            "reconnect_penalty_seconds": round(cold - min(warm), 3),
+            "note": (
+                "Large reconnect_penalty => connection setup dominates. "
+                "Large back_to_back_spread => the endpoint queues/routes unevenly. "
+                "Both small => the floor is provider-side inference time."
+            ),
+        }
+    except Exception as err:  # diagnostics must never abort the report
+        result = {"ok": False, "error": f"{type(err).__name__}: {err}"}
+
+    out["edge_cases"]["latency_profile"] = result
+    log(f"latency_profile: {result}")
+
+
 async def async_run_debug_suite(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -188,10 +256,18 @@ async def async_run_debug_suite(
         "home_assistant_version": _ha_version(),
         "openai_sdk_version": getattr(openai, "__version__", "unknown"),
         "voluptuous_openapi_version": _pkg_version("voluptuous-openapi"),
+        "h2_version": _pkg_version("h2"),
         "integration_domain": DOMAIN,
         "config_dir": hass.config.config_dir,
         "component_in_loaded_components": DOMAIN in hass.config.components,
         "coerce_max_tokens_upper_bound": MAX_TOKENS_UPPER_BOUND,
+        # HTTP/1.1 here means every API round re-handshakes TLS, because the
+        # OpenAI SDK closes each streamed response without draining it.
+        "negotiated_http_version": getattr(
+            entry.runtime_data, "http_version", None
+        )
+        if entry.runtime_data is not None
+        else None,
     }
     out["environment"] = env
     for k, v in env.items():
@@ -472,15 +548,37 @@ async def async_run_debug_suite(
         log(f"--- stream {name} ---")
 
         async def _run() -> dict[str, Any]:
+            t_start = time.perf_counter()
             stream = await client.with_options(timeout=90.0).chat.completions.create(**kwargs)
             chunks = 0
             content_acc = ""
             reasoning_acc = ""
             last_role = None
+            ttfb: float | None = None
+            gaps: list[float] = []
+            t_prev = t_start
+            usage_seen: dict[str, Any] | None = None
             async for ev in stream:
+                now = time.perf_counter()
                 chunks += 1
+                if ttfb is None:
+                    ttfb = now - t_start
+                else:
+                    gaps.append(now - t_prev)
+                t_prev = now
                 if chunks > max_chunks:
                     break
+                if (u := getattr(ev, "usage", None)) is not None:
+                    parsed = completion_usage_from_api(u)
+                    if parsed is not None:
+                        usage_seen = {
+                            "prompt_tokens": parsed.prompt_tokens,
+                            "completion_tokens": parsed.completion_tokens,
+                            "reasoning_tokens": parsed.reasoning_tokens,
+                            "cache_hit_tokens": parsed.cache_hit_tokens,
+                            "cache_miss_tokens": parsed.cache_miss_tokens,
+                            "cache_hit_rate": parsed.cache_hit_rate,
+                        }
                 if not ev.choices:
                     continue
                 d = ev.choices[0].delta
@@ -493,12 +591,25 @@ async def async_run_debug_suite(
                     reasoning_acc += rd
                 if d.role:
                     last_role = d.role
+            total = time.perf_counter() - t_start
+            # A proxy that buffers the whole reply re-emits it as one or two
+            # chunks with all the time spent before the first one.
+            buffered = chunks <= 2 or (ttfb is not None and total > 0 and ttfb / total > 0.9)
             return {
                 "chunks": chunks,
                 "content_len": len(content_acc),
                 "content_preview": content_acc[:300],
                 "reasoning_len": len(reasoning_acc),
                 "last_delta_role": last_role,
+                "http_version": getattr(
+                    getattr(stream, "response", None), "http_version", None
+                ),
+                "time_to_first_chunk_s": round(ttfb, 3) if ttfb is not None else None,
+                "mean_inter_chunk_ms": (
+                    round(sum(gaps) / len(gaps) * 1000, 1) if gaps else None
+                ),
+                "looks_buffered_by_proxy": buffered,
+                "usage": usage_seen,
             }
 
         res, dt, err = await _timed(name, _run)
@@ -606,6 +717,9 @@ async def async_run_debug_suite(
         ),
     }
     log(f"parallel_two_pings: {out['edge_cases']['parallel_two_pings']}")
+
+    # --- Round-trip latency profile ---
+    await _latency_profile(client, model, opts, out, log)
 
     # --- Summary counts ---
     def _count_ok(container: dict[str, Any]) -> tuple[int, int]:

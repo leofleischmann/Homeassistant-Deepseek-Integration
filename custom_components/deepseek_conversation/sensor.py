@@ -123,6 +123,9 @@ class DeepSeekLastRequestSensor(SensorEntity):
             "prompt_tokens": usage.prompt_tokens,
             "completion_tokens": usage.completion_tokens,
             "reasoning_tokens": usage.reasoning_tokens,
+            "cache_hit_tokens": usage.cache_hit_tokens,
+            "cache_miss_tokens": usage.cache_miss_tokens,
+            "cache_hit_rate": usage.cache_hit_rate,
             "source": source,
             "request_count": request_count,
         }
@@ -171,6 +174,13 @@ async def async_setup_entry(
         unit="tokens",
         icon="mdi:brain",
     )
+    cache_hit = DeepSeekUsageCounterSensor(
+        entry,
+        "cache_hit_tokens",
+        "cache_hit_tokens",
+        unit="tokens",
+        icon="mdi:cached",
+    )
     api_requests = DeepSeekUsageCounterSensor(
         entry,
         "api_requests",
@@ -191,6 +201,7 @@ async def async_setup_entry(
         completion=completion,
         total=total,
         reasoning=reasoning,
+        cache_hit=cache_hit,
         api_requests=api_requests,
         last_request=last_request,
         last_request_prompt=last_request_prompt,
@@ -203,6 +214,7 @@ async def async_setup_entry(
             completion,
             total,
             reasoning,
+            cache_hit,
             api_requests,
             last_request,
             last_request_prompt,

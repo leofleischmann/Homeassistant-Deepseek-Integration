@@ -221,6 +221,55 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
+def _record_http_version(runtime: Any, result: Any) -> None:
+    """Remember the negotiated HTTP version of the streaming response.
+
+    HTTP/1.1 means every API round pays a fresh TCP+TLS handshake, because the
+    OpenAI SDK closes the streaming response at ``[DONE]`` without draining it,
+    so httpx cannot return the connection to the pool. Over HTTP/2 only the
+    stream is closed and the connection is reused. Surfaced in the debug report
+    so slow round trips can be attributed correctly.
+    """
+    if runtime is None:
+        return
+    version = getattr(getattr(result, "response", None), "http_version", None)
+    if not version or version == getattr(runtime, "http_version", None):
+        return
+    runtime.http_version = version
+    LOGGER.debug(
+        "[Debug conversation]: negotiated %s with the API endpoint%s",
+        version,
+        ""
+        if version.startswith("HTTP/2")
+        else " (HTTP/1.1: each API round re-establishes the TLS connection)",
+    )
+
+
+def _warn_unexpected_reasoning(runtime: Any, *, model: str, base_url: str) -> None:
+    """Warn once per config entry when reasoning arrives although it is off.
+
+    ``build_chat_completion_args`` sends ``extra_body.thinking = disabled`` for
+    DeepSeek model ids, and V4 defaults to reasoning **enabled** when the field
+    is absent. A gateway that drops unknown ``extra_body`` keys therefore leaves
+    reasoning on: the tokens are generated and billed, and the user waits for
+    them, but ``_transform_stream`` discards the text so nothing is visible.
+    That silent latency is worth one warning.
+    """
+    if runtime is None or getattr(runtime, "warned_unexpected_reasoning", False):
+        return
+    runtime.warned_unexpected_reasoning = True
+    LOGGER.warning(
+        "DeepSeek returned reasoning_content although reasoning is disabled in "
+        "the options (model=%s, base_url=%s). The API endpoint appears to ignore "
+        "the 'thinking: disabled' flag, so reasoning tokens are still generated, "
+        "billed and waited for while being discarded. Check the reasoning_tokens "
+        "sensor; if it keeps rising, this endpoint does not support switching "
+        "reasoning off and responses will be slower than expected.",
+        model,
+        base_url,
+    )
+
+
 def _is_deepseek_reasoner_model(model: str) -> bool:
     """True for deepseek-reasoner (CoT must not be replayed in request history)."""
     return "reasoner" in (model or "").lower()
@@ -463,6 +512,7 @@ async def _transform_stream(
     *,
     thinking_enabled: bool = False,
     usage_events: list[CompletionUsage] | None = None,
+    on_unexpected_reasoning: Callable[[], None] | None = None,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format.
 
@@ -470,10 +520,15 @@ async def _transform_stream(
     also carries ``role`` so Home Assistant starts a fresh assistant message
     (same pattern as the stock Ollama integration); ending the stream lets HA
     finalize the message and run any pending tool calls.
+
+    ``on_unexpected_reasoning`` is invoked once per stream if the API sends
+    ``reasoning_content`` while reasoning is switched off — see
+    ``_warn_unexpected_reasoning``.
     """
     current_tool_calls: list[dict[str, Any]] = []
     current_tool_call_args_buffer: dict[int, str] = {}
     role_emitted = False
+    reported_unexpected_reasoning = False
     async for chunk in result:
         parsed_usage = completion_usage_from_api(getattr(chunk, "usage", None))
         if parsed_usage is not None:
@@ -506,6 +561,10 @@ async def _transform_stream(
                     "(thinking_enabled is false)"
                 )
                 reasoning_delta = None
+                if not reported_unexpected_reasoning:
+                    reported_unexpected_reasoning = True
+                    if on_unexpected_reasoning is not None:
+                        on_unexpected_reasoning()
             if content_delta and not (getattr(delta, "content", None) or ""):
                 LOGGER.debug(
                     "Stream delta: using content from model_extra (attr empty or unset)"
@@ -727,6 +786,11 @@ async def async_handle_chat_log(
 
     all_usage: list[CompletionUsage] = []
     messages = initial_messages
+    base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+
+    def _report_unexpected_reasoning() -> None:
+        _warn_unexpected_reasoning(runtime, model=model, base_url=base_url)
+
     try:
         for _iteration in range(max_tool_iterations):
             messages_for_api = trim_messages_for_api(messages, options=api_options)
@@ -741,6 +805,7 @@ async def async_handle_chat_log(
             )
             LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
             result = await client.chat.completions.create(**model_args)
+            _record_http_version(runtime, result)
             new_contents = [
                 content
                 async for content in chat_log.async_add_delta_content_stream(
@@ -750,6 +815,7 @@ async def async_handle_chat_log(
                         result,
                         thinking_enabled=thinking_on,
                         usage_events=all_usage,
+                        on_unexpected_reasoning=_report_unexpected_reasoning,
                     ),
                 )
             ]

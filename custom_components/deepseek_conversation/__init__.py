@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from typing import Any
 
 import openai
 import voluptuous as vol
@@ -307,13 +308,58 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+def _async_http_client(hass: HomeAssistant) -> Any:
+    """Return HA's shared httpx client, preferring the HTTP/2-capable one.
+
+    The OpenAI SDK ends a streamed completion by breaking out of the SSE
+    iterator at ``[DONE]`` and closing the response without draining it. Over
+    HTTP/1.1 httpx cannot return such a connection to the pool, so **every** API
+    round opens a new TCP+TLS connection — a full handshake per tool-calling
+    round trip, which is expensive on long-haul or proxied routes. Over HTTP/2
+    only the stream is closed and the connection stays pooled.
+
+    Requires ``h2`` (declared in the manifest) and a core new enough for
+    ``alpn_protocols``. ALPN negotiates per endpoint, so an API that offers no
+    HTTP/2 transparently falls back to HTTP/1.1; if anything here is missing the
+    plain shared HTTP/1.1 client is used, which is the previous behaviour.
+    """
+    try:
+        import h2  # noqa: F401  # pyright: ignore[reportMissingImports]
+
+        from homeassistant.util.ssl import SSL_ALPN_HTTP11_HTTP2  # pyright: ignore[reportMissingImports]
+    except ImportError as err:
+        LOGGER.debug(
+            "[Debug setup]: HTTP/2 support unavailable (%s); using HTTP/1.1. "
+            "Each API round will open a new TLS connection.",
+            err,
+        )
+        return get_async_client(hass)
+
+    try:
+        client = get_async_client(hass, alpn_protocols=SSL_ALPN_HTTP11_HTTP2)
+    except TypeError as err:
+        # Core predates the alpn_protocols keyword.
+        LOGGER.debug(
+            "[Debug setup]: shared client does not accept alpn_protocols (%s); "
+            "using HTTP/1.1",
+            err,
+        )
+        return get_async_client(hass)
+
+    LOGGER.debug(
+        "[Debug setup]: using HTTP/2-capable shared client (falls back to "
+        "HTTP/1.1 per endpoint via ALPN)"
+    )
+    return client
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> bool:
     """Set up DeepSeek Conversation from a config entry."""
     base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
     client = openai.AsyncOpenAI(
         api_key=entry.data[CONF_API_KEY],
         base_url=base_url,
-        http_client=get_async_client(hass),
+        http_client=_async_http_client(hass),
     )
 
     try:
