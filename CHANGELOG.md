@@ -2,6 +2,19 @@
 
 All notable changes to this integration.
 
+## [1.5.0] - 2026-08-07
+
+### Improved
+- **HTTP/2 to the API when the endpoint supports it.** The OpenAI SDK ends a streamed completion by breaking out of the SSE iterator at `[DONE]` and closing the response without draining it. Over HTTP/1.1 httpx cannot return such a connection to the pool, so **every** API round opened a new TCP+TLS connection — a full handshake on each tool-calling round trip, which is costly on long-haul or proxied routes. The integration now asks Home Assistant for its HTTP/2-capable shared client; ALPN negotiates per endpoint, so an API without HTTP/2 transparently keeps using HTTP/1.1. Requires `h2` (added to the manifest) and a core that supports `alpn_protocols`; otherwise the previous HTTP/1.1 client is used.
+
+### Added
+- **Prompt cache tokens** from the API `usage` object: new cumulative `cache_hit_tokens` sensor, plus `cache_hit_tokens`, `cache_miss_tokens` and `cache_hit_rate` attributes on `last_request_tokens` and in the `generate_content` service response. Reads DeepSeek's `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` and the OpenAI-style `prompt_tokens_details.cached_tokens` used by some gateways.
+- **Warning when an endpoint ignores `thinking: disabled`.** DeepSeek V4 reasons by default when the field is absent, so a gateway that drops unknown `extra_body` keys leaves reasoning on: the tokens are generated, billed and waited for, while the integration discards the text. This was only visible at DEBUG level; it now logs one warning per config entry pointing at the `reasoning_tokens` sensor.
+- **Latency profiling in `run_debug`.** The report now records the negotiated HTTP version, the installed `h2` version, per-stream time-to-first-chunk, mean inter-chunk gap and a `looks_buffered_by_proxy` flag (a proxy that buffers the reply defeats streaming TTS), token usage per stream test, and a `latency_profile` block that separates connection-setup cost from provider-side inference by timing three back-to-back requests against one after a 16 s idle.
+
+### Fixed
+- Nested `completion_tokens_details` / `prompt_tokens_details` are now read from gateways that return them as plain objects rather than dicts or pydantic models; `reasoning_tokens` was silently reported as 0 for those.
+
 ## [1.4.0] - 2026-07-24
 
 ### Added
