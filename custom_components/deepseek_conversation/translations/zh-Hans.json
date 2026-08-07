@@ -17,6 +17,9 @@
             "reasoning_tokens": {
                 "name": "推理令牌"
             },
+            "cache_hit_tokens": {
+                "name": "缓存命中令牌"
+            },
             "api_requests": {
                 "name": "API 请求次数"
             },
