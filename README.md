@@ -58,7 +58,7 @@ For your own wording, the system prompt is a Jinja template with `user_name`, `u
 {% if user_area %}They are in {{ user_area }}; "my room" means {{ user_area }}.{% endif %}
 ```
 
-Voice satellites usually identify no user (Home Assistant runs those pipelines without an account) — `user_area` still works. `ai_task.generate_data` has no speaker at all; the variables are defined but empty, so one prompt works everywhere. Demo: [`sample_automations/deepseek_user_context_demo.yaml`](sample_automations/deepseek_user_context_demo.yaml).
+Voice satellites usually identify no user (Home Assistant runs those pipelines without an account) — `user_area` still works. Automations never carry a user either, so `conversation.process` and `ai_task.generate_data` from an automation see empty values; the variables stay defined, so one prompt works everywhere.
 
 ## Automations
 
