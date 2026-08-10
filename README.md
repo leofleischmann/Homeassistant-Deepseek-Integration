@@ -16,6 +16,7 @@ Use DeepSeek **V4 Flash** (default) or **V4 Pro** as the brain behind Assist: st
 | Area | What you get |
 |------|----------------|
 | **Assist** | Pick the agent in your voice assistant settings; same config for voice and text chat |
+| **Who is speaking** | Optional: pass the Home Assistant user and room into the prompt so replies can be personalised ([details](#who-is-speaking)) |
 | **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
@@ -45,6 +46,19 @@ Release download badge counts GitHub `deepseek_conversation.zip` assets, not the
 4. Assign the agent to your Assist pipeline / voice assistant
 
 Change API key, base URL, or Brave Search key via the integration card **⋮ → Reconfigure** (not the gear).
+
+## Who is speaking
+
+Off by default. *Configure → Tell the model who is speaking* appends the speaker's name, presence and the room of the voice satellite to the system prompt. Nothing is sent when nobody is identified.
+
+For your own wording, the system prompt is a Jinja template with `user_name`, `user_id`, `user_is_admin`, `person_entity_id`, `person_name`, `person_state`, `device_id`, `device_name`, `user_area`, `user_floor` (plus HA's `ha_name` and `llm_context`). Unknown values are empty strings, so branch with `{% if user_name %}`:
+
+```jinja
+{% if user_name %}You are speaking with {{ user_name }}.{% endif %}
+{% if user_area %}They are in {{ user_area }}; "my room" means {{ user_area }}.{% endif %}
+```
+
+Voice satellites usually identify no user (Home Assistant runs those pipelines without an account) — `user_area` still works. Automations never carry a user either, so `conversation.process` and `ai_task.generate_data` from an automation see empty values; the variables stay defined, so one prompt works everywhere.
 
 ## Automations
 

@@ -47,6 +47,7 @@ from .const import (
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
     CONF_CONTEXT_MANAGEMENT_ENABLED,
+    CONF_INCLUDE_USER_CONTEXT,
     CONF_MAX_TOOL_RESULT_CHARS,
     CONF_MAX_HISTORY_ROUNDS,
     CONF_MAX_TOKENS,
@@ -59,6 +60,7 @@ from .const import (
     CONF_TOP_P,
     CONF_VISION_ENABLED,
     DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
+    DEFAULT_INCLUDE_USER_CONTEXT,
     DEFAULT_VISION_ENABLED,
     DEFAULT_STRIP_MARKDOWN,
     DEFAULT_SYSTEM_PROMPT,
@@ -168,6 +170,7 @@ DEFAULT_OPTIONS = {
     CONF_TOP_P: RECOMMENDED_TOP_P,
     CONF_THINKING_ENABLED: DEFAULT_THINKING_ENABLED,
     CONF_STRIP_MARKDOWN: DEFAULT_STRIP_MARKDOWN,
+    CONF_INCLUDE_USER_CONTEXT: DEFAULT_INCLUDE_USER_CONTEXT,
     CONF_VISION_ENABLED: DEFAULT_VISION_ENABLED,
     CONF_CONTEXT_MANAGEMENT_ENABLED: DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
     CONF_MAX_TOOL_RESULT_CHARS: RECOMMENDED_MAX_TOOL_RESULT_CHARS,
@@ -515,6 +518,17 @@ def deepseek_config_option_schema(
             },
             default=DEFAULT_SYSTEM_PROMPT,
         ): TemplateSelector(),
+        vol.Optional(
+            CONF_INCLUDE_USER_CONTEXT,
+            description={
+                "suggested_value": options.get(
+                    CONF_INCLUDE_USER_CONTEXT, DEFAULT_INCLUDE_USER_CONTEXT
+                )
+            },
+            default=options.get(
+                CONF_INCLUDE_USER_CONTEXT, DEFAULT_INCLUDE_USER_CONTEXT
+            ),
+        ): BooleanSelector(),
         # Add selector for CONF_LLM_HASS_API
         vol.Optional(
             CONF_LLM_HASS_API,

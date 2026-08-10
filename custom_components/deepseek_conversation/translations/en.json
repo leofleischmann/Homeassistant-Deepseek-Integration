@@ -119,6 +119,7 @@
                 "description": "Assist, model, and API behaviour. To change your API key or base URL, use the integration card menu (⋮ → Reconfigure).",
                 "data": {
                     "prompt": "System Prompt",
+                    "include_user_context": "Tell the model who is speaking",
                     "llm_hass_api": "Home Assistant API",
                     "chat_model": "Model",
                     "max_tokens": "Max Tokens",
@@ -134,6 +135,8 @@
                     "reasoning_effort": "Reasoning effort"
                 },
                 "data_description": {
+                    "prompt": "Jinja template. Home Assistant provides ha_name and llm_context; this integration adds user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Unknown values are empty strings, so branch with an if-check rather than comparing to None.",
+                    "include_user_context": "Off by default. When on, appends the speaker's name, presence state and the area of the voice satellite to the end of the system prompt, so replies can be personalised without writing a template. Voice satellites often identify no user; the area is still sent. Nothing is sent when nobody is identified.",
                     "llm_hass_api": "No selection = no device control. Add Web Search (Brave) here after you set a Brave API key via setup or Reconfigure.",
                     "thinking_enabled": "When on, the API uses reasoning effort; temperature and top_p are ignored.",
                     "reasoning_effort": "Only used when reasoning is enabled.",

@@ -33,11 +33,13 @@ from .const import (
     coerce_max_tool_iterations,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
+    CONF_INCLUDE_USER_CONTEXT,
     CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
     CONF_STRIP_MARKDOWN,
     CONF_THINKING_ENABLED,
     DEEPSEEK_API_BASE_URL,
+    DEFAULT_INCLUDE_USER_CONTEXT,
     DEFAULT_STRIP_MARKDOWN,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_THINKING_ENABLED,
@@ -53,6 +55,11 @@ from .structured_output import (
     build_response_format_for_schema,
 )
 from .usage_metrics import CompletionUsage, completion_usage_from_api
+from .user_context import (
+    async_build_speaker_context,
+    merge_extra_system_prompt,
+    strip_speaker_block,
+)
 from .vision import (
     async_user_message_content,
     conversation_entity_features_for_options,
@@ -955,13 +962,40 @@ class DeepSeekConversationEntity(
             )
         thinking_on = options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED)
 
+        # Who is talking, and from where. The preamble defines the template
+        # variables; the facts block is appended last (after the exposed-entity
+        # list) so the cacheable part of the system prompt stays speaker-agnostic.
+        llm_context = user_input.as_llm_context(DOMAIN)
+        speaker = await async_build_speaker_context(self.hass, llm_context)
+        user_llm_prompt = (options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
+
+        speaker_block = (
+            speaker.facts_prompt()
+            if options.get(CONF_INCLUDE_USER_CONTEXT, DEFAULT_INCLUDE_USER_CONTEXT)
+            else None
+        )
+        # On follow-up turns ConversationInput carries no extra prompt and HA
+        # falls back to the value it persisted last turn - which already had our
+        # block appended. Recover the caller's own part before re-appending.
+        caller_extra = user_input.extra_system_prompt
+        if caller_extra is None:
+            caller_extra = strip_speaker_block(chat_log.extra_system_prompt)
+
+        LOGGER.debug(
+            "[Debug conversation]: speaker user=%s area=%s facts=%s",
+            speaker.has_user,
+            speaker.has_location,
+            bool(speaker_block),
+        )
+
         try:
             await chat_log.async_provide_llm_data(
-                llm_context=user_input.as_llm_context(DOMAIN),
+                llm_context=llm_context,
                 user_llm_hass_api=options.get(CONF_LLM_HASS_API),
-                user_llm_prompt=(options.get(CONF_PROMPT) or "").strip()
-                or DEFAULT_SYSTEM_PROMPT,
-                user_extra_system_prompt=user_input.extra_system_prompt,
+                user_llm_prompt=speaker.apply_to_prompt(user_llm_prompt),
+                user_extra_system_prompt=merge_extra_system_prompt(
+                    caller_extra, speaker_block
+                ),
             )
         except conversation.ConverseError as err:
             LOGGER.error("Error during chat_log.async_provide_llm_data: %s", err)

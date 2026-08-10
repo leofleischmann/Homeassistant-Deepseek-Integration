@@ -29,6 +29,7 @@ from .const import CONF_PROMPT, DEFAULT_SYSTEM_PROMPT, DOMAIN
 from .conversation import async_handle_chat_log
 from .structured_output import structure_schema_for_task
 from .types import DeepSeekConfigEntry
+from .user_context import EMPTY_SPEAKER_CONTEXT
 from .vision import ai_task_entity_features_for_options
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +59,12 @@ async def _async_apply_entry_llm_options(
     ``AITaskEntity`` (final) already called ``async_provide_llm_data`` with HA's
     generic default. Calling it again replaces ``content[0]`` only; task
     instructions and attachments in later content entries are preserved.
+
+    An AI Task has no speaker: ``GenDataTask`` carries no ``Context``, and HA's
+    own ``AITaskEntity`` passes ``context=None`` too, so the calling user is not
+    available here at all. The speaker variables are still defined - as empty
+    strings - so one prompt can be shared with Assist without tripping over
+    undefined names.
     """
     options = entry.options
     user_llm_hass_api = (
@@ -66,6 +73,7 @@ async def _async_apply_entry_llm_options(
         else options.get(CONF_LLM_HASS_API)
     )
     user_llm_prompt = (options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
+    user_llm_prompt = EMPTY_SPEAKER_CONTEXT.apply_to_prompt(user_llm_prompt)
 
     _LOGGER.debug(
         "[Debug ai_task]: applying entry prompt (%d chars) llm_api=%r",

@@ -55,6 +55,7 @@ from .const import (
 from .debug import async_run_debug_suite
 from .types import DeepSeekConfigEntry, DeepSeekRuntimeData
 from .usage_metrics import UsageTracker, completion_usage_from_api
+from .user_context import async_render_standalone_prompt
 from .vision import (
     async_image_parts_from_filenames,
     raise_if_vision_unsupported_for_api,
@@ -116,6 +117,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         messages: list[dict[str, object]] = []
         system_prompt = (entry.options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
+        # No chat log here, so nothing else renders the prompt for this service.
+        # The speaker is whoever triggered the call - usually an automation, in
+        # which case the speaker variables are simply empty.
+        system_prompt = await async_render_standalone_prompt(
+            hass, system_prompt, call.context
+        )
         messages.append({"role": "system", "content": system_prompt})
 
         user_content: list[dict[str, object]] = [

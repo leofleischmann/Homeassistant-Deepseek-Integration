@@ -2,6 +2,17 @@
 
 All notable changes to this integration.
 
+## [1.6.0] - 2026-08-10
+
+### Added
+- **The model now knows who is speaking.** Home Assistant only ever resolved `user_name` for a system prompt, and voice satellites run the pipeline without a user account — so in exactly the households this matters for, `{{ user_name }}` rendered the literal string `None`. The prompt now gets the full speaker identity as real Jinja variables: `user_id`, `user_name`, `user_is_admin`, `person_entity_id`, `person_name`, `person_state`, `device_id`, `device_name`, `user_area`, `user_floor`. Unknown values are empty strings, so `{% if user_name %}` works and nothing renders as `None`. Values are injected as `{% set %}` statements ahead of the configured prompt, so Home Assistant still does the single render pass and a user name can never inject Jinja.
+- **"Tell the model who is speaking"** option, **off by default**: appends a short speaker block — name, presence, and the area of the satellite that was spoken to — without needing a custom prompt. It is appended last, after the exposed-entity list, so the large speaker-independent part of the system prompt stays byte-identical between household members and DeepSeek's prefix cache keeps hitting. Left off, nothing about the speaker reaches the API and the system prompt is byte-identical to before this release.
+- Documentation for the system prompt template variables in the README and in the Configure dialog, where none existed before.
+
+### Fixed
+- **`generate_content` sent the configured system prompt unrendered.** It talks to the API without a chat log, so nothing expanded its template and a prompt containing `{{ ... }}` reached the model as literal text. It now renders the same variables as Assist; a template that fails to render falls back to the unrendered prompt instead of failing the service call.
+- A caller's `extra_system_prompt` (e.g. from `conversation.process`) is no longer lost on follow-up turns now that the speaker block shares that slot.
+
 ## [1.5.0] - 2026-08-07
 
 ### Improved
