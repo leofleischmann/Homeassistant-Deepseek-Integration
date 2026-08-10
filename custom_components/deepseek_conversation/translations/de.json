@@ -119,6 +119,7 @@
                 "description": "Assist, Modell und API-Verhalten. API-Schlüssel oder Basis-URL änderst du über das Integrationsmenü (⋮ → Neu konfigurieren).",
                 "data": {
                     "prompt": "System-Prompt",
+                    "include_user_context": "Sprecher-Info an das Modell senden",
                     "llm_hass_api": "Home-Assistant-API",
                     "chat_model": "Modell",
                     "max_tokens": "Max. Tokens",
@@ -134,6 +135,8 @@
                     "reasoning_effort": "Reasoning-Aufwand"
                 },
                 "data_description": {
+                    "prompt": "Jinja-Vorlage. Home Assistant liefert ha_name und llm_context; diese Integration ergänzt user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Unbekannte Werte sind leere Zeichenketten – daher mit einer if-Abfrage verzweigen statt auf None zu prüfen.",
+                    "include_user_context": "Standardmäßig aus. Wenn aktiv, werden Name und Anwesenheit des Sprechers sowie der Raum des Sprachsatelliten ans Ende des System-Prompts gehängt, damit Antworten ohne eigene Vorlage personalisiert werden. Sprachsatelliten erkennen oft keinen Benutzer; der Raum wird trotzdem gesendet. Wird niemand erkannt, wird nichts gesendet.",
                     "llm_hass_api": "Keine Auswahl = keine Gerätesteuerung. Web Search (Brave) hier hinzufügen, nachdem du einen Brave-API-Schlüssel per Setup oder Neu konfigurieren gesetzt hast.",
                     "thinking_enabled": "Wenn aktiv, nutzt die API Reasoning-Aufwand; Temperatur und Top-P werden ignoriert.",
                     "reasoning_effort": "Nur wirksam, wenn Reasoning aktiv ist.",

@@ -23,6 +23,7 @@ CONF_VISION_ENABLED = "vision_enabled"
 CONF_CONTEXT_MANAGEMENT_ENABLED = "context_management_enabled"
 CONF_MAX_TOOL_RESULT_CHARS = "max_tool_result_chars"
 CONF_MAX_HISTORY_ROUNDS = "max_history_rounds"
+CONF_INCLUDE_USER_CONTEXT = "include_user_context"
 CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
 CONF_FILENAMES = "filenames"
@@ -30,7 +31,10 @@ CONF_RESPONSE_FORMAT = "response_format"
 
 RESPONSE_FORMAT_JSON_OBJECT = "json_object"
 
-# Default system prompt (Jinja: ha_name, user_name, llm_context)
+# Default system prompt. Available Jinja variables: ha_name and llm_context from
+# Home Assistant, plus everything in user_context.USER_CONTEXT_VARS (user_id,
+# user_name, user_area, ...) which this integration defines. Unknown speaker
+# values render as empty strings, so `{% if user_name %}` is the way to branch.
 DEFAULT_SYSTEM_PROMPT = """You are an assistant for Home Assistant, the open-source home automation platform.
 Answer truthfully. Reply in plain text unless the user asks for another format (e.g. markdown or a list).
 When tools are available to read or change the home, use them when the user's request needs current state or actions.
@@ -55,6 +59,9 @@ RECOMMENDED_TEMPERATURE = 1.0
 RECOMMENDED_TOP_P = 1.0
 DEFAULT_THINKING_ENABLED = False
 DEFAULT_STRIP_MARKDOWN = False
+# Opt-in: sending a household member's name to the API is the user's call, so
+# an update must not start doing it on its own.
+DEFAULT_INCLUDE_USER_CONTEXT = False
 DEFAULT_VISION_ENABLED = True
 DEFAULT_CONTEXT_MANAGEMENT_ENABLED = True
 

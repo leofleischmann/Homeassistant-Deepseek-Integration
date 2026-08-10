@@ -119,6 +119,7 @@
                 "description": "Assist, modèle et comportement API. Pour la clé API ou l’URL de base, utilisez le menu de l’intégration (⋮ → Reconfigurer).",
                 "data": {
                     "prompt": "Invite système",
+                    "include_user_context": "Indiquer au modèle qui parle",
                     "llm_hass_api": "API Home Assistant",
                     "chat_model": "Modèle",
                     "max_tokens": "Jetons max.",
@@ -134,6 +135,8 @@
                     "max_history_rounds": "Tours de conversation max."
                 },
                 "data_description": {
+                    "prompt": "Modèle Jinja. Home Assistant fournit ha_name et llm_context ; cette intégration ajoute user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Les valeurs inconnues sont des chaînes vides : utilisez un test if plutôt qu'une comparaison à None.",
+                    "include_user_context": "Désactivé par défaut. Une fois activé, ajoute le nom du locuteur, sa présence et la pièce du satellite vocal à la fin de l'invite système, afin de personnaliser les réponses sans écrire de modèle. Les satellites vocaux n'identifient souvent aucun utilisateur ; la pièce est tout de même envoyée. Rien n'est envoyé si personne n'est identifié.",
                     "llm_hass_api": "Aucune sélection = aucun contrôle. Ajoutez Web Search (Brave) ici après avoir défini une clé Brave via la configuration ou Reconfigurer.",
                     "thinking_enabled": "Si activé, l’API utilise l’effort de raisonnement ; température et top_p sont ignorés.",
                     "reasoning_effort": "Utilisé uniquement si le raisonnement est activé.",

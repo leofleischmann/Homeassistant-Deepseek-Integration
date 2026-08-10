@@ -1,0 +1,101 @@
+# Speaker-identity demo — copy, paste, run (no IDs to replace).
+# Requires: one loaded deepseek_conversation config entry.
+# Trigger: Developer tools → Events → deepseek_user_context_demo
+#
+# Shows what the model is told about who is speaking. Note that the answer
+# depends on how you trigger it: fired from Developer tools you are the user,
+# so a name is available; fired by a time trigger or a voice satellite there is
+# no user account and only the room (if any) is known.
+
+alias: DeepSeek User Context Demo
+description: >
+  Compares what Assist knows about the speaker with what the raw
+  generate_content service knows, and shows the same via a plain template.
+mode: single
+
+triggers:
+  - trigger: event
+    event_type: deepseek_user_context_demo
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set ns = namespace(ok=false) %}
+      {% for e in integration_entities('deepseek_conversation') %}
+        {% if e.startswith('conversation.') %}{% set ns.ok = true %}{% endif %}
+      {% endfor %}
+      {{ ns.ok }}
+
+actions:
+  - variables:
+      deepseek_agent_id: >-
+        {% for e in integration_entities('deepseek_conversation') %}
+        {%- if e.startswith('conversation.') %}{{ e }}{% break %}{% endif %}
+        {% endfor %}
+      deepseek_config_entry: >-
+        {% for e in integration_entities('deepseek_conversation') %}
+        {%- if e.startswith('conversation.') %}{{ config_entry_id(e) }}{% break %}{% endif %}
+        {% endfor %}
+      # What Home Assistant itself knows about the triggering user, for
+      # comparison with what the model answers below.
+      triggering_user: >-
+        {% set uid = context.user_id %}
+        {%- if uid %}
+          {%- set ns = namespace(name='(no person entity)') %}
+          {%- for p in states.person %}
+            {%- if p.attributes.get('user_id') == uid %}
+              {%- set ns.name = p.name ~ ' / ' ~ p.state %}
+            {%- endif %}
+          {%- endfor %}
+          {{ uid }} → {{ ns.name }}
+        {%- else %}
+          (no user — triggered by an automation or a voice satellite)
+        {%- endif %}
+
+  # Assist knows the speaker: this is the path that carries a user and,
+  # for voice satellites, an area.
+  - action: conversation.process
+    data:
+      agent_id: "{{ deepseek_agent_id }}"
+      text: >-
+        Who am I, and which room am I in? If you do not know, say so plainly
+        instead of guessing. Answer in one short sentence.
+    response_variable: assist_answer
+
+  # generate_content has no conversation, but the system prompt template is
+  # still rendered with the user who triggered this service call.
+  - action: deepseek_conversation.generate_content
+    data:
+      config_entry: "{{ deepseek_config_entry }}"
+      prompt: >-
+        Based only on your system prompt: do you know who is speaking?
+        Answer in one short sentence.
+      thinking_enabled: false
+      max_tokens: 120
+    response_variable: service_answer
+
+  - action: persistent_notification.create
+    data:
+      title: DeepSeek User Context Demo
+      message: >-
+        Home Assistant says the triggering user is:
+        {{ triggering_user }}
+
+        --- conversation.process (Assist) ---
+        {% if assist_answer.response.speech is defined %}
+        {{ assist_answer.response.speech.plain.speech }}
+        {% else %}
+        {{ assist_answer }}
+        {% endif %}
+
+        --- generate_content ---
+        {{ service_answer.text }}
+
+        To use this in your own prompt, open Configure → System Prompt and try:
+        {% raw %}{% if user_name %}You are speaking with {{ user_name }}.{% endif %}{% endraw %}
+      notification_id: deepseek_user_context_demo
+
+  - action: logbook.log
+    data:
+      name: DeepSeek Demo
+      message: Demo finished. See persistent notification "DeepSeek User Context Demo".
