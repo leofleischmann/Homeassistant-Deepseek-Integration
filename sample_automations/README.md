@@ -8,7 +8,7 @@ Copy a YAML file into **Automations → Create automation → Edit in YAML**, sa
 |-------|------|
 | `deepseek_integration_demo` | `deepseek_integration_demo.yaml` |
 | `deepseek_ai_task_demo` | `deepseek_ai_task_demo.yaml` (plain + structured `ai_task.generate_data`) |
-| `deepseek_vision_demo` | `deepseek_vision_demo.yaml` (uses bundled `brand/icon.png`; **custom base URL with vision only**, not official `api.deepseek.com`) |
+| `deepseek_vision_demo` | `deepseek_vision_demo.yaml` (uses bundled `brand/icon.png`; needs a vision-capable model — the call sets `deepseek-v4-flash-vision-exp`) |
 
 Vision demo reads `/config/custom_components/deepseek_conversation/brand/icon.png`. If Home Assistant blocks the path, add to `configuration.yaml`:
 

@@ -55,18 +55,6 @@ CHAT_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
 #: Model ids that accept OpenAI-style ``image_url`` content parts.
 VISION_CHAT_MODELS: frozenset[str] = frozenset({VISION_CHAT_MODEL})
 
-#: Model ids known to reject image input, so vision fails with an explanation
-#: instead of an opaque API error. Anything not listed here and not in
-#: VISION_CHAT_MODELS is unknown to us and only a custom gateway can serve it.
-TEXT_ONLY_CHAT_MODELS: frozenset[str] = frozenset(
-    {
-        "deepseek-v4-flash",
-        "deepseek-v4-pro",
-        "deepseek-chat",
-        "deepseek-reasoner",
-    }
-)
-
 #: Retired: the official API stopped serving these on LEGACY_CHAT_MODEL_RETIRED_ON.
 #: Entries still configured with one are migrated by migrate_legacy_chat_model().
 LEGACY_CHAT_MODELS: frozenset[str] = frozenset({"deepseek-chat", "deepseek-reasoner"})
@@ -97,7 +85,9 @@ REASONING_EFFORT_SELECT: tuple[tuple[str, str], ...] = (
 REASONING_EFFORT_VALUES: frozenset[str] = frozenset(v for v, _ in REASONING_EFFORT_SELECT)
 RECOMMENDED_REASONING_EFFORT = "high"
 
-MAX_TOKENS_UPPER_BOUND = 1_000_000
+#: Ceiling for the reply length option. V4 models take a 1M token context but
+#: generate at most 384K, so anything above this could only ever be rejected.
+MAX_TOKENS_UPPER_BOUND = 384_000
 DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"
 
 # Request limits. The OpenAI SDK defaults to a 600 s timeout and two retries, so
@@ -151,6 +141,11 @@ def migrate_legacy_chat_model(model: str | None, *, base_url: str | None) -> str
     if normalize_model_id(model) not in LEGACY_CHAT_MODELS:
         return None
     return RECOMMENDED_CHAT_MODEL
+
+
+def is_retired_chat_model(model: str | None, *, base_url: str | None) -> bool:
+    """Whether this endpoint has stopped serving ``model``."""
+    return migrate_legacy_chat_model(model, base_url=base_url) is not None
 
 
 def deepseek_chat_extra_body(*, thinking_enabled: bool) -> dict[str, Any]:

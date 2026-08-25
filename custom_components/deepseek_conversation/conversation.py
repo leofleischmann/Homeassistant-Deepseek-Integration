@@ -19,7 +19,6 @@ from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMe
 from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
 
 from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
-from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
@@ -307,10 +306,6 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up conversation entities."""
-    if not hasattr(config_entry, 'runtime_data') or config_entry.runtime_data is None:
-        LOGGER.error("DeepSeek client not initialized in config entry.")
-        return
-
     agent = DeepSeekConversationEntity(config_entry)
     async_add_entities([agent])
 
@@ -382,7 +377,9 @@ def _convert_content_to_messages(
             if tool_calls:
                 if role == "assistant":
                     msg["content"] = msg.get("content")
-                msg["tool_calls"] = [tc.model_dump(exclude_unset=True) if hasattr(tc, 'model_dump') else tc for tc in tool_calls]
+                msg["tool_calls"] = [
+                    tc.model_dump(exclude_unset=True) for tc in tool_calls
+                ]
             if tool_call_id:
                 msg["tool_call_id"] = tool_call_id
             messages.append(msg)
@@ -771,7 +768,10 @@ async def async_handle_chat_log(
     # Read per turn, not per client: options apply without a config entry reload.
     # This is a read timeout, so it bounds the gap between two stream chunks -
     # a long answer that keeps streaming is never cut off, a stalled endpoint is.
+    # Bound once here; every round of the tool loop reuses this view of the
+    # client, which shares the connection pool with the entry's client.
     stream_timeout = request_timeout_from_options(options)
+    bounded_client = client.with_options(timeout=stream_timeout)
     LOGGER.debug(
         "[Debug conversation]: max_tool_iterations=%d force_json=%s usage_source=%s "
         "stream_timeout=%.0fs",
@@ -810,9 +810,7 @@ async def async_handle_chat_log(
                 response_format=response_format,
             )
             LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
-            result = await client.with_options(
-                timeout=stream_timeout
-            ).chat.completions.create(**model_args)
+            result = await bounded_client.chat.completions.create(**model_args)
             _record_http_version(runtime, result)
             new_contents = [
                 content
@@ -1060,14 +1058,14 @@ class DeepSeekConversationEntity(
 
         Options: apply in memory (no reload).
         Data (API key, base URL, Brave key): schedule reload so the OpenAI client
-        and optional web_search API are rebuilt. Config flow uses
+        and optional web_search API are rebuilt. The config flow uses
         ``async_update_and_abort`` (not reload_and_abort) so this listener owns
         the reload and avoids the HA 2026.12 double-reload warning.
         """
         data_changed = dict(entry.data) != dict(self.entry.data)
         self.entry = entry
-        if data_changed and hasattr(ConfigFlow, "async_update_and_abort"):
-            # Flow used async_update_and_abort; this listener owns the reload.
+        if data_changed:
+            # The flow used async_update_and_abort, so this listener owns the reload.
             LOGGER.debug(
                 "[Debug conversation]: entry.data changed; scheduling config entry reload"
             )
@@ -1076,14 +1074,5 @@ class DeepSeekConversationEntity(
 
         self._sync_entity_attributes_from_entry(entry)
         self.async_write_ha_state()
-        if data_changed:
-            # Legacy HA: config_flow already scheduled reload via reload_and_abort.
-            LOGGER.debug(
-                "[Debug conversation]: entry.data changed on legacy core; "
-                "reload already scheduled by config flow"
-            )
-        else:
-            LOGGER.debug(
-                "[Debug conversation]: Options applied in-memory (no reload)"
-            )
+        LOGGER.debug("[Debug conversation]: Options applied in-memory (no reload)")
 

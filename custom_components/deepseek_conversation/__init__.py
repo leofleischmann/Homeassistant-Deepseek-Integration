@@ -128,7 +128,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         # decides both whether images may be attached and whether the id is one
         # the API still serves.
         model = resolve_generate_content_model(entry.options, call.data)
-        if (replacement := migrate_legacy_chat_model(model, base_url=base_url)) is not None:
+        replacement = migrate_legacy_chat_model(model, base_url=base_url)
+        if replacement is not None:
             LOGGER.warning(
                 "generate_content was called with %s, which the DeepSeek API "
                 "stopped serving on %s; using %s for this call",
@@ -404,6 +405,12 @@ def _async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) 
     arrive on a retired id long after migration ran - from a restored backup, or
     because the model field accepts free text. Entries on a custom gateway are
     never touched (see ``migrate_legacy_chat_model``).
+
+    The issue is deliberately never withdrawn here. Rewriting the option is what
+    makes ``migrate_legacy_chat_model`` return ``None`` on the next start, so
+    withdrawing it then would erase the notice one restart after it appeared -
+    before anyone had to have seen it. It stays until the user dismisses it, or
+    until the entry is removed (``async_remove_entry``).
     """
     old_model = entry.options.get(CONF_CHAT_MODEL)
     replacement = migrate_legacy_chat_model(
@@ -411,7 +418,6 @@ def _async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) 
     )
 
     if replacement is None:
-        ir.async_delete_issue(hass, DOMAIN, _legacy_model_issue_id(entry))
         return
 
     LOGGER.warning(
@@ -494,6 +500,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Withdraw this entry's repair issues when it is deleted."""
+    ir.async_delete_issue(hass, DOMAIN, _legacy_model_issue_id(entry))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> bool:

@@ -42,6 +42,7 @@ from .const import (
     MAX_TOKENS_UPPER_BOUND,
     coerce_max_tokens,
     deepseek_chat_thinking_params,
+    request_timeout_from_options,
 )
 from .usage_metrics import completion_usage_from_api
 
@@ -261,6 +262,7 @@ async def async_run_debug_suite(
         "config_dir": hass.config.config_dir,
         "component_in_loaded_components": DOMAIN in hass.config.components,
         "coerce_max_tokens_upper_bound": MAX_TOKENS_UPPER_BOUND,
+        "request_timeout_seconds": request_timeout_from_options(entry.options),
         # HTTP/1.1 here means every API round re-handshakes TLS, because the
         # OpenAI SDK closes each streamed response without draining it.
         "negotiated_http_version": getattr(
@@ -311,7 +313,9 @@ async def async_run_debug_suite(
     log(
         f"OPTIONS model={model!r} raw_max_tokens={raw_mt!r} (type={type(raw_mt).__name__}) "
         f"coerced_max_tokens={mt_coerced} coerce_ceiling={MAX_TOKENS_UPPER_BOUND} "
-        f"thinking_option={thinking_opt} base_url={base_url!r}"
+        f"thinking_option={thinking_opt} "
+        f"request_timeout={request_timeout_from_options(opts):.0f}s "
+        f"base_url={base_url!r}"
     )
 
     # --- HTTP probe (no API key in URL) ---

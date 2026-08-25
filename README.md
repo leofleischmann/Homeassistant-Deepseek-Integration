@@ -70,12 +70,13 @@ accepts images.
 - **Official API** (`api.deepseek.com`): select `deepseek-v4-flash-vision-exp`
   under *Configure → Model*. The other DeepSeek models are text-only and reject
   images.
-- **Custom base URL**: any multimodal OpenAI-compatible model works; the
-  integration passes unknown model ids straight through.
+- **Custom base URL**: never gated. A gateway may route any model id to any
+  backend, so every request is passed through and the API decides.
 
 Images are sent as base64 `image_url` parts (JPEG, PNG, GIF, WebP). Home
 Assistant is only offered the attachment button when the option *and* the model
-allow it, so a text-only model no longer advertises support it does not have.
+allow it, so a text-only DeepSeek model no longer advertises support it does
+not have.
 Attach images through Assist, the AI Task action's attachments field, or
 `filenames` on `deepseek_conversation.generate_content`.
 

@@ -1,5 +1,7 @@
 # Vision demo — uses the integration's own brand icon (no extra file to copy).
-# Requires: Allow vision enabled. If the service reports a blocked path, add to
+# Requires: Allow vision enabled and a model that takes images. On the official
+# API that is deepseek-v4-flash-vision-exp, set per call below.
+# If the service reports a blocked path, add to
 # configuration.yaml: allowlist_external_dirs: [/config/custom_components/deepseek_conversation]
 # Trigger: Developer tools → Events → deepseek_vision_demo
 
@@ -36,7 +38,7 @@ actions:
         Describe what you see in two short sentences. Reply in English.
       filenames:
         - "{{ image_path }}"
-      chat_model: deepseek-v4-flash
+      chat_model: deepseek-v4-flash-vision-exp
       thinking_enabled: false
       max_tokens: 200
     response_variable: deepseek_vision

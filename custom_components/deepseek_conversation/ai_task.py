@@ -17,7 +17,6 @@ import re
 from typing import Any
 
 from homeassistant.components import ai_task, conversation  # pyright: ignore[reportMissingImports]
-from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
@@ -148,7 +147,9 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
         """Apply option changes without a full config-entry reload."""
         data_changed = dict(entry.data) != dict(self.entry.data)
         self.entry = entry
-        if data_changed and hasattr(ConfigFlow, "async_update_and_abort"):
+        if data_changed:
+            # The conversation entity's listener reloads the entry; nothing to
+            # refresh in place.
             return
         self._sync_features_from_entry(entry)
         self.async_write_ha_state()
