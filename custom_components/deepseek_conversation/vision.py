@@ -1,10 +1,15 @@
 """Shared vision/image encoding for Assist and generate_content.
 
 Used by conversation.py (UserContent.attachments from Assist / AI Task) and
-__init__.py (generate_content filenames). OpenAI-style ``image_url`` content
-parts are sent when the configured base URL is not the official DeepSeek host
-(api.deepseek.com is text-only per API docs). Option CONF_VISION_ENABLED gates
-Assist attachments and generate_content filenames; see config_flow.py.
+__init__.py (generate_content filenames). Images are sent as OpenAI-style
+``image_url`` content parts with a base64 ``data:`` URL.
+
+Whether that is accepted depends on the **model**, not on the endpoint: the
+official API serves ``deepseek-v4-flash-vision-exp`` for image input, while its
+text-only models reject ``image_url`` parts. A custom OpenAI-compatible gateway
+has a catalogue we cannot know, so unknown ids there are allowed through and the
+API decides. Option CONF_VISION_ENABLED gates the feature entirely; see
+config_flow.py.
 """
 
 from __future__ import annotations
@@ -20,40 +25,60 @@ from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImp
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
 
 from .const import (
+    CONF_CHAT_MODEL,
     CONF_VISION_ENABLED,
-    DEEPSEEK_API_BASE_URL,
     DEFAULT_VISION_ENABLED,
+    is_official_deepseek_api_base_url,
     LOGGER,
+    normalize_model_id,
+    RECOMMENDED_CHAT_MODEL,
+    TEXT_ONLY_CHAT_MODELS,
+    VISION_CHAT_MODEL,
+    VISION_CHAT_MODELS,
 )
 
-_VISION_UNSUPPORTED_OFFICIAL_API_MSG = (
-    "The official DeepSeek API (api.deepseek.com) only accepts plain text in "
-    "chat messages and rejects image_url parts. Image input requires a custom "
-    "OpenAI-compatible base URL with multimodal chat support (Reconfigure on "
-    "the integration card)."
-)
+
+def model_supports_vision(model: str | None, *, base_url: str | None = None) -> bool:
+    """Whether ``model`` accepts image input on the endpoint in ``base_url``."""
+    normalized = normalize_model_id(model)
+    if not normalized:
+        return True
+    if normalized in VISION_CHAT_MODELS:
+        return True
+    if normalized in TEXT_ONLY_CHAT_MODELS:
+        return False
+    # Unknown id: the official API does not serve it, so it can only be a custom
+    # gateway - and that catalogue is not ours to guess. Let the API decide.
+    return not is_official_deepseek_api_base_url(base_url)
 
 
-def is_official_deepseek_api_base_url(base_url: str | None) -> bool:
-    """True for DeepSeek's hosted chat API, which does not accept image content."""
-    raw = (base_url or DEEPSEEK_API_BASE_URL).strip().lower()
-    while raw.endswith("/"):
-        raw = raw[:-1]
-    if raw.endswith("/v1"):
-        raw = raw[:-3]
-    while raw.endswith("/"):
-        raw = raw[:-1]
-    return raw in ("https://api.deepseek.com", "http://api.deepseek.com")
-
-
-def raise_if_vision_unsupported_for_api(base_url: str | None) -> None:
-    """Fail fast before encoding images when the endpoint cannot accept them."""
+def _vision_unsupported_message(model: str | None, base_url: str | None) -> str:
+    """Explain why image input is refused, and what to change."""
+    name = (model or "").strip() or "the configured model"
     if is_official_deepseek_api_base_url(base_url):
-        LOGGER.debug(
-            "[Debug vision]: blocked image input for official API base_url=%r",
-            base_url,
+        return (
+            f"The model {name} does not accept image input. On the official "
+            f"DeepSeek API, image input requires {VISION_CHAT_MODEL} - select it "
+            "under Configure -> Model, or point the base URL at a multimodal "
+            "OpenAI-compatible gateway (integration card, Reconfigure)."
         )
-        raise HomeAssistantError(_VISION_UNSUPPORTED_OFFICIAL_API_MSG)
+    return (
+        f"The model {name} does not accept image input. Select a multimodal "
+        "model under Configure -> Model."
+    )
+
+
+def raise_if_vision_unsupported(model: str | None, *, base_url: str | None) -> None:
+    """Fail fast before encoding images when the model cannot accept them."""
+    if model_supports_vision(model, base_url=base_url):
+        return
+    LOGGER.debug(
+        "[Debug vision]: blocked image input for model=%r base_url=%r",
+        model,
+        base_url,
+    )
+    raise HomeAssistantError(_vision_unsupported_message(model, base_url))
+
 
 # Home Assistant 2026.x may add this flag; getattr keeps older cores working.
 CONVERSATION_SUPPORT_ATTACHMENTS = getattr(
@@ -76,17 +101,32 @@ def vision_enabled_in_options(options: Mapping[str, Any]) -> bool:
     return bool(options.get(CONF_VISION_ENABLED, DEFAULT_VISION_ENABLED))
 
 
+def vision_available(options: Mapping[str, Any], *, base_url: str | None) -> bool:
+    """Whether this entry can actually send images right now.
+
+    Both halves have to hold: the option is on **and** the configured model
+    accepts images. Advertising SUPPORT_ATTACHMENTS on a text-only model gives
+    the user an attachment button whose every use ends in an error.
+    """
+    if not vision_enabled_in_options(options):
+        return False
+    return model_supports_vision(
+        options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL), base_url=base_url
+    )
+
+
 def conversation_entity_features_for_options(
     options: Mapping[str, Any],
     *,
     has_control: bool,
+    base_url: str | None,
 ) -> conversation.ConversationEntityFeature:
     """Build ``ConversationEntityFeature`` flags from entry options."""
     features = conversation.ConversationEntityFeature(0)
     if has_control:
         features |= conversation.ConversationEntityFeature.CONTROL
     if (
-        vision_enabled_in_options(options)
+        vision_available(options, base_url=base_url)
         and CONVERSATION_SUPPORT_ATTACHMENTS is not None
     ):
         features |= CONVERSATION_SUPPORT_ATTACHMENTS
@@ -95,6 +135,8 @@ def conversation_entity_features_for_options(
 
 def ai_task_entity_features_for_options(
     options: Mapping[str, Any],
+    *,
+    base_url: str | None,
 ) -> int:
     """Build ``AITaskEntityFeature`` flags from entry options.
 
@@ -104,7 +146,7 @@ def ai_task_entity_features_for_options(
         return 0
     features = ai_task.AITaskEntityFeature.GENERATE_DATA
     if (
-        vision_enabled_in_options(options)
+        vision_available(options, base_url=base_url)
         and AI_TASK_SUPPORT_ATTACHMENTS is not None
     ):
         features |= AI_TASK_SUPPORT_ATTACHMENTS
@@ -127,15 +169,6 @@ def image_url_content_part(mime_type: str, base64_data: str) -> dict[str, Any]:
         "type": "image_url",
         "image_url": {"url": f"data:{mime_type};base64,{base64_data}"},
     }
-
-
-def model_supports_vision(model: str) -> bool:
-    """Whether the configured model id is expected to accept image inputs."""
-    m = (model or "").strip().lower()
-    if not m:
-        return True
-    # Legacy deepseek-reasoner and similar ids do not support vision.
-    return "reasoner" not in m
 
 
 def latest_user_attachments(

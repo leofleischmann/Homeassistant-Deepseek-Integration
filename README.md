@@ -11,7 +11,7 @@ Install via **HACS** (`deepseek_conversation`). Community project — not part o
 
 ## What it does
 
-Use DeepSeek **V4 Flash** (default) or **V4 Pro** as the brain behind Assist: streaming replies, optional extended reasoning, and optional Home Assistant tool calls (lights, context lookups, and more when an LLM API is enabled in options).
+Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the brain behind Assist: streaming replies, optional extended reasoning, and optional Home Assistant tool calls (lights, context lookups, and more when an LLM API is enabled in options).
 
 | Area | What you get |
 |------|----------------|
@@ -19,14 +19,16 @@ Use DeepSeek **V4 Flash** (default) or **V4 Pro** as the brain behind Assist: st
 | **Who is speaking** | Optional: pass the Home Assistant user and room into the prompt so replies can be personalised ([details](#who-is-speaking)) |
 | **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
+| **Images** | Select `deepseek-v4-flash-vision-exp` to send camera snapshots and attachments to the official API ([details](#images)) |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
+| **Timeouts** | Configurable request timeout (default 60 s) so a stalled endpoint cannot hang a voice pipeline |
 | **Automations** | `ai_task.generate_data` (recommended, same prompt/tools as Assist), `conversation.process`, or `deepseek_conversation.generate_content` |
 | **Usage** | Token sensors per config entry, last-request breakdown, manual **Reset usage** on the device |
 | **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key, base URL, or optional Brave Search key without losing options |
 
 `generate_content` returns `text`, optional `reasoning`, and `usage` tokens. Per-call overrides: model, temperature, thinking, max_tokens, JSON mode.
 
-Legacy model ids (`deepseek-chat`, `deepseek-reasoner`) map to V4 until 2026-07-24.
+The legacy ids `deepseek-chat` and `deepseek-reasoner` were retired by DeepSeek on 2026-07-24. An entry still set to one of them is moved to `deepseek-v4-flash` on startup and the change is reported under **Settings → Repairs**. Entries pointing at a custom base URL keep whatever model id they have.
 
 ## Install
 
@@ -59,6 +61,23 @@ For your own wording, the system prompt is a Jinja template with `user_name`, `u
 ```
 
 Voice satellites usually identify no user (Home Assistant runs those pipelines without an account) — `user_area` still works. Automations never carry a user either, so `conversation.process` and `ai_task.generate_data` from an automation see empty values; the variables stay defined, so one prompt works everywhere.
+
+## Images
+
+Image input needs two things: **Allow vision** on (default) and a model that
+accepts images.
+
+- **Official API** (`api.deepseek.com`): select `deepseek-v4-flash-vision-exp`
+  under *Configure → Model*. The other DeepSeek models are text-only and reject
+  images.
+- **Custom base URL**: any multimodal OpenAI-compatible model works; the
+  integration passes unknown model ids straight through.
+
+Images are sent as base64 `image_url` parts (JPEG, PNG, GIF, WebP). Home
+Assistant is only offered the attachment button when the option *and* the model
+allow it, so a text-only model no longer advertises support it does not have.
+Attach images through Assist, the AI Task action's attachments field, or
+`filenames` on `deepseek_conversation.generate_content`.
 
 ## Automations
 
@@ -99,7 +118,7 @@ response_variable: result
 # result.data.summary, result.data.high_c, …
 ```
 
-Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow vision** and a custom multimodal base URL, you can attach images via the action's attachments field.
+Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow vision** and a vision-capable model you can attach images via the action's attachments field — see [Images](#images).
 
 ### Other paths
 

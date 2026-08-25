@@ -63,7 +63,7 @@
                 "data_description": {
                     "brave_api_key": "可选。启用 Web Search (Brave) LLM API。设置后请在配置 → Home Assistant API 中与 Assist 一并勾选。"
                 },
-                "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 与 deepseek-reasoner 仍可用，但将于 2026-07-24 停用——请适时在选项中改用 V4。"
+                "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 和 deepseek-reasoner 已于 2026-07-24 下线，不再受支持。"
             },
             "reauth_confirm": {
                 "title": "重新验证 DeepSeek",
@@ -94,7 +94,8 @@
             "invalid_auth": "身份验证无效",
             "api_error": "API 错误",
             "unknown": "未知错误",
-            "url_required": "必须填写基础地址"
+            "url_required": "必须填写基础地址",
+            "model_retired": "该模型已于 2026-07-24 被 DeepSeek 下线。请选择 DeepSeek V4 Flash 或 V4 Pro。"
         },
         "abort": {
             "already_configured": "已配置过",
@@ -111,7 +112,8 @@
             "invalid_auth": "身份验证无效",
             "api_error": "API 错误",
             "unknown": "未知错误",
-            "url_required": "必须填写基础地址"
+            "url_required": "必须填写基础地址",
+            "model_retired": "该模型已于 2026-07-24 被 DeepSeek 下线。请选择 DeepSeek V4 Flash 或 V4 Pro。"
         },
         "step": {
             "init": {
@@ -132,7 +134,8 @@
                     "context_management_enabled": "上下文管理",
                     "max_tool_result_chars": "工具结果最大字符数",
                     "max_history_rounds": "最大对话轮数",
-                    "reasoning_effort": "推理强度"
+                    "reasoning_effort": "推理强度",
+                    "request_timeout": "请求超时"
                 },
                 "data_description": {
                     "prompt": "Jinja 模板。Home Assistant 提供 ha_name 和 llm_context；本集成额外提供 user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor。未知值为空字符串，请使用 if 判断，而不是与 None 比较。",
@@ -142,12 +145,13 @@
                     "reasoning_effort": "仅在启用推理时生效。",
                     "temperature": "仅在关闭推理时生效。",
                     "top_p": "仅在关闭推理时生效。",
-                    "chat_model": "旧 ID deepseek-chat 与 deepseek-reasoner 可使用至 2026-07-24。",
+                    "chat_model": "DeepSeek V4 Flash 最快，V4 Pro 能力最强。需要发送图片时请选择 deepseek-v4-flash-vision-exp。旧 ID deepseek-chat 和 deepseek-reasoner 已于 2026-07-24 下线。",
                     "max_tool_iterations": "模型调用 Home Assistant 工具时的最大 API 轮数（1–20）。每轮可执行一个或多个工具。",
-                    "vision_enabled": "启用后 Assist 可发送图片附件，generate_content 可使用 filenames。仅适用于支持多模态聊天的自定义 OpenAI 兼容 base URL；官方 api.deepseek.com 仅支持文本。在 Home Assistant 支持时声明 SUPPORT_ATTACHMENTS。",
+                    "vision_enabled": "启用后，Assist 可发送图片附件，generate_content 可使用文件路径。需要支持图片的模型：官方 API 上为 deepseek-v4-flash-vision-exp，或自定义 OpenAI 兼容基础 URL 上的多模态模型。只有当此选项与模型都允许时，才会向 Home Assistant 声明支持附件。",
                     "context_management_enabled": "启用后，过大的 Home Assistant 工具结果（如 GetLiveContext）会在发往 API 前截断，以减少上下文超限错误。",
                     "max_tool_result_chars": "每个工具结果 JSON 的最大字符数（默认 12000）。设为 0 表示不截断。仅在启用上下文管理时生效。",
-                    "max_history_rounds": "Assist 历史中保留的最大用户轮数（默认 0 = 不限制）。每次 API 调用前丢弃最旧的完整轮次；系统提示词与当前轮（含工具链）始终保留。"
+                    "max_history_rounds": "Assist 历史中保留的最大用户轮数（默认 0 = 不限制）。每次 API 调用前丢弃最旧的完整轮次；系统提示词与当前轮（含工具链）始终保留。",
+                    "request_timeout": "等待 API 响应的秒数（默认 60）。流式传输时，这是两个数据块之间的最长间隔，因此长回答不会被截断，只会终止卡住的请求。generate_content 动作不使用流式传输，等待时间更长（至少 300 秒）。"
                 }
             }
         }
@@ -156,9 +160,8 @@
         "chat_model": {
             "options": {
                 "deepseek-v4-flash": "DeepSeek V4 Flash（快速，默认）",
-                "deepseek-v4-pro": "DeepSeek V4 Pro（最强）",
-                "deepseek-chat": "旧版：deepseek-chat（至 2026-07-24）",
-                "deepseek-reasoner": "旧版：deepseek-reasoner（至 2026-07-24）"
+                "deepseek-v4-pro": "DeepSeek V4 Pro（能力最强）",
+                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision（实验性，支持图片输入）"
             }
         },
         "reasoning_effort": {
@@ -223,6 +226,12 @@
                     "description": "从 home-assistant.log 追加的过滤行数（默认 600，允许 50–8000）。"
                 }
             }
+        }
+    },
+    "issues": {
+        "legacy_chat_model": {
+            "title": "DeepSeek 模型 {old_model} 已下线",
+            "description": "DeepSeek 自 {retired_on} 起不再提供 {old_model}，因此“{entry_title}”无法再作出回复。模型已切换为 {new_model}。如需其他模型，请在“配置”中选择，然后关闭此提示。"
         }
     }
 }

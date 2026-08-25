@@ -63,7 +63,7 @@
                 "data_description": {
                     "brave_api_key": "Optional. Enables a Web Search (Brave) LLM API. After setup, select it under Configure → Home Assistant API together with Assist."
                 },
-                "description": "Connect to the DeepSeek API. Default model is DeepSeek V4 Flash. Legacy names deepseek-chat and deepseek-reasoner still work but are removed after 2026-07-24 — switch to V4 in options when ready."
+                "description": "Connect to the DeepSeek API. Default model is DeepSeek V4 Flash. The legacy names deepseek-chat and deepseek-reasoner were retired on 2026-07-24 and are no longer accepted."
             },
             "reauth_confirm": {
                 "title": "Reauthenticate DeepSeek",
@@ -94,7 +94,8 @@
             "invalid_auth": "Invalid auth",
             "api_error": "API error",
             "unknown": "Unknown error",
-            "url_required": "Base URL is required"
+            "url_required": "Base URL is required",
+            "model_retired": "That model was retired by DeepSeek on 2026-07-24. Choose DeepSeek V4 Flash or V4 Pro."
         },
         "abort": {
             "already_configured": "Already configured",
@@ -111,7 +112,8 @@
             "invalid_auth": "Invalid auth",
             "api_error": "API error",
             "unknown": "Unknown error",
-            "url_required": "Base URL is required"
+            "url_required": "Base URL is required",
+            "model_retired": "That model was retired by DeepSeek on 2026-07-24. Choose DeepSeek V4 Flash or V4 Pro."
         },
         "step": {
             "init": {
@@ -132,7 +134,8 @@
                     "context_management_enabled": "Context management",
                     "max_tool_result_chars": "Max tool result size (chars)",
                     "max_history_rounds": "Max conversation rounds",
-                    "reasoning_effort": "Reasoning effort"
+                    "reasoning_effort": "Reasoning effort",
+                    "request_timeout": "Request timeout"
                 },
                 "data_description": {
                     "prompt": "Jinja template. Home Assistant provides ha_name and llm_context; this integration adds user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Unknown values are empty strings, so branch with an if-check rather than comparing to None.",
@@ -142,12 +145,13 @@
                     "reasoning_effort": "Only used when reasoning is enabled.",
                     "temperature": "Only used when reasoning is disabled.",
                     "top_p": "Only used when reasoning is disabled.",
-                    "chat_model": "Legacy IDs deepseek-chat and deepseek-reasoner work until 2026-07-24.",
+                    "chat_model": "DeepSeek V4 Flash is the fastest, V4 Pro the most capable. Choose deepseek-v4-flash-vision-exp to send images. The legacy ids deepseek-chat and deepseek-reasoner were retired on 2026-07-24.",
                     "max_tool_iterations": "Maximum API rounds when the model calls Home Assistant tools (1–20). Each round can run one or more tools.",
-                    "vision_enabled": "When on, Assist can send image attachments and generate_content can use filenames. Only works with a custom OpenAI-compatible base URL that supports multimodal chat; the official api.deepseek.com endpoint is text-only. Advertises SUPPORT_ATTACHMENTS to Home Assistant when available.",
+                    "vision_enabled": "When on, Assist can send image attachments and generate_content can use filenames. Needs a model that accepts images: deepseek-v4-flash-vision-exp on the official API, or a multimodal model on a custom OpenAI-compatible base URL. Home Assistant is only offered attachments when both this option and the model allow them.",
                     "context_management_enabled": "When on, large Home Assistant tool results (e.g. GetLiveContext) are shortened before sending to the API to reduce context-limit errors.",
                     "max_tool_result_chars": "Maximum characters per tool result JSON (default 12000). Set to 0 to disable truncation. Only applies when context management is enabled.",
-                    "max_history_rounds": "Maximum user turns kept in Assist history (default 0 = unlimited). Older complete rounds are dropped before each API call; the system prompt and the current round including tool chains stay intact."
+                    "max_history_rounds": "Maximum user turns kept in Assist history (default 0 = unlimited). Older complete rounds are dropped before each API call; the system prompt and the current round including tool chains stay intact.",
+                    "request_timeout": "Seconds to wait for the API before giving up (default 60). While streaming this is the longest gap between two chunks, so a long answer is never cut off — only a stalled request is. The generate_content action waits longer (at least 300 s) because it is not streamed."
                 }
             }
         }
@@ -157,8 +161,7 @@
             "options": {
                 "deepseek-v4-flash": "DeepSeek V4 Flash (fast, default)",
                 "deepseek-v4-pro": "DeepSeek V4 Pro (most capable)",
-                "deepseek-chat": "Legacy: deepseek-chat (until 2026-07-24)",
-                "deepseek-reasoner": "Legacy: deepseek-reasoner (until 2026-07-24)"
+                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision (experimental, image input)"
             }
         },
         "reasoning_effort": {
@@ -223,6 +226,12 @@
                     "description": "Filtered log lines appended from home-assistant.log (default 600, allowed 50–8000)."
                 }
             }
+        }
+    },
+    "issues": {
+        "legacy_chat_model": {
+            "title": "DeepSeek model {old_model} was retired",
+            "description": "DeepSeek stopped serving {old_model} on {retired_on}, so “{entry_title}” could no longer answer. It has been switched to {new_model}. Pick a different model under Configure if you want one, then dismiss this issue."
         }
     }
 }

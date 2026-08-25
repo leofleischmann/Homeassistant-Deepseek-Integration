@@ -47,6 +47,7 @@ from .const import (
     LOGGER,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
+    request_timeout_from_options,
     RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .types import DeepSeekConfigEntry
@@ -64,8 +65,7 @@ from .vision import (
     async_user_message_content,
     conversation_entity_features_for_options,
     latest_user_attachments,
-    model_supports_vision,
-    raise_if_vision_unsupported_for_api,
+    raise_if_vision_unsupported,
     vision_enabled_in_options,
 )
 
@@ -684,6 +684,7 @@ async def async_handle_chat_log(
 
     client: openai.AsyncClient = runtime.client
     model = options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
+    base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
 
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
@@ -744,14 +745,7 @@ async def async_handle_chat_log(
                 "Vision is disabled in DeepSeek options. Enable "
                 "'Allow vision' to send image attachments."
             )
-        if not model_supports_vision(model):
-            raise HomeAssistantError(
-                f"The selected model ({model}) does not support image "
-                "attachments. Use deepseek-v4-flash or deepseek-v4-pro."
-            )
-        raise_if_vision_unsupported_for_api(
-            entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
-        )
+        raise_if_vision_unsupported(model, base_url=base_url)
 
     initial_messages = _convert_content_to_messages(
         chat_log.content,
@@ -774,11 +768,17 @@ async def async_handle_chat_log(
     max_tool_iterations = coerce_max_tool_iterations(
         options.get(CONF_MAX_TOOL_ITERATIONS, RECOMMENDED_MAX_TOOL_ITERATIONS)
     )
+    # Read per turn, not per client: options apply without a config entry reload.
+    # This is a read timeout, so it bounds the gap between two stream chunks -
+    # a long answer that keeps streaming is never cut off, a stalled endpoint is.
+    stream_timeout = request_timeout_from_options(options)
     LOGGER.debug(
-        "[Debug conversation]: max_tool_iterations=%d force_json=%s usage_source=%s",
+        "[Debug conversation]: max_tool_iterations=%d force_json=%s usage_source=%s "
+        "stream_timeout=%.0fs",
         max_tool_iterations,
         force_json,
         usage_source,
+        stream_timeout,
     )
 
     response_format: dict[str, Any] | None = None
@@ -786,14 +786,13 @@ async def async_handle_chat_log(
         if response_schema is not None:
             response_format = build_response_format_for_schema(
                 response_schema,
-                base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+                base_url=base_url,
             )
         else:
             response_format = {"type": RESPONSE_FORMAT_JSON_OBJECT}
 
     all_usage: list[CompletionUsage] = []
     messages = initial_messages
-    base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
 
     def _report_unexpected_reasoning() -> None:
         _warn_unexpected_reasoning(runtime, model=model, base_url=base_url)
@@ -811,7 +810,9 @@ async def async_handle_chat_log(
                 response_format=response_format,
             )
             LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
-            result = await client.chat.completions.create(**model_args)
+            result = await client.with_options(
+                timeout=stream_timeout
+            ).chat.completions.create(**model_args)
             _record_http_version(runtime, result)
             new_contents = [
                 content
@@ -919,6 +920,7 @@ class DeepSeekConversationEntity(
         self._attr_supported_features = conversation_entity_features_for_options(
             entry.options,
             has_control=bool(entry.options.get(CONF_LLM_HASS_API)),
+            base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         )
 
     @property
