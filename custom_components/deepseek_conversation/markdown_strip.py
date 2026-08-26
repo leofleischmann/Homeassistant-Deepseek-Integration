@@ -23,13 +23,18 @@ import re
 #: Emphasis markers, longest run first so ``**`` is considered before ``*``.
 _MARKERS = ("~~", "**", "__", "*", "_")
 
+#: ASCII word characters. Python's ``\w`` also matches CJK, which made the
+#: emphasis lookarounds fail for Chinese text (e.g. ``**很好**`` right next to
+#: CJK, or ``好**啊``) and left stray asterisks in the spoken reply.
+_ASCII_WORD_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+
 #: Rules that can span a space but never a newline, applied in this order.
 _INLINE_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"(?<!\w)\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\w)"), r"\1"),
-    (re.compile(r"(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)"), r"\1"),
-    (re.compile(r"(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)"), r"\1"),
-    (re.compile(r"(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)"), r"\1"),
-    (re.compile(r"(?<!\w)~~(?!\s)(.+?)(?<!\s)~~(?!\w)"), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9_])\*\*(?!\s)(.+?)(?<!\s)\*\*(?![A-Za-z0-9_])"), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9_])\*(?!\s)(.+?)(?<!\s)\*(?![A-Za-z0-9_])"), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9_])__(?!\s)(.+?)(?<!\s)__(?![A-Za-z0-9_])"), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9_])_(?!\s)(.+?)(?<!\s)_(?![A-Za-z0-9_])"), r"\1"),
+    (re.compile(r"(?<![A-Za-z0-9_])~~(?!\s)(.+?)(?<!\s)~~(?![A-Za-z0-9_])"), r"\1"),
     (re.compile(r"!\[(.*?)\]\(.*?\)"), r"\1"),
     (re.compile(r"\[(.*?)\]\(.*?\)"), r"\1"),
 )
@@ -104,8 +109,8 @@ def _has_open_construct(line: str) -> bool:
     for index, char in enumerate(residue):
         if char not in "*_~":
             continue
-        if index and (residue[index - 1].isalnum() or residue[index - 1] == "_"):
-            continue  # (?<!\w) fails here, so no rule can open
+        if index and residue[index - 1] in _ASCII_WORD_CHARS:
+            continue  # (?<![A-Za-z0-9_]) fails here, so no rule can open
         run = residue[index:]
         marker = next((m for m in _MARKERS if run.startswith(m)), None)
         if marker is None:
