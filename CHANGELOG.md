@@ -2,6 +2,24 @@
 
 All notable changes to this integration.
 
+## [1.8.0] - 2026-08-26
+
+### Added
+- **Several agents on one API key.** An entry used to be a single agent, and its settings lived in the entry's own options. Each agent is now a subentry with its own name, prompt, model and tools — so a fast **V4 Flash** agent can answer voice while a **V4 Pro** agent with full tool access handles automations, and an AI Task entity runs on a third prompt entirely. Add them under the integration card: **Add conversation agent** or **Add AI task entity**. Each agent gets its own device, and each can be reconfigured on its own row.
+- Adding an agent is a two-step form: name, prompt, Home Assistant APIs and model, then a second step for reply length, reasoning, timeouts and context handling that only opens when **Recommended settings** is switched off. An agent left on the recommended settings stores only what you actually chose, so later changes to a default reach it.
+
+### Changed
+- **The second step is grouped and much shorter to read.** Its settings now sit in four collapsible groups — *Reply*, *Tools*, *Conversation* (Assist only) and *Limits and input* — with only the first one open. Every description is a single line; the reasoning behind a setting moved to the README, where there is room for it.
+- **One switch fewer.** *Context management* did nothing except force the two limits under it to zero, which is what zero already meant in either field. It is gone; an agent that had it switched off keeps its behaviour as explicit zeros.
+- **The conversation history cap is no longer offered to AI Task agents.** An AI Task chat log is a single turn, so the setting never did anything there.
+- **The gear icon is gone.** Agent settings belong to the agents now; the entry itself only holds the credentials, which are still changed through **⋮ → Reconfigure**.
+- `deepseek_conversation.generate_content` and `run_debug` address a config entry rather than a specific agent, so they follow the entry's **first conversation agent**. After the upgrade that is the agent carrying your previous settings, so nothing about these actions changes.
+- Editing an agent reloads the entry. Settings used to be applied in place, which is no longer possible now that an entity is built from a subentry.
+- The token counters and the **Reset usage** button stay on the config entry's own device: usage is billed per API key and has to keep adding up across every agent sharing it.
+
+### Fixed
+- Nothing to do on upgrade. Your existing settings become the first conversation agent, an AI Task agent is created with the same ones, and both entities keep their entity id — `conversation.deepseek` still answers, and voice pipelines and automations pointing at it are untouched. The Assist-only settings (markdown stripping, naming the speaker) are not carried into the AI Task agent, where they never did anything.
+
 ## [1.7.0] - 2026-08-26
 
 ### Fixed

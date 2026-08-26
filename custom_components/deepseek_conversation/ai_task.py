@@ -11,16 +11,18 @@ Configure prompt and LLM APIs (same as Assist) before the API call.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from json import JSONDecodeError
 import logging
 import re
 from typing import Any
 
 from homeassistant.components import ai_task, conversation  # pyright: ignore[reportMissingImports]
+from homeassistant.config_entries import ConfigSubentry  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers import device_registry as dr, llm  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 from homeassistant.util.json import json_loads  # pyright: ignore[reportMissingImports]
 
@@ -30,10 +32,15 @@ from .const import (
     DEEPSEEK_API_BASE_URL,
     DEFAULT_SYSTEM_PROMPT,
     DOMAIN,
+    SUBENTRY_TYPE_AI_TASK,
 )
 from .conversation import async_handle_chat_log
 from .structured_output import structure_schema_for_task
-from .types import DeepSeekConfigEntry
+from .types import (
+    agent_device_info,
+    agent_subentries,
+    DeepSeekConfigEntry,
+)
 from .user_context import EMPTY_SPEAKER_CONTEXT
 from .vision import ai_task_entity_features_for_options
 
@@ -55,7 +62,7 @@ def _parse_structured_task_response(text: str) -> Any:
 
 async def _async_apply_entry_llm_options(
     hass: HomeAssistant,
-    entry: DeepSeekConfigEntry,
+    options: Mapping[str, Any],
     chat_log: conversation.ChatLog,
     task: ai_task.GenDataTask,
 ) -> None:
@@ -71,7 +78,6 @@ async def _async_apply_entry_llm_options(
     strings - so one prompt can be shared with Assist without tripping over
     undefined names.
     """
-    options = entry.options
     user_llm_hass_api = (
         task.llm_api
         if task.llm_api is not None
@@ -107,8 +113,12 @@ async def async_setup_entry(
     config_entry: DeepSeekConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the DeepSeek AI Task entity."""
-    async_add_entities([DeepSeekAITaskEntity(hass, config_entry)])
+    """Set up one AI Task entity per AI Task subentry."""
+    for subentry in agent_subentries(config_entry, SUBENTRY_TYPE_AI_TASK):
+        async_add_entities(
+            [DeepSeekAITaskEntity(hass, config_entry, subentry)],
+            config_subentry_id=subentry.subentry_id,
+        )
 
 
 class DeepSeekAITaskEntity(ai_task.AITaskEntity):
@@ -117,42 +127,22 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
     _attr_has_entity_name = True
     _attr_name = None
 
-    def __init__(self, hass: HomeAssistant, entry: DeepSeekConfigEntry) -> None:
-        """Initialise the entity, sharing the device with the conversation entity."""
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: DeepSeekConfigEntry,
+        subentry: ConfigSubentry,
+    ) -> None:
+        """Initialise one AI Task agent from its subentry."""
         self.hass = hass
         self.entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_ai_task"
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-        )
-        self._sync_features_from_entry(entry)
-
-    def _sync_features_from_entry(self, entry: DeepSeekConfigEntry) -> None:
-        """Refresh supported features when entry options change."""
+        self.subentry = subentry
+        self._attr_unique_id = subentry.subentry_id
+        self._attr_device_info = agent_device_info(entry, subentry)
         self._attr_supported_features = ai_task_entity_features_for_options(
-            entry.options,
+            subentry.data,
             base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         )
-
-    async def async_added_to_hass(self) -> None:
-        """Register option updates (vision flag -> SUPPORT_ATTACHMENTS)."""
-        await super().async_added_to_hass()
-        self.entry.async_on_unload(
-            self.entry.add_update_listener(self._async_entry_update_listener)
-        )
-
-    async def _async_entry_update_listener(
-        self, hass: HomeAssistant, entry: DeepSeekConfigEntry
-    ) -> None:
-        """Apply option changes without a full config-entry reload."""
-        data_changed = dict(entry.data) != dict(self.entry.data)
-        self.entry = entry
-        if data_changed:
-            # The conversation entity's listener reloads the entry; nothing to
-            # refresh in place.
-            return
-        self._sync_features_from_entry(entry)
-        self.async_write_ha_state()
 
     async def _async_generate_data(
         self,
@@ -166,7 +156,8 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
             task.structure is not None,
         )
 
-        await _async_apply_entry_llm_options(self.hass, self.entry, chat_log, task)
+        options = self.subentry.data
+        await _async_apply_entry_llm_options(self.hass, options, chat_log, task)
 
         response_schema = None
         if task.structure is not None:
@@ -176,6 +167,7 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
             self.hass,
             self.entry,
             chat_log,
+            options=options,
             agent_id=self.entity_id,
             force_json=task.structure is not None,
             response_schema=response_schema,

@@ -44,6 +44,7 @@ from .const import (
     deepseek_chat_thinking_params,
     request_timeout_from_options,
 )
+from .types import default_agent_options
 from .usage_metrics import completion_usage_from_api
 
 REPORT_FILENAME = "deepseek_conversation_debug_report.txt"
@@ -51,10 +52,27 @@ LOG_CANDIDATES = ("home-assistant.log", "home-assistant.log.1")
 
 
 def _redact_entry(entry: ConfigEntry) -> dict[str, Any]:
+    """Summarise the entry for the report, with the API key masked.
+
+    Settings live on the agents, so they are listed per subentry; the entry
+    itself carries only the connection.
+    """
     data = {**entry.data}
     if CONF_API_KEY in data:
         data[CONF_API_KEY] = "***"
-    return {"title": entry.title, "entry_id": entry.entry_id, "data": data, "options": dict(entry.options)}
+    return {
+        "title": entry.title,
+        "entry_id": entry.entry_id,
+        "data": data,
+        "agents": [
+            {
+                "type": subentry.subentry_type,
+                "title": subentry.title,
+                "settings": dict(subentry.data),
+            }
+            for subentry in entry.subentries.values()
+        ],
+    }
 
 
 def _read_log_tail(config_dir: str, max_lines: int) -> str:
@@ -262,7 +280,9 @@ async def async_run_debug_suite(
         "config_dir": hass.config.config_dir,
         "component_in_loaded_components": DOMAIN in hass.config.components,
         "coerce_max_tokens_upper_bound": MAX_TOKENS_UPPER_BOUND,
-        "request_timeout_seconds": request_timeout_from_options(entry.options),
+        "request_timeout_seconds": request_timeout_from_options(
+            default_agent_options(entry)
+        ),
         # HTTP/1.1 here means every API round re-handshakes TLS, because the
         # OpenAI SDK closes each streamed response without draining it.
         "negotiated_http_version": getattr(
@@ -304,7 +324,7 @@ async def async_run_debug_suite(
         out["report_path"] = path
         return out
 
-    opts = dict(entry.options)
+    opts = dict(default_agent_options(entry))
     model = str(opts.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
     raw_mt = opts.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
     mt_coerced = coerce_max_tokens(raw_mt)

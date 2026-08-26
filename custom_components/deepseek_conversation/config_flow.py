@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Any
 
 import openai
@@ -11,12 +10,19 @@ import voluptuous as vol  # pyright: ignore[reportMissingImports]
 
 from homeassistant.config_entries import (  # pyright: ignore[reportMissingImports]
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
+    ConfigSubentryFlow,
+    SubentryFlowResult,
 )
-from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
-from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
+from homeassistant.data_entry_flow import section  # pyright: ignore[reportMissingImports]
+from homeassistant.const import (  # pyright: ignore[reportMissingImports]
+    CONF_API_KEY,
+    CONF_LLM_HASS_API,
+    CONF_NAME,
+)
+from homeassistant.core import callback, HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImports]
@@ -47,7 +53,6 @@ from .const import (
     CONF_BASE_URL,
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
-    CONF_CONTEXT_MANAGEMENT_ENABLED,
     CONF_INCLUDE_USER_CONTEXT,
     CONF_MAX_TOOL_RESULT_CHARS,
     CONF_MAX_HISTORY_ROUNDS,
@@ -55,17 +60,18 @@ from .const import (
     CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
     CONF_REASONING_EFFORT,
+    CONF_RECOMMENDED,
     CONF_REQUEST_TIMEOUT,
     CONF_STRIP_MARKDOWN,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
     CONF_TOP_P,
     CONF_VISION_ENABLED,
-    DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
+    DEFAULT_AI_TASK_NAME,
+    DEFAULT_CONVERSATION_NAME,
     DEFAULT_INCLUDE_USER_CONTEXT,
     DEFAULT_VISION_ENABLED,
     DEFAULT_STRIP_MARKDOWN,
-    DEFAULT_SYSTEM_PROMPT,
     DEFAULT_THINKING_ENABLED,
     DEEPSEEK_API_BASE_URL,
     DOMAIN,
@@ -73,10 +79,13 @@ from .const import (
     MAX_TOKENS_UPPER_BOUND,
     is_retired_chat_model,
     REASONING_EFFORT_SELECT,
+    RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CHAT_MODEL,
+    RECOMMENDED_CONVERSATION_OPTIONS,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
     RECOMMENDED_MAX_TOOL_RESULT_CHARS,
+    recommended_agent_options,
     RECOMMENDED_MAX_HISTORY_ROUNDS,
     MAX_TOOL_ITERATIONS_UPPER_BOUND,
     RECOMMENDED_REASONING_EFFORT,
@@ -85,7 +94,181 @@ from .const import (
     RECOMMENDED_TOP_P,
     REQUEST_TIMEOUT_LOWER_BOUND,
     REQUEST_TIMEOUT_UPPER_BOUND,
+    SUBENTRY_TYPE_AI_TASK,
+    SUBENTRY_TYPE_CONVERSATION,
 )
+
+#: The advanced step, grouped. Order and collapsed state follow how often a
+#: setting is actually touched: the way an agent answers is open, the rest is
+#: folded away until someone goes looking for it.
+SECTION_RESPONSE = "response"
+SECTION_TOOLS = "tools"
+SECTION_CONVERSATION = "conversation"
+SECTION_LIMITS = "limits"
+
+ADVANCED_SECTIONS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
+    (
+        SECTION_RESPONSE,
+        (
+            CONF_MAX_TOKENS,
+            CONF_TEMPERATURE,
+            CONF_TOP_P,
+            CONF_THINKING_ENABLED,
+            CONF_REASONING_EFFORT,
+        ),
+        False,
+    ),
+    (SECTION_TOOLS, (CONF_MAX_TOOL_ITERATIONS, CONF_MAX_TOOL_RESULT_CHARS), True),
+    (
+        SECTION_CONVERSATION,
+        (CONF_STRIP_MARKDOWN, CONF_INCLUDE_USER_CONTEXT, CONF_MAX_HISTORY_ROUNDS),
+        True,
+    ),
+    (SECTION_LIMITS, (CONF_REQUEST_TIMEOUT, CONF_VISION_ENABLED), True),
+)
+
+
+def _advanced_field(key: str, options: Mapping[str, Any]) -> tuple[Any, Any]:
+    """Return the (marker, selector) pair for one advanced setting."""
+    if key == CONF_MAX_TOKENS:
+        return (
+            vol.Optional(
+                key,
+                default=coerce_max_tokens(options.get(key, RECOMMENDED_MAX_TOKENS)),
+            ),
+            NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=MAX_TOKENS_UPPER_BOUND, mode="box", step=1
+                )
+            ),
+        )
+    if key == CONF_TEMPERATURE:
+        return (
+            vol.Optional(key, default=RECOMMENDED_TEMPERATURE),
+            NumberSelector(
+                NumberSelectorConfig(min=0, max=2, step=0.05, mode="slider")
+            ),
+        )
+    if key == CONF_TOP_P:
+        return (
+            vol.Optional(key, default=RECOMMENDED_TOP_P),
+            NumberSelector(
+                NumberSelectorConfig(min=0, max=1, step=0.05, mode="slider")
+            ),
+        )
+    if key == CONF_THINKING_ENABLED:
+        return (
+            vol.Optional(
+                key, default=options.get(key, DEFAULT_THINKING_ENABLED)
+            ),
+            BooleanSelector(),
+        )
+    if key == CONF_REASONING_EFFORT:
+        return (
+            vol.Optional(
+                key, default=options.get(key, RECOMMENDED_REASONING_EFFORT)
+            ),
+            SelectSelector(
+                SelectSelectorConfig(
+                    options=[
+                        SelectOptionDict(label=value, value=value)
+                        for value, _ in REASONING_EFFORT_SELECT
+                    ],
+                    translation_key=CONF_REASONING_EFFORT,
+                )
+            ),
+        )
+    if key == CONF_MAX_TOOL_ITERATIONS:
+        return (
+            vol.Optional(
+                key,
+                default=coerce_max_tool_iterations(
+                    options.get(key, RECOMMENDED_MAX_TOOL_ITERATIONS)
+                ),
+            ),
+            NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=MAX_TOOL_ITERATIONS_UPPER_BOUND, mode="box", step=1
+                )
+            ),
+        )
+    if key == CONF_MAX_TOOL_RESULT_CHARS:
+        return (
+            vol.Optional(
+                key,
+                default=coerce_max_tool_result_chars(
+                    options.get(key, RECOMMENDED_MAX_TOOL_RESULT_CHARS)
+                ),
+            ),
+            NumberSelector(
+                NumberSelectorConfig(
+                    min=0,
+                    max=MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
+                    mode="box",
+                    step=500,
+                )
+            ),
+        )
+    if key == CONF_MAX_HISTORY_ROUNDS:
+        return (
+            vol.Optional(
+                key,
+                default=coerce_max_history_rounds(
+                    options.get(key, RECOMMENDED_MAX_HISTORY_ROUNDS)
+                ),
+            ),
+            NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=MAX_HISTORY_ROUNDS_UPPER_BOUND, mode="box", step=1
+                )
+            ),
+        )
+    if key == CONF_REQUEST_TIMEOUT:
+        return (
+            vol.Optional(
+                key,
+                default=coerce_request_timeout(
+                    options.get(key, RECOMMENDED_REQUEST_TIMEOUT)
+                ),
+            ),
+            NumberSelector(
+                NumberSelectorConfig(
+                    min=REQUEST_TIMEOUT_LOWER_BOUND,
+                    max=REQUEST_TIMEOUT_UPPER_BOUND,
+                    mode="box",
+                    step=5,
+                    unit_of_measurement="s",
+                )
+            ),
+        )
+    if key == CONF_STRIP_MARKDOWN:
+        return (
+            vol.Optional(key, default=options.get(key, DEFAULT_STRIP_MARKDOWN)),
+            BooleanSelector(),
+        )
+    if key == CONF_INCLUDE_USER_CONTEXT:
+        return (
+            vol.Optional(
+                key, default=options.get(key, DEFAULT_INCLUDE_USER_CONTEXT)
+            ),
+            BooleanSelector(),
+        )
+    if key == CONF_VISION_ENABLED:
+        return (
+            vol.Optional(key, default=options.get(key, DEFAULT_VISION_ENABLED)),
+            BooleanSelector(),
+        )
+    raise ValueError(f"no selector defined for {key}")
+
+
+def _flatten_sections(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Undo the nesting a sectioned form returns, so a subentry stays flat."""
+    flat: dict[str, Any] = {}
+    for value in user_input.values():
+        if isinstance(value, dict):
+            flat.update(value)
+    return flat
+
 
 def _normalize_llm_hass_api(value: Any) -> list[str] | None:
     """Normalize CONF_LLM_HASS_API to a list for multi-select, or None if unset."""
@@ -165,26 +348,6 @@ def get_reconfigure_step_schema(entry: ConfigEntry) -> vol.Schema:
             vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
         }
     )
-
-DEFAULT_OPTIONS = {
-    CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
-    CONF_PROMPT: DEFAULT_SYSTEM_PROMPT,
-    CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
-    CONF_MAX_TOKENS: RECOMMENDED_MAX_TOKENS,
-    CONF_MAX_TOOL_ITERATIONS: RECOMMENDED_MAX_TOOL_ITERATIONS,
-    CONF_TEMPERATURE: RECOMMENDED_TEMPERATURE,
-    CONF_TOP_P: RECOMMENDED_TOP_P,
-    CONF_THINKING_ENABLED: DEFAULT_THINKING_ENABLED,
-    CONF_STRIP_MARKDOWN: DEFAULT_STRIP_MARKDOWN,
-    CONF_INCLUDE_USER_CONTEXT: DEFAULT_INCLUDE_USER_CONTEXT,
-    CONF_VISION_ENABLED: DEFAULT_VISION_ENABLED,
-    CONF_CONTEXT_MANAGEMENT_ENABLED: DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
-    CONF_MAX_TOOL_RESULT_CHARS: RECOMMENDED_MAX_TOOL_RESULT_CHARS,
-    CONF_MAX_HISTORY_ROUNDS: RECOMMENDED_MAX_HISTORY_ROUNDS,
-    CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
-    CONF_REQUEST_TIMEOUT: RECOMMENDED_REQUEST_TIMEOUT,
-}
-
 
 _PROBE_TIMEOUT = 10.0
 
@@ -275,7 +438,7 @@ async def async_validate_reconfigure_input(
 class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for DeepSeek Conversation."""
 
-    VERSION = 2
+    VERSION = 3
 
     def _async_update_entry_and_abort(
         self, entry: ConfigEntry, **kwargs: Any
@@ -350,15 +513,31 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                 LOGGER.debug(
                     "[Debug config_flow]: Brave Search key set on initial setup"
                 )
-            # Move chat_model to options if provided
-            entry_options = {**DEFAULT_OPTIONS}
-            if CONF_CHAT_MODEL in user_input:
-                entry_options[CONF_CHAT_MODEL] = user_input[CONF_CHAT_MODEL]
-            
+            # The model picked here seeds both agents; each can be changed
+            # afterwards, and more agents added, without touching the key.
+            conversation_options = {**RECOMMENDED_CONVERSATION_OPTIONS}
+            ai_task_options = {**RECOMMENDED_AI_TASK_OPTIONS}
+            if model := user_input.get(CONF_CHAT_MODEL):
+                conversation_options[CONF_CHAT_MODEL] = model
+                ai_task_options[CONF_CHAT_MODEL] = model
+
             return self.async_create_entry(
                 title="DeepSeek",
                 data=entry_data,
-                options=entry_options,
+                subentries=[
+                    {
+                        "subentry_type": SUBENTRY_TYPE_CONVERSATION,
+                        "data": conversation_options,
+                        "title": DEFAULT_CONVERSATION_NAME,
+                        "unique_id": None,
+                    },
+                    {
+                        "subentry_type": SUBENTRY_TYPE_AI_TASK,
+                        "data": ai_task_options,
+                        "title": DEFAULT_AI_TASK_NAME,
+                        "unique_id": None,
+                    },
+                ],
             )
 
         return self._async_show_user_form(user_input, errors)
@@ -465,263 +644,194 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    @staticmethod
-    def async_get_options_flow(
-        config_entry: ConfigEntry,
-    ) -> OptionsFlow:
-        """Create the options flow."""
-        return DeepSeekOptionsFlow()
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Agents that can be added to this entry, both driven by one flow."""
+        return {
+            SUBENTRY_TYPE_CONVERSATION: DeepSeekSubentryFlowHandler,
+            SUBENTRY_TYPE_AI_TASK: DeepSeekSubentryFlowHandler,
+        }
 
 
-class DeepSeekOptionsFlow(OptionsFlow):
-    """DeepSeek config flow options handler."""
+class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
+    """Add or reconfigure one agent on a DeepSeek config entry.
+
+    Two steps: the first asks what the agent is for, the second only opens when
+    the recommended settings are switched off. An agent left on the recommended
+    settings stores just those first answers - everything else resolves to the
+    defaults in const.py as it is read, so later changes to a default reach
+    agents that never overrode it.
+    """
+
+    options: dict[str, Any]
+    _name: str | None = None
+
+    @property
+    def _is_new(self) -> bool:
+        """Whether this flow is adding an agent rather than editing one."""
+        return self.source == "user"
+
+    @property
+    def _is_conversation(self) -> bool:
+        """Whether this agent talks to people rather than to an automation."""
+        return self._subentry_type == SUBENTRY_TYPE_CONVERSATION
+
+    def _base_url(self) -> str:
+        return self._get_entry().data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+
+    def _default_name(self) -> str:
+        return (
+            DEFAULT_CONVERSATION_NAME
+            if self._is_conversation
+            else DEFAULT_AI_TASK_NAME
+        )
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add an agent."""
+        self.options = dict(
+            RECOMMENDED_CONVERSATION_OPTIONS
+            if self._is_conversation
+            else RECOMMENDED_AI_TASK_OPTIONS
+        )
+        return await self.async_step_init()
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit an existing agent."""
+        self.options = dict(self._get_reconfigure_subentry().data)
+        return await self.async_step_init()
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Manage Assist and model options (connection: integration ⋮ → Reconfigure)."""
-        try:
-            config_entry = self.config_entry
-        except AttributeError:
-            LOGGER.error("config_entry not available in OptionsFlow")
-            return self.async_abort(reason="config_entry_not_available")
+    ) -> SubentryFlowResult:
+        """Ask what the agent is for: prompt, tools and model."""
+        if self._get_entry().state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="entry_not_loaded")
 
+        options = self.options
         errors: dict[str, str] = {}
 
-        if user_input is not None:
-            normalized = _normalize_llm_hass_api(user_input.get(CONF_LLM_HASS_API))
-            if normalized is None:
-                user_input.pop(CONF_LLM_HASS_API, None)
-            else:
-                user_input[CONF_LLM_HASS_API] = normalized
+        # Drop APIs that no longer exist - web search after the Brave key was
+        # removed, say - so the form does not offer a value it cannot save.
+        available_apis = {api.id for api in llm.async_get_apis(self.hass)}
+        if selected := _normalize_llm_hass_api(options.get(CONF_LLM_HASS_API)):
+            options[CONF_LLM_HASS_API] = [
+                api for api in selected if api in available_apis
+            ]
 
-            # The model field takes free text, so a retired id can be typed back
-            # in. Refuse it here instead of letting every request fail later.
+        if user_input is not None:
             if is_retired_chat_model(
-                user_input.get(CONF_CHAT_MODEL),
-                base_url=config_entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+                user_input.get(CONF_CHAT_MODEL), base_url=self._base_url()
             ):
                 errors[CONF_CHAT_MODEL] = "model_retired"
+            else:
+                self._name = user_input.pop(CONF_NAME, None)
+                normalized = _normalize_llm_hass_api(user_input.get(CONF_LLM_HASS_API))
+                user_input.pop(CONF_LLM_HASS_API, None)
+                options.update(user_input)
+                if normalized is None:
+                    # No API selected means no control over the home.
+                    options.pop(CONF_LLM_HASS_API, None)
+                else:
+                    options[CONF_LLM_HASS_API] = normalized
 
-            if not errors:
-                updated_options = {**config_entry.options, **user_input}
-                return self.async_create_entry(title="", data=updated_options)
+                if options.get(CONF_RECOMMENDED):
+                    return self._async_save()
+                return await self.async_step_advanced()
 
-        schema = deepseek_config_option_schema(self.hass, config_entry.options)
-        suggested = dict(config_entry.options)
-        if user_input is not None:
-            suggested.update(user_input)
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(
-                vol.Schema(schema), suggested
+                vol.Schema(self._init_schema()), options
             ),
             errors=errors,
         )
 
+    async def async_step_advanced(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Ask for the settings the recommended defaults otherwise decide."""
+        if user_input is not None:
+            self.options.update(_flatten_sections(user_input))
+            return self._async_save()
 
-def deepseek_config_option_schema(
-    hass: HomeAssistant,
-    options: dict[str, Any] | MappingProxyType[str, Any],
-) -> VolDictType:
-    """Return a schema for DeepSeek completion options.
+        return self.async_show_form(
+            step_id="advanced",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(self._advanced_schema()), self._advanced_suggested()
+            ),
+        )
 
-    All fields stay visible regardless of the reasoning toggle. The API layer in
-    ``build_chat_completion_args()`` decides what is actually sent.
-    """
-    # Re-add HASS API selection
-    hass_apis: list[SelectOptionDict] = [
-        SelectOptionDict(label=api.name, value=api.id)
-        for api in llm.async_get_apis(hass)
-    ]
+    def _sections(self) -> tuple[tuple[str, tuple[str, ...], bool], ...]:
+        """Return the sections this agent kind actually has."""
+        return tuple(
+            group
+            for group in ADVANCED_SECTIONS
+            if group[0] != SECTION_CONVERSATION or self._is_conversation
+        )
 
-    reasoning_effort_options = [
-        SelectOptionDict(label=value, value=value)
-        for value, _ in REASONING_EFFORT_SELECT
-    ]
+    def _advanced_schema(self) -> VolDictType:
+        """Second step, grouped so it reads as four short lists."""
+        return {
+            vol.Required(name): section(
+                vol.Schema(
+                    dict(_advanced_field(key, self.options) for key in keys)
+                ),
+                {"collapsed": collapsed},
+            )
+            for name, keys, collapsed in self._sections()
+        }
 
-    schema: VolDictType = {
-        vol.Optional(
-            CONF_PROMPT,
-            description={
-                "suggested_value": options.get(
-                    CONF_PROMPT, DEFAULT_SYSTEM_PROMPT
-                )
-            },
-            default=DEFAULT_SYSTEM_PROMPT,
-        ): TemplateSelector(),
-        vol.Optional(
-            CONF_INCLUDE_USER_CONTEXT,
-            description={
-                "suggested_value": options.get(
-                    CONF_INCLUDE_USER_CONTEXT, DEFAULT_INCLUDE_USER_CONTEXT
-                )
-            },
-            default=options.get(
-                CONF_INCLUDE_USER_CONTEXT, DEFAULT_INCLUDE_USER_CONTEXT
-            ),
-        ): BooleanSelector(),
-        # Add selector for CONF_LLM_HASS_API
-        vol.Optional(
-            CONF_LLM_HASS_API,
-            description={"suggested_value": _normalize_llm_hass_api(options.get(CONF_LLM_HASS_API))},
-            default=_normalize_llm_hass_api(options.get(CONF_LLM_HASS_API)),
-        ): SelectSelector(SelectSelectorConfig(options=hass_apis, multiple=True)),
-        vol.Optional(
-            CONF_CHAT_MODEL,
-            description={"suggested_value": options.get(CONF_CHAT_MODEL)},
-            default=options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL),
-        ): _chat_model_selector(),
-        vol.Optional(
-            CONF_MAX_TOKENS,
-            # Coerced, not raw: entries saved under the old 1M ceiling would
-            # otherwise suggest a value above the selector maximum.
-            description={
-                "suggested_value": coerce_max_tokens(
-                    options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
-                )
-            },
-            default=coerce_max_tokens(
-                options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
-            ),
-        ): NumberSelector(
-            NumberSelectorConfig(min=1, max=MAX_TOKENS_UPPER_BOUND, mode="box", step=1)
-        ),
-        vol.Optional(
-            CONF_MAX_TOOL_ITERATIONS,
-            description={"suggested_value": options.get(CONF_MAX_TOOL_ITERATIONS)},
-            default=coerce_max_tool_iterations(
-                options.get(
-                    CONF_MAX_TOOL_ITERATIONS, RECOMMENDED_MAX_TOOL_ITERATIONS
-                )
-            ),
-        ): NumberSelector(
-            NumberSelectorConfig(
-                min=1, max=MAX_TOOL_ITERATIONS_UPPER_BOUND, mode="box", step=1
-            )
-        ),
-        vol.Optional(
-            CONF_THINKING_ENABLED,
-            description={
-                "suggested_value": options.get(
-                    CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED
-                )
-            },
-            default=options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED),
-        ): BooleanSelector(),
-        vol.Optional(
-            CONF_REASONING_EFFORT,
-            description={
-                "suggested_value": options.get(
-                    CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
-                )
-            },
-            default=options.get(
-                CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
-            ),
-        ): SelectSelector(
-            SelectSelectorConfig(
-                options=reasoning_effort_options,
-                translation_key=CONF_REASONING_EFFORT,
-            )
-        ),
-        vol.Optional(
-            CONF_TOP_P,
-            description={"suggested_value": options.get(CONF_TOP_P)},
-            default=RECOMMENDED_TOP_P,
-        ): NumberSelector(
-            NumberSelectorConfig(min=0, max=1, step=0.05, mode="slider")
-        ),
-        vol.Optional(
-            CONF_TEMPERATURE,
-            description={"suggested_value": options.get(CONF_TEMPERATURE)},
-            default=RECOMMENDED_TEMPERATURE,
-        ): NumberSelector(
-            NumberSelectorConfig(min=0, max=2, step=0.05, mode="slider")
-        ),
-        vol.Optional(
-            CONF_STRIP_MARKDOWN,
-            description={
-                "suggested_value": options.get(
-                    CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN
-                )
-            },
-            default=options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN),
-        ): BooleanSelector(),
-        vol.Optional(
-            CONF_VISION_ENABLED,
-            description={
-                "suggested_value": options.get(
-                    CONF_VISION_ENABLED, DEFAULT_VISION_ENABLED
-                )
-            },
-            default=options.get(CONF_VISION_ENABLED, DEFAULT_VISION_ENABLED),
-        ): BooleanSelector(),
-        vol.Optional(
-            CONF_CONTEXT_MANAGEMENT_ENABLED,
-            description={
-                "suggested_value": options.get(
-                    CONF_CONTEXT_MANAGEMENT_ENABLED,
-                    DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
-                )
-            },
-            default=options.get(
-                CONF_CONTEXT_MANAGEMENT_ENABLED, DEFAULT_CONTEXT_MANAGEMENT_ENABLED
-            ),
-        ): BooleanSelector(),
-        vol.Optional(
-            CONF_MAX_TOOL_RESULT_CHARS,
-            description={
-                "suggested_value": options.get(CONF_MAX_TOOL_RESULT_CHARS)
-            },
-            default=coerce_max_tool_result_chars(
-                options.get(
-                    CONF_MAX_TOOL_RESULT_CHARS, RECOMMENDED_MAX_TOOL_RESULT_CHARS
-                )
-            ),
-        ): NumberSelector(
-            NumberSelectorConfig(
-                min=0,
-                max=MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
-                mode="box",
-                step=500,
-            )
-        ),
-        vol.Optional(
-            CONF_REQUEST_TIMEOUT,
-            # Fall back rather than suggest None: an entry saved before this
-            # option existed would otherwise open the form with an empty field.
-            description={
-                "suggested_value": options.get(
-                    CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT
-                )
-            },
-            default=coerce_request_timeout(
-                options.get(CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT)
-            ),
-        ): NumberSelector(
-            NumberSelectorConfig(
-                min=REQUEST_TIMEOUT_LOWER_BOUND,
-                max=REQUEST_TIMEOUT_UPPER_BOUND,
-                mode="box",
-                step=5,
-                unit_of_measurement="s",
-            )
-        ),
-        vol.Optional(
-            CONF_MAX_HISTORY_ROUNDS,
-            description={"suggested_value": options.get(CONF_MAX_HISTORY_ROUNDS)},
-            default=coerce_max_history_rounds(
-                options.get(CONF_MAX_HISTORY_ROUNDS, RECOMMENDED_MAX_HISTORY_ROUNDS)
-            ),
-        ): NumberSelector(
-            NumberSelectorConfig(
-                min=0,
-                max=MAX_HISTORY_ROUNDS_UPPER_BOUND,
-                mode="box",
-                step=1,
-            )
-        ),
-    }
+    def _advanced_suggested(self) -> dict[str, dict[str, Any]]:
+        """Suggested values, nested the way a sectioned form expects them."""
+        return {
+            name: {key: self.options[key] for key in keys if key in self.options}
+            for name, keys, _collapsed in self._sections()
+        }
 
-    return schema
+    @callback
+    def _async_save(self) -> SubentryFlowResult:
+        """Create the agent, or write the changes back to an existing one."""
+        if self.options.get(CONF_RECOMMENDED):
+            # Back on the recommended settings: forget the overrides, or the
+            # agent would keep running on values its form no longer shows.
+            self.options = recommended_agent_options(self.options)
+        if self._is_new:
+            return self.async_create_entry(
+                title=(self._name or "").strip() or self._default_name(),
+                data=self.options,
+            )
+        return self.async_update_and_abort(
+            self._get_entry(),
+            self._get_reconfigure_subentry(),
+            data=self.options,
+        )
+
+    def _init_schema(self) -> VolDictType:
+        """First step: what this agent is for."""
+        hass_apis: list[SelectOptionDict] = [
+            SelectOptionDict(label=api.name, value=api.id)
+            for api in llm.async_get_apis(self.hass)
+        ]
+
+        schema: VolDictType = {}
+        if self._is_new:
+            schema[vol.Required(CONF_NAME, default=self._default_name())] = str
+
+        schema.update(
+            {
+                vol.Optional(CONF_PROMPT): TemplateSelector(),
+                vol.Optional(CONF_LLM_HASS_API): SelectSelector(
+                    SelectSelectorConfig(options=hass_apis, multiple=True)
+                ),
+                vol.Optional(CONF_CHAT_MODEL): _chat_model_selector(),
+                vol.Required(CONF_RECOMMENDED, default=True): BooleanSelector(),
+            }
+        )
+        return schema

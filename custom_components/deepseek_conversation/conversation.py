@@ -6,7 +6,7 @@ The shared API loop in ``async_handle_chat_log`` is used by Assist
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Mapping
 import datetime
 import json
 from typing import Any, Literal
@@ -18,10 +18,11 @@ from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMe
 from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
 
 from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
+from homeassistant.config_entries import ConfigSubentry  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers import device_registry as dr, intent, llm  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers import intent, llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 
 from .api_errors import openai_exception_user_message
@@ -47,9 +48,14 @@ from .const import (
     RECOMMENDED_MAX_TOOL_ITERATIONS,
     request_timeout_from_options,
     RESPONSE_FORMAT_JSON_OBJECT,
+    SUBENTRY_TYPE_CONVERSATION,
 )
 from .markdown_strip import strip_markdown, StreamingMarkdownStripper
-from .types import DeepSeekConfigEntry
+from .types import (
+    agent_device_info,
+    agent_subentries,
+    DeepSeekConfigEntry,
+)
 from .structured_output import (
     append_structure_guidance_to_last_user_message,
     build_response_format_for_schema,
@@ -267,9 +273,12 @@ async def async_setup_entry(
     config_entry: DeepSeekConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up conversation entities."""
-    agent = DeepSeekConversationEntity(config_entry)
-    async_add_entities([agent])
+    """Set up one conversation entity per conversation subentry."""
+    for subentry in agent_subentries(config_entry, SUBENTRY_TYPE_CONVERSATION):
+        async_add_entities(
+            [DeepSeekConversationEntity(config_entry, subentry)],
+            config_subentry_id=subentry.subentry_id,
+        )
 
 
 def _convert_content_to_messages(
@@ -659,6 +668,7 @@ async def async_handle_chat_log(
     entry: DeepSeekConfigEntry,
     chat_log: conversation.ChatLog,
     *,
+    options: Mapping[str, Any],
     agent_id: str,
     force_json: bool = False,
     response_schema: dict[str, Any] | None = None,
@@ -676,8 +686,11 @@ async def async_handle_chat_log(
     ``strip_markdown_output`` removes formatting from the streamed text. Only
     Assist asks for it: an AI Task result is consumed by an automation, and for
     a structured task stripping would break the JSON.
+
+    ``options`` are the calling agent's settings - a subentry's data, or the
+    first agent's settings for the entry-wide actions. The entry itself only
+    carries the credentials.
     """
-    options = entry.options
     runtime = entry.runtime_data
     if runtime is None or runtime.client is None:
         LOGGER.error("DeepSeek client not available in runtime_data.")
@@ -909,29 +922,18 @@ class DeepSeekConversationEntity(
     _attr_name = None
     _attr_supports_streaming = True
 
-    def __init__(self, entry: DeepSeekConfigEntry) -> None:
-        """Initialize the agent."""
+    def __init__(
+        self, entry: DeepSeekConfigEntry, subentry: ConfigSubentry
+    ) -> None:
+        """Initialize one agent from its subentry."""
         self.entry = entry
-        self._attr_unique_id = entry.entry_id
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="DeepSeek",
-            model="DeepSeek API",
-            entry_type=dr.DeviceEntryType.SERVICE,
-        )
-        self._sync_entity_attributes_from_entry(entry)
-
-    def _sync_entity_attributes_from_entry(self, entry: DeepSeekConfigEntry) -> None:
-        """Refresh entity flags from options without a config-entry reload.
-
-        Assist reads prompt/model/temperature from ``entry.options`` each turn.
-        Connection data (base_url, API key, Brave key) triggers reload via
-        ``_async_entry_update_listener`` after config_flow ``async_update_and_abort``.
-        """
+        self.subentry = subentry
+        self._attr_unique_id = subentry.subentry_id
+        self._attr_device_info = agent_device_info(entry, subentry)
+        options = subentry.data
         self._attr_supported_features = conversation_entity_features_for_options(
-            entry.options,
-            has_control=bool(entry.options.get(CONF_LLM_HASS_API)),
+            options,
+            has_control=bool(options.get(CONF_LLM_HASS_API)),
             base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         )
 
@@ -950,9 +952,6 @@ class DeepSeekConversationEntity(
             except Exception as e:
                 LOGGER.warning("Failed to migrate assist pipeline engine: %s", e)
         conversation.async_set_agent(self.hass, self.entry, self)
-        self.entry.async_on_unload(
-            self.entry.add_update_listener(self._async_entry_update_listener)
-        )
 
     async def async_will_remove_from_hass(self) -> None:
         conversation.async_unset_agent(self.hass, self.entry)
@@ -964,7 +963,7 @@ class DeepSeekConversationEntity(
         chat_log: conversation.ChatLog,
     ) -> conversation.ConversationResult:
         """Handle a message using DeepSeek."""
-        options = self.entry.options
+        options = self.subentry.data
         runtime = self.entry.runtime_data
         if runtime is None or runtime.client is None:
             LOGGER.error("DeepSeek client not available in runtime_data.")
@@ -1025,6 +1024,7 @@ class DeepSeekConversationEntity(
                 self.hass,
                 self.entry,
                 chat_log,
+                options=options,
                 agent_id=user_input.agent_id,
                 usage_source="assist",
                 strip_markdown_output=bool(
@@ -1067,29 +1067,3 @@ class DeepSeekConversationEntity(
             conversation_id=chat_log.conversation_id,
             continue_conversation=chat_log.continue_conversation,
         )
-
-    async def _async_entry_update_listener(
-        self, hass: HomeAssistant, entry: DeepSeekConfigEntry
-    ) -> None:
-        """Handle config entry updates.
-
-        Options: apply in memory (no reload).
-        Data (API key, base URL, Brave key): schedule reload so the OpenAI client
-        and optional web_search API are rebuilt. The config flow uses
-        ``async_update_and_abort`` (not reload_and_abort) so this listener owns
-        the reload and avoids the HA 2026.12 double-reload warning.
-        """
-        data_changed = dict(entry.data) != dict(self.entry.data)
-        self.entry = entry
-        if data_changed:
-            # The flow used async_update_and_abort, so this listener owns the reload.
-            LOGGER.debug(
-                "[Debug conversation]: entry.data changed; scheduling config entry reload"
-            )
-            await hass.config_entries.async_reload(entry.entry_id)
-            return
-
-        self._sync_entity_attributes_from_entry(entry)
-        self.async_write_ha_state()
-        LOGGER.debug("[Debug conversation]: Options applied in-memory (no reload)")
-

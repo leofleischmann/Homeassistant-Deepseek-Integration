@@ -6,6 +6,9 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
+
 DOMAIN = "deepseek_conversation"
 LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -20,6 +23,8 @@ CONF_THINKING_ENABLED = "thinking_enabled"
 CONF_REASONING_EFFORT = "reasoning_effort"
 CONF_STRIP_MARKDOWN = "strip_markdown"
 CONF_VISION_ENABLED = "vision_enabled"
+#: Removed in 1.8.0; only fold_context_switch() still knows the name, to
+#: turn an entry that had it switched off into the two limits it forced.
 CONF_CONTEXT_MANAGEMENT_ENABLED = "context_management_enabled"
 CONF_MAX_TOOL_RESULT_CHARS = "max_tool_result_chars"
 CONF_MAX_HISTORY_ROUNDS = "max_history_rounds"
@@ -29,6 +34,17 @@ CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
 CONF_FILENAMES = "filenames"
 CONF_RESPONSE_FORMAT = "response_format"
+#: Set when an agent is left on the recommended settings, so the flow knows to
+#: skip the advanced step and the stored data stays small.
+CONF_RECOMMENDED = "recommended"
+
+# One config entry holds the credentials; every agent is a subentry of it.
+SUBENTRY_TYPE_CONVERSATION = "conversation"
+SUBENTRY_TYPE_AI_TASK = "ai_task_data"
+SUBENTRY_TYPES: tuple[str, ...] = (SUBENTRY_TYPE_CONVERSATION, SUBENTRY_TYPE_AI_TASK)
+
+DEFAULT_CONVERSATION_NAME = "DeepSeek Conversation"
+DEFAULT_AI_TASK_NAME = "DeepSeek AI Task"
 
 RESPONSE_FORMAT_JSON_OBJECT = "json_object"
 
@@ -73,7 +89,6 @@ DEFAULT_STRIP_MARKDOWN = False
 # an update must not start doing it on its own.
 DEFAULT_INCLUDE_USER_CONTEXT = False
 DEFAULT_VISION_ENABLED = True
-DEFAULT_CONTEXT_MANAGEMENT_ENABLED = True
 
 REASONING_EFFORT_SELECT: tuple[tuple[str, str], ...] = (
     ("low", "Low"),
@@ -103,6 +118,24 @@ REQUEST_TIMEOUT_UPPER_BOUND = 600
 MIN_BLOCKING_REQUEST_TIMEOUT = 300
 #: One retry, not the SDK default of two: on voice, a late answer is a failure.
 DEEPSEEK_MAX_RETRIES = 1
+
+# Starting point for a newly added agent. Everything absent from a subentry's
+# data falls back to the RECOMMENDED_* / DEFAULT_* values above at read time,
+# so an agent left on the recommended settings stores only these few keys.
+RECOMMENDED_CONVERSATION_OPTIONS: dict[str, Any] = {
+    CONF_RECOMMENDED: True,
+    CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
+    CONF_PROMPT: DEFAULT_SYSTEM_PROMPT,
+    CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
+}
+
+#: An AI Task generates data for an automation, so it starts without control
+#: over the home; add a Home Assistant API to it if the task needs one.
+RECOMMENDED_AI_TASK_OPTIONS: dict[str, Any] = {
+    CONF_RECOMMENDED: True,
+    CONF_PROMPT: DEFAULT_SYSTEM_PROMPT,
+    CONF_CHAT_MODEL: RECOMMENDED_CHAT_MODEL,
+}
 
 
 def normalize_model_id(model: str | None) -> str:
@@ -141,6 +174,56 @@ def migrate_legacy_chat_model(model: str | None, *, base_url: str | None) -> str
     if normalize_model_id(model) not in LEGACY_CHAT_MODELS:
         return None
     return RECOMMENDED_CHAT_MODEL
+
+
+#: The settings the first step of the agent form asks for. Everything else is
+#: an override of a recommended default.
+BASIC_AGENT_OPTIONS: frozenset[str] = frozenset(
+    {CONF_RECOMMENDED, CONF_PROMPT, CONF_LLM_HASS_API, CONF_CHAT_MODEL}
+)
+
+
+def recommended_agent_options(options: Mapping[str, Any]) -> dict[str, Any]:
+    """Drop the overrides an agent no longer wants to keep.
+
+    Switching an agent back to the recommended settings has to forget what was
+    set behind them. Keeping the values would leave the agent running on a
+    reply limit or a reasoning effort its own form no longer shows.
+    """
+    return {key: value for key, value in options.items() if key in BASIC_AGENT_OPTIONS}
+
+
+#: Settings that only mean something when a person is on the other end.
+#: Markdown stripping and naming the speaker are about being spoken to, and a
+#: history cap needs a history - an AI Task chat log is a single turn.
+ASSIST_ONLY_OPTIONS: frozenset[str] = frozenset(
+    {CONF_STRIP_MARKDOWN, CONF_INCLUDE_USER_CONTEXT, CONF_MAX_HISTORY_ROUNDS}
+)
+
+
+def ai_task_options_from(options: Mapping[str, Any]) -> dict[str, Any]:
+    """Return agent settings with the Assist-only ones removed."""
+    return {
+        key: value
+        for key, value in options.items()
+        if key not in ASSIST_ONLY_OPTIONS
+    }
+
+
+def fold_context_switch(options: dict[str, Any]) -> dict[str, Any]:
+    """Replace the removed context switch with the limits it stood for.
+
+    ``context_management_enabled`` did nothing except force both limits to
+    zero, which is what zero already means in either field. Two ways to say one
+    thing is what made the form hard to read, so the switch is gone and an
+    entry that had it turned off keeps its behaviour as explicit zeros.
+    """
+    if CONF_CONTEXT_MANAGEMENT_ENABLED not in options:
+        return options
+    if not options.pop(CONF_CONTEXT_MANAGEMENT_ENABLED):
+        options[CONF_MAX_TOOL_RESULT_CHARS] = 0
+        options[CONF_MAX_HISTORY_ROUNDS] = 0
+    return options
 
 
 def is_retired_chat_model(model: str | None, *, base_url: str | None) -> bool:
@@ -319,9 +402,9 @@ def build_generate_content_completion_args(
     """Build completion kwargs for ``generate_content`` with optional per-call overrides.
 
     Overrides: chat_model, temperature, thinking_enabled, max_tokens, response_format.
-    Unset fields fall back to the config entry options. ``model`` overrides the
-    resolved id, so the caller can pass one it already migrated. Used only from
-    __init__.py.
+    Unset fields fall back to the calling agent's settings. ``model`` overrides
+    the resolved id, so the caller can pass one it already migrated. Used only
+    from __init__.py.
     """
     effective_options = dict(entry_options)
     model = model or resolve_generate_content_model(entry_options, service_data)
@@ -351,7 +434,11 @@ def effective_thinking_enabled_for_generate_content(
     entry_options: Mapping[str, Any],
     service_data: Mapping[str, Any],
 ) -> bool:
-    """Resolve whether reasoning is active for a ``generate_content`` call."""
+    """Resolve whether reasoning is active for a ``generate_content`` call.
+
+    ``entry_options`` are the agent's settings, not the config entry's - the
+    entry itself carries only the credentials.
+    """
     if CONF_THINKING_ENABLED in service_data:
         return bool(service_data[CONF_THINKING_ENABLED])
     return bool(entry_options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED))
