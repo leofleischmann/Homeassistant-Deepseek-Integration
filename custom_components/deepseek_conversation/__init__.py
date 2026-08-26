@@ -260,8 +260,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         if filenames:
             if not vision_enabled_in_options(agent_options):
                 raise HomeAssistantError(
-                    "Vision is disabled in DeepSeek options. Enable "
-                    "'Allow vision' or remove filenames from the service call."
+                    "Images are switched off for this agent. Turn on "
+                    "'Allow images' in its settings, or call the action "
+                    "without filenames."
                 )
             raise_if_vision_unsupported(model, base_url=base_url)
             user_content.extend(
@@ -284,7 +285,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
         try:
             model, model_args = build_generate_content_completion_args(
-                entry_options=agent_options,
+                agent_options=agent_options,
                 messages=messages,
                 service_data=call.data,
                 model=model,

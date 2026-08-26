@@ -379,14 +379,14 @@ def build_chat_completion_args(
 
 
 def resolve_generate_content_model(
-    entry_options: Mapping[str, Any], service_data: Mapping[str, Any]
+    agent_options: Mapping[str, Any], service_data: Mapping[str, Any]
 ) -> str:
     """Return the model a ``generate_content`` call will use.
 
     Split out so the caller can check image support and migrate a retired id
     before any request is built.
     """
-    model = str(entry_options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
+    model = str(agent_options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
     if override_model := service_data.get(CONF_CHAT_MODEL):
         model = str(override_model).strip() or model
     return model
@@ -394,7 +394,7 @@ def resolve_generate_content_model(
 
 def build_generate_content_completion_args(
     *,
-    entry_options: Mapping[str, Any],
+    agent_options: Mapping[str, Any],
     messages: list[dict[str, Any]],
     service_data: Mapping[str, Any],
     model: str | None = None,
@@ -406,8 +406,8 @@ def build_generate_content_completion_args(
     the resolved id, so the caller can pass one it already migrated. Used only
     from __init__.py.
     """
-    effective_options = dict(entry_options)
-    model = model or resolve_generate_content_model(entry_options, service_data)
+    effective_options = dict(agent_options)
+    model = model or resolve_generate_content_model(agent_options, service_data)
 
     if CONF_TEMPERATURE in service_data:
         effective_options[CONF_TEMPERATURE] = service_data[CONF_TEMPERATURE]
@@ -431,17 +431,17 @@ def build_generate_content_completion_args(
 
 
 def effective_thinking_enabled_for_generate_content(
-    entry_options: Mapping[str, Any],
+    agent_options: Mapping[str, Any],
     service_data: Mapping[str, Any],
 ) -> bool:
     """Resolve whether reasoning is active for a ``generate_content`` call.
 
-    ``entry_options`` are the agent's settings, not the config entry's - the
-    entry itself carries only the credentials.
+    The options are the calling agent's; the config entry itself carries
+    only the credentials.
     """
     if CONF_THINKING_ENABLED in service_data:
         return bool(service_data[CONF_THINKING_ENABLED])
-    return bool(entry_options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED))
+    return bool(agent_options.get(CONF_THINKING_ENABLED, DEFAULT_THINKING_ENABLED))
 
 
 def reasoning_text_from_chat_message(message: Any) -> str:

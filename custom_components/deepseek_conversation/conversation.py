@@ -756,8 +756,8 @@ async def async_handle_chat_log(
     if attachments:
         if not vision_enabled_in_options(options):
             raise HomeAssistantError(
-                "Vision is disabled in DeepSeek options. Enable "
-                "'Allow vision' to send image attachments."
+                "Images are switched off for this agent. Turn on "
+                "'Allow images' in its settings to send attachments."
             )
         raise_if_vision_unsupported(model, base_url=base_url)
 

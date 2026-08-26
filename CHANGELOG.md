@@ -13,7 +13,7 @@ All notable changes to this integration.
 - **One switch fewer.** *Context management* did nothing except force the two limits under it to zero, which is what zero already meant in either field. It is gone; an agent that had it switched off keeps its behaviour as explicit zeros.
 - **The conversation history cap is no longer offered to AI Task agents.** An AI Task chat log is a single turn, so the setting never did anything there.
 - **The gear icon is gone.** Agent settings belong to the agents now; the entry itself only holds the credentials, which are still changed through **⋮ → Reconfigure**.
-- `deepseek_conversation.generate_content` and `run_debug` address a config entry rather than a specific agent, so they follow the entry's **first conversation agent**. After the upgrade that is the agent carrying your previous settings, so nothing about these actions changes.
+- `deepseek_conversation.generate_content` and `run_debug` address a config entry rather than a specific agent, so they follow the entry's **first conversation agent**, or its first agent of any kind if there is no conversation agent left. After the upgrade that is the agent carrying your previous settings, so nothing about these actions changes.
 - Editing an agent reloads the entry. Settings used to be applied in place, which is no longer possible now that an entity is built from a subentry.
 - The token counters and the **Reset usage** button stay on the config entry's own device: usage is billed per API key and has to keep adding up across every agent sharing it.
 

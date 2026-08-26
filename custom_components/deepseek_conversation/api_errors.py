@@ -20,9 +20,9 @@ def openai_exception_user_message(err: BaseException) -> str:
     if "image_url" in text and "unknown variant" in text:
         return (
             "The API endpoint rejected the image (image_url content parts). On the "
-            f"official DeepSeek API only {VISION_CHAT_MODEL} accepts images - select "
-            "it under Configure -> Model. On a custom base URL, choose a model the "
-            "gateway serves with vision support, or send the request without images."
+            f"official DeepSeek API only {VISION_CHAT_MODEL} accepts images - set it "
+            "as this agent's model. On a custom base URL, choose a model the gateway "
+            "serves with vision support, or send the request without images."
         )
     if isinstance(err, openai.BadRequestError):
         if any(

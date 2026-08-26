@@ -56,10 +56,14 @@ def default_agent_options(
 
     ``generate_content`` and ``run_debug`` address a config entry, not a
     specific agent, so they follow the first agent of the given type. An entry
-    with no agent at all falls back to an empty mapping, which every reader
-    resolves to the recommended defaults.
+    that has no agent of that kind - only AI Task agents, say - falls back to
+    its first agent of any kind, which still beats running on defaults nobody
+    chose. With no agents at all the empty mapping resolves to the recommended
+    defaults at every reader.
     """
-    subentries = agent_subentries(entry, subentry_type)
+    subentries = agent_subentries(entry, subentry_type) or list(
+        entry.subentries.values()
+    )
     return subentries[0].data if subentries else {}
 
 

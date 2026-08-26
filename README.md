@@ -85,7 +85,7 @@ Voice satellites usually identify no user (Home Assistant runs those pipelines w
 
 ## Images
 
-Image input needs two things: **Allow vision** on (default) and a model that
+Image input needs two things: **Allow images** on (default) and a model that
 accepts images.
 
 - **Official API** (`api.deepseek.com`): select `deepseek-v4-flash-vision-exp`
@@ -140,7 +140,7 @@ response_variable: result
 # result.data.summary, result.data.high_c, …
 ```
 
-Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow vision** and a vision-capable model you can attach images via the action's attachments field — see [Images](#images).
+Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow images** and a vision-capable model you can attach images via the action's attachments field — see [Images](#images).
 
 ### Other paths
 

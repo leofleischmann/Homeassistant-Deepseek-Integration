@@ -1,12 +1,12 @@
 """AI Task support for DeepSeek Conversation.
 
-Registers an ``AITaskEntity`` per config entry on the same device as the
-conversation agent. Uses the shared streaming loop in ``conversation.py``
-(``async_handle_chat_log``). Platform setup is wired from ``__init__.py``.
+Registers one ``AITaskEntity`` per AI Task subentry, each on its own device.
+Uses the shared streaming loop in ``conversation.py`` (``async_handle_chat_log``).
+Platform setup is wired from ``__init__.py``.
 
 HA's ``AITaskEntity`` prepares the chat log with a generic system prompt;
-``_async_apply_entry_llm_options`` replaces ``content[0]`` with this entry's
-Configure prompt and LLM APIs (same as Assist) before the API call.
+``_async_apply_entry_llm_options`` replaces ``content[0]`` with the agent's own
+prompt and LLM APIs before the API call.
 """
 
 from __future__ import annotations
