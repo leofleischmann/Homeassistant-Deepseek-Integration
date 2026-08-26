@@ -63,9 +63,9 @@ def raise_if_vision_unsupported(model: str | None, *, base_url: str | None) -> N
     name = (model or "").strip() or "the configured model"
     raise HomeAssistantError(
         f"The model {name} does not accept image input. On the official DeepSeek "
-        f"API only {VISION_CHAT_MODEL} takes images - select it under "
-        "Configure -> Model, or point the base URL at a multimodal "
-        "OpenAI-compatible gateway (integration card, Reconfigure)."
+        f"API only {VISION_CHAT_MODEL} takes images - set it as this agent's "
+        "model, or point the base URL at a multimodal OpenAI-compatible gateway "
+        "(integration card, Reconfigure)."
     )
 
 

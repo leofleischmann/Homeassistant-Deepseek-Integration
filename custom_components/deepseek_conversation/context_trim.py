@@ -1,9 +1,8 @@
 """Context trimming for Assist API requests.
 
 Caps serialized tool result JSON and optionally limits Assist history by user
-turn before messages are sent to DeepSeek. Used from conversation.py. Options:
-CONF_CONTEXT_MANAGEMENT_ENABLED, CONF_MAX_TOOL_RESULT_CHARS,
-CONF_MAX_HISTORY_ROUNDS in config_flow.py.
+turn before messages are sent to DeepSeek. Used from conversation.py. Both
+limits are off at zero, which is the only switch either of them needs.
 """
 
 from __future__ import annotations
@@ -13,10 +12,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from .const import (
-    CONF_CONTEXT_MANAGEMENT_ENABLED,
     CONF_MAX_HISTORY_ROUNDS,
     CONF_MAX_TOOL_RESULT_CHARS,
-    DEFAULT_CONTEXT_MANAGEMENT_ENABLED,
     LOGGER,
     RECOMMENDED_MAX_HISTORY_ROUNDS,
     RECOMMENDED_MAX_TOOL_RESULT_CHARS,
@@ -44,17 +41,8 @@ def coerce_max_tool_result_chars(
     return max(MIN_TOOL_RESULT_CHARS, min(n, MAX_TOOL_RESULT_CHARS_UPPER_BOUND))
 
 
-def context_management_enabled(options: Mapping[str, Any]) -> bool:
-    """Whether context trimming is active for this config entry."""
-    return bool(
-        options.get(CONF_CONTEXT_MANAGEMENT_ENABLED, DEFAULT_CONTEXT_MANAGEMENT_ENABLED)
-    )
-
-
 def max_tool_result_chars_from_options(options: Mapping[str, Any]) -> int:
     """Effective tool-result character limit; 0 means no truncation."""
-    if not context_management_enabled(options):
-        return 0
     return coerce_max_tool_result_chars(
         options.get(CONF_MAX_TOOL_RESULT_CHARS, RECOMMENDED_MAX_TOOL_RESULT_CHARS)
     )
@@ -125,8 +113,6 @@ def coerce_max_history_rounds(
 
 def max_history_rounds_from_options(options: Mapping[str, Any]) -> int:
     """Effective user-turn history cap; 0 means unlimited."""
-    if not context_management_enabled(options):
-        return 0
     return coerce_max_history_rounds(
         options.get(CONF_MAX_HISTORY_ROUNDS, RECOMMENDED_MAX_HISTORY_ROUNDS)
     )

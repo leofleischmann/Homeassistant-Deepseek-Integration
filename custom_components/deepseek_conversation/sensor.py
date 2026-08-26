@@ -13,10 +13,8 @@ from homeassistant.components.sensor import (  # pyright: ignore[reportMissingIm
 )
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers import device_registry as dr  # pyright: ignore[reportMissingImports]
 
-from .const import DOMAIN
-from .types import DeepSeekConfigEntry
+from .types import DeepSeekConfigEntry, usage_device_info
 from .usage_metrics import CompletionUsage, UsageTracker
 
 
@@ -56,9 +54,7 @@ class DeepSeekUsageCounterSensor(RestoreSensor, SensorEntity):
         self._attr_suggested_object_id = unique_suffix
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-        )
+        self._attr_device_info = usage_device_info(entry)
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -98,9 +94,7 @@ class DeepSeekSnapshotSensor(SensorEntity):
         self._attr_translation_key = translation_key
         self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
         self._attr_suggested_object_id = unique_suffix
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-        )
+        self._attr_device_info = usage_device_info(entry)
         self._attr_native_value = 0
 
     def set_value(self, value: int) -> None:
@@ -124,9 +118,7 @@ class DeepSeekLastRequestSensor(SensorEntity):
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_last_request_tokens"
         self._attr_suggested_object_id = "last_request_tokens"
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-        )
+        self._attr_device_info = usage_device_info(entry)
         self._attr_native_value = 0
 
     def set_usage(

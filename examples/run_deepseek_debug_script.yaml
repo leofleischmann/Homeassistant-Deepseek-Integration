@@ -1,12 +1,11 @@
 # Beispiel-Skript für Home Assistant (UI: Einstellungen → Automatisierungen & Szenen → Skripte → Skript erstellen → Aktionen in YAML bearbeiten).
-# Ersetze CONFIG_ENTRY_ID durch die ID deines DeepSeek-Conversation-Eintrags:
-#   Entwicklerwerkzeuge → YAML → in core.config_entries nach "deepseek_conversation" suchen,
-#   oder in der Browser-URL beim Öffnen der Integrationsoptionen (…/config/integrations/integration/…).
+# Ersetze die Entität durch den Agenten, den du prüfen willst — der Bericht
+# nutzt dessen Modell und Einstellungen.
 
 alias: "DeepSeek: Debug ausführen"
 mode: single
 sequence:
   - action: deepseek_conversation.run_debug
     data:
-      config_entry: CONFIG_ENTRY_ID
+      agent: conversation.deepseek_conversation
       log_tail_lines: 600

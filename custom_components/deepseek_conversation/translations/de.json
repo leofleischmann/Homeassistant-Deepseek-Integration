@@ -48,6 +48,18 @@
     "exceptions": {
         "invalid_config_entry": {
             "message": "Konfigurationseintrag \"{config_entry}\" wurde nicht gefunden oder gehört nicht zu DeepSeek Conversation."
+        },
+        "invalid_agent": {
+            "message": "„{agent}“ ist kein DeepSeek-Agent. Wähle eine Konversations- oder KI-Aufgaben-Entität dieser Integration."
+        },
+        "agent_entry_mismatch": {
+            "message": "Der Agent „{agent}“ gehört zu einem anderen Eintrag als dem angegebenen. Gib nur den Agenten an, oder lass beide zusammenpassen."
+        },
+        "no_target": {
+            "message": "Gib entweder einen Eintrag oder einen Agenten an."
+        },
+        "entry_not_loaded": {
+            "message": "Der Eintrag „{config_entry}“ ist nicht geladen und kann gerade nicht antworten."
         }
     },
     "config": {
@@ -103,57 +115,179 @@
             "reconfigure_successful": "Neu konfigurieren war erfolgreich."
         }
     },
-    "options": {
-        "abort": {
-            "config_entry_not_available": "Der Konfigurationseintrag ist nicht mehr verfügbar."
-        },
-        "error": {
-            "cannot_connect": "Verbindung nicht möglich",
-            "invalid_auth": "Ungültige Anmeldung",
-            "api_error": "API-Fehler",
-            "unknown": "Unbekannter Fehler",
-            "url_required": "Basis-URL ist erforderlich",
-            "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
-        },
-        "step": {
-            "init": {
-                "title": "DeepSeek-Optionen",
-                "description": "Assist, Modell und API-Verhalten. API-Schlüssel oder Basis-URL änderst du über das Integrationsmenü (⋮ → Neu konfigurieren).",
-                "data": {
-                    "prompt": "System-Prompt",
-                    "include_user_context": "Sprecher-Info an das Modell senden",
-                    "llm_hass_api": "Home-Assistant-API",
-                    "chat_model": "Modell",
-                    "max_tokens": "Max. Tokens",
-                    "max_tool_iterations": "Max. Tool-Iterationen",
-                    "top_p": "Top P",
-                    "temperature": "Temperatur",
-                    "thinking_enabled": "Reasoning aktivieren",
-                    "strip_markdown": "Markdown für Sprachassistenten entfernen",
-                    "vision_enabled": "Vision erlauben",
-                    "context_management_enabled": "Kontext-Management",
-                    "max_tool_result_chars": "Max. Tool-Ergebnis (Zeichen)",
-                    "max_history_rounds": "Max. Gesprächsrunden",
-                    "reasoning_effort": "Reasoning-Aufwand",
-                    "request_timeout": "Zeitlimit pro Anfrage"
+    "config_subentries": {
+        "conversation": {
+            "entry_type": "Konversationsagent",
+            "initiate_flow": {
+                "user": "Konversationsagent hinzufügen",
+                "reconfigure": "Konversationsagent neu konfigurieren"
+            },
+            "step": {
+                "init": {
+                    "title": "Konversationsagent",
+                    "description": "Dieser Agent antwortet in Assist. Mehrere Agenten können sich einen API-Schlüssel teilen — ein schneller für die Sprachsteuerung, ein stärkerer für Automationen.",
+                    "data": {
+                        "name": "Name",
+                        "prompt": "Anweisungen",
+                        "llm_hass_api": "Home-Assistant-API",
+                        "chat_model": "Modell",
+                        "recommended": "Empfohlene Einstellungen"
+                    },
+                    "data_description": {
+                        "prompt": "Eine Vorlage. Verfügbare Variablen stehen in der README.",
+                        "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
+                        "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
+                        "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen."
+                    }
                 },
-                "data_description": {
-                    "prompt": "Jinja-Vorlage. Home Assistant liefert ha_name und llm_context; diese Integration ergänzt user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Unbekannte Werte sind leere Zeichenketten – daher mit einer if-Abfrage verzweigen statt auf None zu prüfen.",
-                    "include_user_context": "Standardmäßig aus. Wenn aktiv, werden Name und Anwesenheit des Sprechers sowie der Raum des Sprachsatelliten ans Ende des System-Prompts gehängt, damit Antworten ohne eigene Vorlage personalisiert werden. Sprachsatelliten erkennen oft keinen Benutzer; der Raum wird trotzdem gesendet. Wird niemand erkannt, wird nichts gesendet.",
-                    "llm_hass_api": "Keine Auswahl = keine Gerätesteuerung. Web Search (Brave) hier hinzufügen, nachdem du einen Brave-API-Schlüssel per Setup oder Neu konfigurieren gesetzt hast.",
-                    "thinking_enabled": "Wenn aktiv, nutzt die API Reasoning-Aufwand; Temperatur und Top-P werden ignoriert.",
-                    "reasoning_effort": "Nur wirksam, wenn Reasoning aktiv ist.",
-                    "temperature": "Nur wirksam, wenn Reasoning aus ist.",
-                    "top_p": "Nur wirksam, wenn Reasoning aus ist.",
-                    "chat_model": "DeepSeek V4 Flash ist am schnellsten, V4 Pro am leistungsfähigsten. Für Bilder deepseek-v4-flash-vision-exp wählen. Die Legacy-IDs deepseek-chat und deepseek-reasoner wurden am 24.07.2026 abgeschaltet.",
-                    "max_tool_iterations": "Maximale API-Runden, wenn das Modell Home-Assistant-Tools aufruft (1–20). Pro Runde können ein oder mehrere Tools laufen.",
-                    "vision_enabled": "Wenn aktiv, kann Assist Bildanhänge senden und generate_content Dateipfade nutzen. Erfordert ein Modell, das Bilder annimmt: deepseek-v4-flash-vision-exp bei der offiziellen API oder ein multimodales Modell an einer eigenen OpenAI-kompatiblen Basis-URL. Home Assistant werden Anhänge nur angeboten, wenn Option und Modell sie beide erlauben.",
-                    "context_management_enabled": "Wenn aktiv, werden große Home-Assistant-Tool-Ergebnisse (z. B. GetLiveContext) vor dem API-Aufruf gekürzt, um Kontextlimit-Fehler zu vermeiden.",
-                    "max_tool_result_chars": "Maximale Zeichen pro Tool-Ergebnis-JSON (Standard 12000). 0 = keine Kürzung. Nur wirksam, wenn Kontext-Management aktiv ist.",
-                    "max_history_rounds": "Maximale Anzahl User-Nachrichten in der Assist-Historie (Standard 0 = unbegrenzt). Älteste vollständige Runden werden vor jedem API-Aufruf entfernt; System-Prompt und die aktuelle Runde inkl. Tool-Ketten bleiben erhalten.",
-                    "request_timeout": "Sekunden, die auf die API gewartet wird (Standard 60). Beim Streaming ist das der längste Abstand zwischen zwei Textstücken — eine lange Antwort wird also nie abgeschnitten, nur eine hängende Anfrage beendet. Die Aktion generate_content wartet länger (mindestens 300 s), weil sie nicht gestreamt wird.",
-                    "strip_markdown": "Entfernt Fettdruck, Überschriften, Listen und Links schon während die Antwort eintrifft, damit die Sprachausgabe die Zeichen nicht mitliest. Die Formatierung fehlt dann auch im gespeicherten Verlauf."
+                "advanced": {
+                    "title": "Erweiterte Einstellungen",
+                    "description": "Alles, was die empfohlenen Einstellungen sonst entscheiden. Ein unverändertes Feld behält seinen Standardwert.",
+                    "sections": {
+                        "response": {
+                            "name": "Antwort",
+                            "data": {
+                                "max_tokens": "Maximale Antwortlänge",
+                                "temperature": "Temperatur",
+                                "top_p": "Top P",
+                                "thinking_enabled": "Reasoning",
+                                "reasoning_effort": "Reasoning-Aufwand"
+                            },
+                            "data_description": {
+                                "max_tokens": "In Tokens. Begrenzt nicht die Länge der Frage.",
+                                "temperature": "Höher ist abwechslungsreicher. Ohne Wirkung bei Reasoning.",
+                                "top_p": "Alternative zur Temperatur. Ohne Wirkung bei Reasoning.",
+                                "thinking_enabled": "Langsamer und teurer, besser bei schweren Fragen.",
+                                "reasoning_effort": "Wie lange das Modell denken darf."
+                            },
+                            "description": "Wie dieser Agent antwortet."
+                        },
+                        "tools": {
+                            "name": "Werkzeuge",
+                            "data": {
+                                "max_tool_iterations": "Maximale Werkzeugrunden",
+                                "max_tool_result_chars": "Limit für Werkzeugergebnisse"
+                            },
+                            "data_description": {
+                                "max_tool_iterations": "Wie oft das Modell vor der Antwort Werkzeuge aufrufen darf.",
+                                "max_tool_result_chars": "Kürzt lange Werkzeugergebnisse. 0 behält sie ganz."
+                            },
+                            "description": "Nur wirksam, wenn eine Home-Assistant-API gewählt ist."
+                        },
+                        "conversation": {
+                            "name": "Konversation",
+                            "data": {
+                                "strip_markdown": "Formatierung entfernen",
+                                "include_user_context": "Dem Modell sagen, wer spricht",
+                                "max_history_rounds": "Gesprächsverlauf"
+                            },
+                            "data_description": {
+                                "strip_markdown": "Entfernt Sternchen und Überschriften, damit sie nicht vorgelesen werden.",
+                                "include_user_context": "Ergänzt Name und Raum des Sprechers im Prompt.",
+                                "max_history_rounds": "Wie viele frühere Runden mitgeschickt werden. 0 schickt alle."
+                            },
+                            "description": "Nur für Assist."
+                        },
+                        "limits": {
+                            "name": "Grenzen und Eingaben",
+                            "data": {
+                                "request_timeout": "Zeitlimit pro Anfrage",
+                                "vision_enabled": "Bilder erlauben"
+                            },
+                            "data_description": {
+                                "request_timeout": "Längste Wartezeit auf die API. generate_content wartet länger.",
+                                "vision_enabled": "Erfordert ein Modell, das Bilder annimmt."
+                            }
+                        }
+                    }
                 }
+            },
+            "abort": {
+                "entry_not_loaded": "Es kann kein Agent hinzugefügt werden, solange die Integration nicht geladen ist.",
+                "reconfigure_successful": "Agent aktualisiert."
+            },
+            "error": {
+                "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
+            }
+        },
+        "ai_task_data": {
+            "entry_type": "KI-Aufgabe",
+            "initiate_flow": {
+                "user": "KI-Aufgabe hinzufügen",
+                "reconfigure": "KI-Aufgabe neu konfigurieren"
+            },
+            "step": {
+                "init": {
+                    "title": "KI-Aufgabe",
+                    "description": "Diese Entität führt ai_task.generate_data in Automationen aus. Sie bekommt einen eigenen Prompt und ein eigenes Modell, unabhängig von den Assist-Agenten.",
+                    "data": {
+                        "name": "Name",
+                        "prompt": "Anweisungen",
+                        "llm_hass_api": "Home-Assistant-API",
+                        "chat_model": "Modell",
+                        "recommended": "Empfohlene Einstellungen"
+                    },
+                    "data_description": {
+                        "prompt": "Eine Vorlage. Verfügbare Variablen stehen in der README.",
+                        "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
+                        "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
+                        "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen."
+                    }
+                },
+                "advanced": {
+                    "title": "Erweiterte Einstellungen",
+                    "description": "Alles, was die empfohlenen Einstellungen sonst entscheiden. Ein unverändertes Feld behält seinen Standardwert.",
+                    "sections": {
+                        "response": {
+                            "name": "Antwort",
+                            "data": {
+                                "max_tokens": "Maximale Antwortlänge",
+                                "temperature": "Temperatur",
+                                "top_p": "Top P",
+                                "thinking_enabled": "Reasoning",
+                                "reasoning_effort": "Reasoning-Aufwand"
+                            },
+                            "data_description": {
+                                "max_tokens": "In Tokens. Begrenzt nicht die Länge der Frage.",
+                                "temperature": "Höher ist abwechslungsreicher. Ohne Wirkung bei Reasoning.",
+                                "top_p": "Alternative zur Temperatur. Ohne Wirkung bei Reasoning.",
+                                "thinking_enabled": "Langsamer und teurer, besser bei schweren Fragen.",
+                                "reasoning_effort": "Wie lange das Modell denken darf."
+                            },
+                            "description": "Wie dieser Agent antwortet."
+                        },
+                        "tools": {
+                            "name": "Werkzeuge",
+                            "data": {
+                                "max_tool_iterations": "Maximale Werkzeugrunden",
+                                "max_tool_result_chars": "Limit für Werkzeugergebnisse"
+                            },
+                            "data_description": {
+                                "max_tool_iterations": "Wie oft das Modell vor der Antwort Werkzeuge aufrufen darf.",
+                                "max_tool_result_chars": "Kürzt lange Werkzeugergebnisse. 0 behält sie ganz."
+                            },
+                            "description": "Nur wirksam, wenn eine Home-Assistant-API gewählt ist."
+                        },
+                        "limits": {
+                            "name": "Grenzen und Eingaben",
+                            "data": {
+                                "request_timeout": "Zeitlimit pro Anfrage",
+                                "vision_enabled": "Bilder erlauben"
+                            },
+                            "data_description": {
+                                "request_timeout": "Längste Wartezeit auf die API. generate_content wartet länger.",
+                                "vision_enabled": "Erfordert ein Modell, das Bilder annimmt."
+                            }
+                        }
+                    }
+                }
+            },
+            "abort": {
+                "entry_not_loaded": "Es kann kein Agent hinzugefügt werden, solange die Integration nicht geladen ist.",
+                "reconfigure_successful": "Agent aktualisiert."
+            },
+            "error": {
+                "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
             }
         }
     },
@@ -182,7 +316,7 @@
             "fields": {
                 "config_entry": {
                     "name": "Integrations-Eintrag",
-                    "description": "Welcher DeepSeek-Conversation-Eintrag verwendet werden soll."
+                    "description": "Zu verwendender DeepSeek-Conversation-Eintrag. Nicht nötig, wenn oben ein Agent angegeben ist."
                 },
                 "prompt": {
                     "name": "Prompt",
@@ -211,6 +345,10 @@
                 "filenames": {
                     "name": "Dateipfade",
                     "description": "Optionale lokale Bildpfade (müssen in allowlist_external_dirs erlaubt sein)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Welcher Agent antwortet, mit seinem Prompt, Modell und seinen Werkzeugen. Leer lassen, um dem ersten Agenten des Eintrags zu folgen."
                 }
             }
         },
@@ -220,11 +358,15 @@
             "fields": {
                 "config_entry": {
                     "name": "Integrations-Eintrag",
-                    "description": "Welcher DeepSeek-Conversation-Eintrag getestet werden soll."
+                    "description": "Zu prüfender DeepSeek-Conversation-Eintrag. Nicht nötig, wenn oben ein Agent angegeben ist."
                 },
                 "log_tail_lines": {
                     "name": "Log-Auszug (Zeilen)",
                     "description": "Anzahl gefilterter Zeilen aus home-assistant.log (Standard 600, erlaubt 50–8000)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Welcher Agent antwortet, mit seinem Prompt, Modell und seinen Werkzeugen. Leer lassen, um dem ersten Agenten des Eintrags zu folgen."
                 }
             }
         }

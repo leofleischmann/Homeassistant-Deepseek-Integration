@@ -9,10 +9,9 @@ from __future__ import annotations
 from homeassistant.components.button import ButtonEntity  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers import device_registry as dr  # pyright: ignore[reportMissingImports]
 
-from .const import DOMAIN, LOGGER
-from .types import DeepSeekConfigEntry
+from .const import LOGGER
+from .types import DeepSeekConfigEntry, usage_device_info
 
 
 class DeepSeekResetUsageButton(ButtonEntity):
@@ -26,9 +25,7 @@ class DeepSeekResetUsageButton(ButtonEntity):
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_reset_usage"
         self._attr_suggested_object_id = "reset_usage"
-        self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-        )
+        self._attr_device_info = usage_device_info(entry)
 
     async def async_press(self) -> None:
         """Reset cumulative and last-request usage sensors."""

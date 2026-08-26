@@ -11,11 +11,12 @@ Install via **HACS** (`deepseek_conversation`). Community project — not part o
 
 ## What it does
 
-Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the brain behind Assist: streaming replies, optional extended reasoning, and optional Home Assistant tool calls (lights, context lookups, and more when an LLM API is enabled in options).
+Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the brain behind Assist: streaming replies, optional extended reasoning, and optional Home Assistant tool calls (lights, context lookups, and more when an LLM API is enabled). One API key can carry several agents, each with its own prompt, model and tools.
 
 | Area | What you get |
 |------|----------------|
-| **Assist** | Pick the agent in your voice assistant settings; same config for voice and text chat |
+| **Agents** | One API key, as many agents as you like — a fast one for voice, a capable one for automations, an AI Task entity on its own prompt ([details](#agents)) |
+| **Assist** | Pick an agent in your voice assistant settings; same config for voice and text chat |
 | **Who is speaking** | Optional: pass the Home Assistant user and room into the prompt so replies can be personalised ([details](#who-is-speaking)) |
 | **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
@@ -24,7 +25,7 @@ Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the br
 | **Timeouts** | Configurable request timeout (default 60 s) so a stalled endpoint cannot hang a voice pipeline |
 | **Automations** | `ai_task.generate_data` (recommended, same prompt/tools as Assist), `conversation.process`, or `deepseek_conversation.generate_content` |
 | **Usage** | Token sensors per config entry, last-request breakdown, manual **Reset usage** on the device |
-| **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key, base URL, or optional Brave Search key without losing options |
+| **Credentials** | Reauth when the key is rejected; **Reconfigure** for API key, base URL, or optional Brave Search key without touching your agents |
 
 `generate_content` returns `text`, optional `reasoning`, and `usage` tokens. Per-call overrides: model, temperature, thinking, max_tokens, JSON mode.
 
@@ -42,14 +43,36 @@ Release download badge counts GitHub `deepseek_conversation.zip` assets, not the
 
 1. **Settings → Devices & services → Add integration → DeepSeek Conversation**
 2. Enter API key (optional: custom base URL, model, Brave Search API key)
-3. Open **Configure** (gear): system prompt, model, reasoning, tools, context limits. If you set a Brave key, also select **Web Search (Brave)** under Home Assistant API
-4. Assign the agent to your Assist pipeline / voice assistant
+3. Setup creates one conversation agent and one AI Task entity. Open an agent's row to set its prompt, model and tools. If you set a Brave key, also select **Web Search (Brave)** under Home Assistant API
+4. Assign the conversation agent to your Assist pipeline / voice assistant
 
-Change API key, base URL, or Brave Search key via the integration card **⋮ → Reconfigure** (not the gear).
+Change API key, base URL, or Brave Search key via the integration card **⋮ → Reconfigure**.
+
+## Agents
+
+The config entry holds the credentials. Everything else belongs to an **agent**, and one entry can carry any number of them:
+
+- **Add conversation agent** — answers in Assist. Give the voice pipeline a V4 Flash agent for speed and point automations at a V4 Pro agent with wider tool access, both on the same key.
+- **Add AI task entity** — runs `ai_task.generate_data`, with its own prompt and model. It starts without access to your home; add a Home Assistant API if the task needs one.
+
+Adding an agent asks for a name, prompt, Home Assistant APIs and model. Turn **Recommended settings** off and a second step opens, grouped so you only unfold what you came for:
+
+| Group | Settings |
+|-------|----------|
+| **Reply** | Maximum reply length, temperature, top P, reasoning and its effort |
+| **Tools** | Tool rounds per answer, size limit for tool results |
+| **Conversation** *(Assist only)* | Remove formatting (on by default), tell the model who is speaking, how much history to send |
+| **Limits and input** | Request timeout, allow images |
+
+Anything left untouched follows the recommended default, so a later change to a default reaches the agent. Setting a limit to `0` turns it off: tool results stay whole, history is unlimited.
+
+Each agent appears as its own device and can be reconfigured on its own row.
+
+Token counters and the **Reset usage** button stay on the entry's device — usage is billed per API key, so it adds up across every agent that shares it.
 
 ## Who is speaking
 
-Off by default. *Configure → Tell the model who is speaking* appends the speaker's name, presence and the room of the voice satellite to the system prompt. Nothing is sent when nobody is identified.
+Off by default. An agent's *Tell the model who is speaking* setting appends the speaker's name, presence and the room of the voice satellite to the system prompt. Nothing is sent when nobody is identified.
 
 For your own wording, the system prompt is a Jinja template with `user_name`, `user_id`, `user_is_admin`, `person_entity_id`, `person_name`, `person_state`, `device_id`, `device_name`, `user_area`, `user_floor` (plus HA's `ha_name` and `llm_context`). Unknown values are empty strings, so branch with `{% if user_name %}`:
 
@@ -62,11 +85,11 @@ Voice satellites usually identify no user (Home Assistant runs those pipelines w
 
 ## Images
 
-Image input needs two things: **Allow vision** on (default) and a model that
+Image input needs two things: **Allow images** on (default) and a model that
 accepts images.
 
 - **Official API** (`api.deepseek.com`): select `deepseek-v4-flash-vision-exp`
-  under *Configure → Model*. The other DeepSeek models are text-only and reject
+  as the agent's model. The other DeepSeek models are text-only and reject
   images.
 - **Custom base URL**: never gated. A gateway may route any model id to any
   backend, so every request is passed through and the API decides.
@@ -82,7 +105,7 @@ Attach images through Assist, the AI Task action's attachments field, or
 
 ### AI Task entity (recommended)
 
-Pick the integration's AI Task entity in the visual automation editor or use `ai_task.generate_data`. It uses the same **system prompt** and **Home Assistant API** tools (Configure → gear) as Assist; per-call `llm_api` on the action overrides the configured APIs.
+Pick an AI Task entity in the visual automation editor or use `ai_task.generate_data`. It runs on its own agent's **prompt**, **model** and **Home Assistant API** tools; per-call `llm_api` on the action overrides them.
 
 Plain text:
 
@@ -117,24 +140,27 @@ response_variable: result
 # result.data.summary, result.data.high_c, …
 ```
 
-Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow vision** and a vision-capable model you can attach images via the action's attachments field — see [Images](#images).
+Replace `entity_id` with your AI Task entity (integration device → AI Task). With **Allow images** and a vision-capable model you can attach images via the action's attachments field — see [Images](#images).
 
 ### Other paths
 
 ```yaml
-# Like Assist: natural language, tools, integration options
+# Like Assist: natural language, tools, the agent's own settings
 action: conversation.process
 data:
   agent_id: conversation.deepseek
   text: "Turn off the living room lights."
 
-# Legacy: direct prompt → text (+ usage, optional reasoning)
+# Direct prompt → text (+ usage, optional reasoning). `agent` picks which
+# agent answers, with its prompt, model and tools.
 action: deepseek_conversation.generate_content
 data:
-  config_entry: <your config entry id>
+  agent: conversation.deepseek
   prompt: "Summarise today's weather in one sentence."
 response_variable: deepseek
 ```
+
+Both `generate_content` and `run_debug` take either an `agent` or a `config_entry`. Naming the agent is the precise one: a single entity id says which credentials to use *and* which prompt and model to answer with. A bare `config_entry` follows that entry's first agent, which is what these actions did before an entry could hold several.
 
 Sample automations: [`sample_automations/`](sample_automations/).
 
