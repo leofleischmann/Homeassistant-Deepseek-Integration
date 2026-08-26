@@ -5,21 +5,19 @@ All notable changes to this integration.
 ## [1.7.0] - 2026-08-26
 
 ### Fixed
-- **The legacy model ids stopped working.** DeepSeek retired `deepseek-chat` and `deepseek-reasoner` on 2026-07-24, but the model picker still offered them — an entry left on one failed every single request with nothing but an API error to go on. They are gone from the picker; an entry still set to one is moved to `deepseek-v4-flash` on startup and the change is reported under **Settings → Repairs** rather than happening silently. Entries pointing at a custom base URL are never touched, because a gateway may still route those ids somewhere. Typing a retired id back into the model field is refused by the form, and a retired per-call `chat_model` override on `generate_content` is mapped with a warning.
-- **Images were blocked on the official API although it now accepts them.** DeepSeek serves `deepseek-v4-flash-vision-exp`, which takes the same base64 `image_url` parts the integration already sends — but every image was refused whenever the base URL was `api.deepseek.com`, on the assumption that endpoint is text-only. The check now looks at the **model**: on the official API only `deepseek-v4-flash-vision-exp` is accepted and the other models are refused with a message naming it, while a custom base URL is never second-guessed — a gateway may route any model id to any backend, so the request goes through and the API answers for itself. Camera snapshots through Assist, AI Task and `generate_content` no longer need a third-party gateway.
-- **Home Assistant was told attachments are supported on models that reject them.** `SUPPORT_ATTACHMENTS` was advertised on the strength of the *Allow vision* option alone, so on a text-only model the attachment button was offered and every use of it ended in an error. The conversation and AI Task entities now require the option *and* a capable model.
-- **A stalled API call could hang a voice pipeline for ten minutes.** The client was built without a timeout, so the OpenAI SDK defaults of 600 s and two retries applied to Assist. New **Request timeout** option (default 60 s, range 5–600): on a streamed turn it bounds the gap between two chunks, so a long answer is never cut off while a stalled endpoint fails fast. `generate_content` is not streamed and keeps waiting for at least 300 s, because there the read timeout has to cover the whole generation. Retries are down from two to one.
-- **The Brave web search tool had no timeout either.** It runs inside the Assist tool loop, so a search that never came back hung the whole voice turn. Bounded at 10 s.
-- The setup form no longer clears every field when the API key or the model is rejected — what you typed comes back with the error.
-- **Two shipped files still described the old image behaviour.** The error text for a rejected image claimed the official API is text-only, and the bundled vision sample automation asked `deepseek-v4-flash` to look at a picture — which the new model check refuses before the request is even sent. Both corrected, along with the sample-automation README.
-- **Max tokens accepted values the API always rejects.** The ceiling was 1 000 000, which is the size of the *context window*; V4 models generate at most 384 000 tokens. That is now the limit in the option, in the `generate_content` action schema and in the clamp.
+- **Retired model ids.** DeepSeek stopped serving `deepseek-chat` and `deepseek-reasoner` on 2026-07-24, so an entry left on one failed every request. They are gone from the model picker, an affected entry is switched to `deepseek-v4-flash` on startup, and the change is reported under **Settings → Repairs**. Entries on a custom base URL keep their id, because a gateway may still serve it.
+- **Images on the official API.** `deepseek-v4-flash-vision-exp` accepts image input, but images were refused whenever the base URL was `api.deepseek.com`. Support now depends on the model: on the official API only the vision model is accepted, a custom base URL is never gated. Camera snapshots no longer need a third-party gateway.
+- **Attachment support was advertised on models that reject images.** It now needs the *Allow vision* option *and* a capable model.
+- **No request timeout.** The OpenAI SDK defaults (600 s, two retries) applied to Assist, so one unresponsive endpoint could block a voice pipeline for ten minutes. New **Request timeout** option, default 60 s: while streaming it bounds the gap between two chunks, so long answers are never cut off. `generate_content` is not streamed and waits at least 300 s. Retries drop from two to one, and the Brave web search tool is bounded at 10 s.
+- **Max tokens** could be set up to 1 000 000, which is the context window rather than the output limit. The ceiling is now 384 000, the most V4 generates.
+- The setup form keeps what you typed when the API key or the model is rejected.
 
 ### Added
-- `deepseek-v4-flash-vision-exp` in the model picker, and an **Images** section in the README covering what each endpoint accepts.
-- The `run_debug` report records the request timeout, next to the existing latency profile.
+- `deepseek-v4-flash-vision-exp` in the model picker, and an **Images** section in the README.
+- The `run_debug` report records the request timeout.
 
 ### Removed
-- Compatibility code for Home Assistant versions below the declared minimum of 2026.1: the `async_update_reload_and_abort` fallback and the two “legacy core” branches around it (`async_update_and_abort` has been core since 2025.11), the `ai_task` import guard (this integration sets up an AI Task platform, so a core without that component never gets far enough for the guard to help), and the `runtime_data` / `model_dump` attribute probes.
+- Compatibility code for Home Assistant versions below the declared minimum of 2026.1: the `async_update_reload_and_abort` fallback, the `ai_task` import guard, and the `runtime_data` / `model_dump` attribute probes.
 
 ## [1.6.0] - 2026-08-10
 

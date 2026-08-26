@@ -574,7 +574,13 @@ def deepseek_config_option_schema(
         ): _chat_model_selector(),
         vol.Optional(
             CONF_MAX_TOKENS,
-            description={"suggested_value": options.get(CONF_MAX_TOKENS)},
+            # Coerced, not raw: entries saved under the old 1M ceiling would
+            # otherwise suggest a value above the selector maximum.
+            description={
+                "suggested_value": coerce_max_tokens(
+                    options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
+                )
+            },
             default=coerce_max_tokens(
                 options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
             ),
@@ -683,7 +689,13 @@ def deepseek_config_option_schema(
         ),
         vol.Optional(
             CONF_REQUEST_TIMEOUT,
-            description={"suggested_value": options.get(CONF_REQUEST_TIMEOUT)},
+            # Fall back rather than suggest None: an entry saved before this
+            # option existed would otherwise open the form with an empty field.
+            description={
+                "suggested_value": options.get(
+                    CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT
+                )
+            },
             default=coerce_request_timeout(
                 options.get(CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT)
             ),

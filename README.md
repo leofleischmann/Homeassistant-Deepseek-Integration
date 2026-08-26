@@ -28,8 +28,6 @@ Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the br
 
 `generate_content` returns `text`, optional `reasoning`, and `usage` tokens. Per-call overrides: model, temperature, thinking, max_tokens, JSON mode.
 
-The legacy ids `deepseek-chat` and `deepseek-reasoner` were retired by DeepSeek on 2026-07-24. An entry still set to one of them is moved to `deepseek-v4-flash` on startup and the change is reported under **Settings → Repairs**. Entries pointing at a custom base URL keep whatever model id they have.
-
 ## Install
 
 [![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=leofleischmann&repository=Homeassistant-Deepseek-Integration&category=integration)
@@ -73,10 +71,10 @@ accepts images.
 - **Custom base URL**: never gated. A gateway may route any model id to any
   backend, so every request is passed through and the API decides.
 
-Images are sent as base64 `image_url` parts (JPEG, PNG, GIF, WebP). Home
-Assistant is only offered the attachment button when the option *and* the model
-allow it, so a text-only DeepSeek model no longer advertises support it does
-not have.
+Images are sent as base64 `image_url` parts (JPEG, PNG, GIF, WebP). The
+attachment button is offered to Home Assistant only while both the option and
+the model allow images.
+
 Attach images through Assist, the AI Task action's attachments field, or
 `filenames` on `deepseek_conversation.generate_content`.
 
