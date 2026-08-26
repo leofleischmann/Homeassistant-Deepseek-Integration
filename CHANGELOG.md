@@ -10,6 +10,7 @@ Nothing to do on upgrade: your settings become the first conversation agent, an 
 - **Several agents on one API key.** Each agent is a subentry with its own name, prompt, model and tools — a fast V4 Flash agent for voice, a V4 Pro agent for automations, an AI Task entity on a third prompt. Add them on the integration card; each gets its own device and its own reconfigure row.
 - Adding an agent is a two-step form. The second step only opens when **Recommended settings** is switched off, and an agent left on the defaults stores only what you chose.
 - A `tests/` suite and a **Unit tests** CI job, run with the standard library.
+- **Remove formatting** is on by default now — a reply is read out loud far more often than it is read. An agent that had it switched off only because that was the old default follows the new one; one where it was deliberately turned on is left alone.
 
 ### Changed
 - The second step is grouped into four collapsible sections — *Reply*, *Tools*, *Conversation* (Assist only) and *Limits and input* — each field described in one line.

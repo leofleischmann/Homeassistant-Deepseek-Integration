@@ -61,7 +61,7 @@ Adding an agent asks for a name, prompt, Home Assistant APIs and model. Turn **R
 |-------|----------|
 | **Reply** | Maximum reply length, temperature, top P, reasoning and its effort |
 | **Tools** | Tool rounds per answer, size limit for tool results |
-| **Conversation** *(Assist only)* | Remove formatting, tell the model who is speaking, how much history to send |
+| **Conversation** *(Assist only)* | Remove formatting (on by default), tell the model who is speaking, how much history to send |
 | **Limits and input** | Request timeout, allow images |
 
 Anything left untouched follows the recommended default, so a later change to a default reaches the agent. Setting a limit to `0` turns it off: tool results stay whole, history is unlimited.

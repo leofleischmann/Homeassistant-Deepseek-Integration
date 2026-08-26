@@ -84,7 +84,9 @@ RECOMMENDED_MAX_HISTORY_ROUNDS = 0
 RECOMMENDED_TEMPERATURE = 1.0
 RECOMMENDED_TOP_P = 1.0
 DEFAULT_THINKING_ENABLED = False
-DEFAULT_STRIP_MARKDOWN = False
+#: On by default: a reply is read out loud far more often than it is read,
+#: and "asterisk asterisk" is never what anyone wanted to hear.
+DEFAULT_STRIP_MARKDOWN = True
 # Opt-in: sending a household member's name to the API is the user's call, so
 # an update must not start doing it on its own.
 DEFAULT_INCLUDE_USER_CONTEXT = False
@@ -208,6 +210,24 @@ def ai_task_options_from(options: Mapping[str, Any]) -> dict[str, Any]:
         for key, value in options.items()
         if key not in ASSIST_ONLY_OPTIONS
     }
+
+
+#: What an entry carried when its owner never touched the setting. 1.7.0 wrote
+#: every default into the entry, so a stored ``False`` here says nothing about
+#: what the user wanted - it is just the old default written down.
+_PREVIOUS_STRIP_MARKDOWN_DEFAULT = False
+
+
+def adopt_strip_markdown_default(options: dict[str, Any]) -> dict[str, Any]:
+    """Let an untouched markdown setting follow the new default.
+
+    Dropping the key rather than flipping it is the point: the agent then
+    follows DEFAULT_STRIP_MARKDOWN, and an owner who had deliberately turned it
+    on keeps that. Only the value that was merely the old default gives way.
+    """
+    if options.get(CONF_STRIP_MARKDOWN) == _PREVIOUS_STRIP_MARKDOWN_DEFAULT:
+        options.pop(CONF_STRIP_MARKDOWN)
+    return options
 
 
 def fold_context_switch(options: dict[str, Any]) -> dict[str, Any]:

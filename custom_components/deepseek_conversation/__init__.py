@@ -41,6 +41,7 @@ from homeassistant.helpers.typing import ConfigType  # pyright: ignore[reportMis
 from .api_errors import openai_exception_user_message
 from .config_flow import async_probe_deepseek_client
 from .const import (
+    adopt_strip_markdown_default,
     ai_task_options_from,
     blocking_request_timeout_from_options,
     build_generate_content_completion_args,
@@ -169,7 +170,7 @@ def _async_migrate_options_to_subentries(
     is what keeps this upgrade invisible: the conversation agent answers exactly
     as before, and so does the AI Task entity.
     """
-    shared = fold_context_switch(dict(entry.options))
+    shared = adopt_strip_markdown_default(fold_context_switch(dict(entry.options)))
     ai_task_options = ai_task_options_from(shared)
     # The settings were explicit, so neither agent starts on the recommended
     # defaults - the reconfigure flow has to show the values that were in use.
