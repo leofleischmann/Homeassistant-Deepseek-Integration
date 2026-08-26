@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, Platform  # pyright: ignore[reportMissingImports]
 from homeassistant.core import (  # pyright: ignore[reportMissingImports]
+    callback,
     HomeAssistant,
     ServiceCall,
     ServiceResponse,
@@ -25,6 +26,7 @@ from homeassistant.exceptions import (  # pyright: ignore[reportMissingImports]
 )
 from homeassistant.helpers import (  # pyright: ignore[reportMissingImports]
     config_validation as cv,
+    issue_registry as ir,
     selector,
     translation,
 )
@@ -34,6 +36,7 @@ from homeassistant.helpers.typing import ConfigType  # pyright: ignore[reportMis
 from .api_errors import openai_exception_user_message
 from .config_flow import async_probe_deepseek_client
 from .const import (
+    blocking_request_timeout_from_options,
     build_generate_content_completion_args,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
@@ -43,22 +46,28 @@ from .const import (
     CONF_RESPONSE_FORMAT,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
+    DEEPSEEK_MAX_RETRIES,
     DEFAULT_SYSTEM_PROMPT,
     DEEPSEEK_API_BASE_URL,
     DOMAIN,
     effective_thinking_enabled_for_generate_content,
+    LEGACY_CHAT_MODEL_RETIRED_ON,
     LOGGER,
     MAX_TOKENS_UPPER_BOUND,
+    migrate_legacy_chat_model,
     reasoning_text_from_chat_message,
+    request_timeout_from_options,
+    resolve_generate_content_model,
     RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .debug import async_run_debug_suite
+from .structured_output import ensure_json_mode_prompt_keyword
 from .types import DeepSeekConfigEntry, DeepSeekRuntimeData
 from .usage_metrics import UsageTracker, completion_usage_from_api
 from .user_context import async_render_standalone_prompt
 from .vision import (
     async_image_parts_from_filenames,
-    raise_if_vision_unsupported_for_api,
+    raise_if_vision_unsupported,
     vision_enabled_in_options,
 )
 from .web_search import async_register_web_search_api
@@ -115,6 +124,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         runtime: DeepSeekRuntimeData = entry.runtime_data
         client: openai.AsyncClient = runtime.client
 
+        base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+        # Resolved before anything is built: the per-call chat_model override
+        # decides both whether images may be attached and whether the id is one
+        # the API still serves.
+        model = resolve_generate_content_model(entry.options, call.data)
+        replacement = migrate_legacy_chat_model(model, base_url=base_url)
+        if replacement is not None:
+            LOGGER.warning(
+                "generate_content was called with %s, which the DeepSeek API "
+                "stopped serving on %s; using %s for this call",
+                model,
+                LEGACY_CHAT_MODEL_RETIRED_ON,
+                replacement,
+            )
+            model = replacement
+
         messages: list[dict[str, object]] = []
         system_prompt = (entry.options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
         # No chat log here, so nothing else renders the prompt for this service.
@@ -136,14 +161,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     "Vision is disabled in DeepSeek options. Enable "
                     "'Allow vision' or remove filenames from the service call."
                 )
-            raise_if_vision_unsupported_for_api(
-                entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
-            )
+            raise_if_vision_unsupported(model, base_url=base_url)
             user_content.extend(
                 await async_image_parts_from_filenames(hass, filenames)
             )
 
         messages.append({"role": "user", "content": user_content})
+
+        if call.data.get(CONF_RESPONSE_FORMAT) == RESPONSE_FORMAT_JSON_OBJECT:
+            if ensure_json_mode_prompt_keyword(messages):
+                LOGGER.debug(
+                    "[Debug generate_content]: prompt never mentioned json, which "
+                    "json_object mode requires; appended the missing hint"
+                )
 
         usage_payload: dict[str, int] | None = None
         response_text = ""
@@ -155,6 +185,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 entry_options=entry.options,
                 messages=messages,
                 service_data=call.data,
+                model=model,
             )
             LOGGER.debug(
                 "[Debug generate_content]: model=%s thinking=%s overrides=%s",
@@ -172,7 +203,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     if k in call.data
                 },
             )
-            response = await client.chat.completions.create(**model_args)
+            # Not streamed, so the read timeout has to cover the whole
+            # generation rather than a gap between chunks.
+            response = await client.with_options(
+                timeout=blocking_request_timeout_from_options(entry.options)
+            ).chat.completions.create(**model_args)
             message = response.choices[0].message
             response_text = message.content or ""
             if (parsed := completion_usage_from_api(response.usage)) is not None:
@@ -360,13 +395,83 @@ def _async_http_client(hass: HomeAssistant) -> Any:
     return client
 
 
+def _legacy_model_issue_id(entry: ConfigEntry) -> str:
+    """Repair issue id for one entry left on a retired model."""
+    return f"legacy_chat_model_{entry.entry_id}"
+
+
+@callback
+def _async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Move an entry off a retired model id, and say so in Repairs.
+
+    ``deepseek-chat`` / ``deepseek-reasoner`` are no longer served by the
+    official API, so an entry still pointing at one fails every single request
+    with no hint about why. Rewriting the option keeps the integration working;
+    the repair issue is what tells the user their model choice changed.
+
+    Runs on every setup rather than as a versioned migration: an entry can
+    arrive on a retired id long after migration ran - from a restored backup, or
+    because the model field accepts free text. Entries on a custom gateway are
+    never touched (see ``migrate_legacy_chat_model``).
+
+    The issue is deliberately never withdrawn here. Rewriting the option is what
+    makes ``migrate_legacy_chat_model`` return ``None`` on the next start, so
+    withdrawing it then would erase the notice one restart after it appeared -
+    before anyone had to have seen it. It stays until the user dismisses it, or
+    until the entry is removed (``async_remove_entry``).
+    """
+    old_model = entry.options.get(CONF_CHAT_MODEL)
+    replacement = migrate_legacy_chat_model(
+        old_model, base_url=entry.data.get(CONF_BASE_URL)
+    )
+
+    if replacement is None:
+        return
+
+    LOGGER.warning(
+        "Config entry %s is set to %s, which the DeepSeek API stopped serving "
+        "on %s; switching it to %s",
+        entry.title,
+        old_model,
+        LEGACY_CHAT_MODEL_RETIRED_ON,
+        replacement,
+    )
+    hass.config_entries.async_update_entry(
+        entry,
+        options={**entry.options, CONF_CHAT_MODEL: replacement},
+    )
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        _legacy_model_issue_id(entry),
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="legacy_chat_model",
+        translation_placeholders={
+            "entry_title": entry.title,
+            "old_model": str(old_model),
+            "new_model": replacement,
+            "retired_on": LEGACY_CHAT_MODEL_RETIRED_ON,
+        },
+        learn_more_url="https://api-docs.deepseek.com/quick_start/pricing",
+    )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> bool:
     """Set up DeepSeek Conversation from a config entry."""
+    # Before the platforms read entry.options for the model.
+    _async_migrate_legacy_model_option(hass, entry)
+
     base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
     client = openai.AsyncOpenAI(
         api_key=entry.data[CONF_API_KEY],
         base_url=base_url,
         http_client=_async_http_client(hass),
+        # The SDK would default to 600 s and two retries, which lets one
+        # unresponsive endpoint block a voice pipeline for ten minutes. Call
+        # sites narrow this further per request (see request_timeout_from_options).
+        timeout=request_timeout_from_options(entry.options),
+        max_retries=DEEPSEEK_MAX_RETRIES,
     )
 
     try:
@@ -403,6 +508,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Withdraw this entry's repair issues when it is deleted."""
+    ir.async_delete_issue(hass, DOMAIN, _legacy_model_issue_id(entry))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> bool:

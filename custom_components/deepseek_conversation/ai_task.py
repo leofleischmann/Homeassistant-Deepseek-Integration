@@ -17,7 +17,6 @@ import re
 from typing import Any
 
 from homeassistant.components import ai_task, conversation  # pyright: ignore[reportMissingImports]
-from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
@@ -25,7 +24,13 @@ from homeassistant.helpers import device_registry as dr, llm  # pyright: ignore[
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback  # pyright: ignore[reportMissingImports]
 from homeassistant.util.json import json_loads  # pyright: ignore[reportMissingImports]
 
-from .const import CONF_PROMPT, DEFAULT_SYSTEM_PROMPT, DOMAIN
+from .const import (
+    CONF_BASE_URL,
+    CONF_PROMPT,
+    DEEPSEEK_API_BASE_URL,
+    DEFAULT_SYSTEM_PROMPT,
+    DOMAIN,
+)
 from .conversation import async_handle_chat_log
 from .structured_output import structure_schema_for_task
 from .types import DeepSeekConfigEntry
@@ -125,7 +130,8 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
     def _sync_features_from_entry(self, entry: DeepSeekConfigEntry) -> None:
         """Refresh supported features when entry options change."""
         self._attr_supported_features = ai_task_entity_features_for_options(
-            entry.options
+            entry.options,
+            base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         )
 
     async def async_added_to_hass(self) -> None:
@@ -141,7 +147,9 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
         """Apply option changes without a full config-entry reload."""
         data_changed = dict(entry.data) != dict(self.entry.data)
         self.entry = entry
-        if data_changed and hasattr(ConfigFlow, "async_update_and_abort"):
+        if data_changed:
+            # The conversation entity's listener reloads the entry; nothing to
+            # refresh in place.
             return
         self._sync_features_from_entry(entry)
         self.async_write_ha_state()

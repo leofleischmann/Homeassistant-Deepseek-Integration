@@ -2,6 +2,28 @@
 
 All notable changes to this integration.
 
+## [1.7.0] - 2026-08-26
+
+### Fixed
+- **Retired model ids.** DeepSeek stopped serving `deepseek-chat` and `deepseek-reasoner` on 2026-07-24, so an entry left on one failed every request. They are gone from the model picker, an affected entry is switched to `deepseek-v4-flash` on startup, and the change is reported under **Settings → Repairs**. Entries on a custom base URL keep their id, because a gateway may still serve it.
+- **Images on the official API.** `deepseek-v4-flash-vision-exp` accepts image input, but images were refused whenever the base URL was `api.deepseek.com`. Support now depends on the model: on the official API only the vision model is accepted, a custom base URL is never gated. Camera snapshots no longer need a third-party gateway.
+- **Attachment support was advertised on models that reject images.** It now needs the *Allow vision* option *and* a capable model.
+- **No request timeout.** The OpenAI SDK defaults (600 s, two retries) applied to Assist, so one unresponsive endpoint could block a voice pipeline for ten minutes. New **Request timeout** option, default 60 s: while streaming it bounds the gap between two chunks, so long answers are never cut off. `generate_content` is not streamed and waits at least 300 s. Retries drop from two to one, and the Brave web search tool is bounded at 10 s.
+- **Max tokens** could be set up to 1 000 000, which is the context window rather than the output limit. The ceiling is now 384 000, the most V4 generates.
+- **Token counters lost every failed turn.** Usage was recorded only after a whole turn succeeded, so an API error part-way through a tool loop, or hitting the iteration cap, discarded the tokens of the rounds that had already been billed. They are counted now whatever the outcome.
+- **Tool calls vanished on gateways that omit `type`.** The opening chunk of a streamed tool call had to carry `id`, `type` and the function name; several OpenAI-compatible gateways leave `type` out, and the call was dropped with nothing but a log line — the model asked to switch a light and nothing happened. `type` now defaults to `function`.
+- **`response_format: json_object` failed when the prompt never mentioned JSON.** DeepSeek requires the word in the prompt; `generate_content` adds it when it is missing, instead of returning an API error or an empty reply.
+- **Usage sensors could fail a request during startup.** An API call finishing between the sensors being bound and Home Assistant adding them raised out of the state write. Writes now wait until the entity exists.
+- **Markdown stripping came too late to help voice.** The option cleaned up the finished answer, but Home Assistant had already forwarded every chunk to the UI and to text-to-speech, so the asterisks were read out anyway. Formatting is now removed from the stream itself, holding text back only until a construct can no longer reach across the cut — 25 to 37 characters on real replies, well inside a sentence. AI Task output is untouched, so structured JSON cannot be damaged.
+- The setup form keeps what you typed when the API key or the model is rejected.
+
+### Added
+- `deepseek-v4-flash-vision-exp` in the model picker, and an **Images** section in the README.
+- The `run_debug` report records the request timeout.
+
+### Removed
+- Compatibility code for Home Assistant versions below the declared minimum of 2026.1: the `async_update_reload_and_abort` fallback, the `ai_task` import guard, and the `runtime_data` / `model_dump` attribute probes.
+
 ## [1.6.0] - 2026-08-10
 
 ### Added

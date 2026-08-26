@@ -9,7 +9,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable
 import datetime
 import json
-import re
 from typing import Any, Literal
 
 import openai
@@ -19,7 +18,6 @@ from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMe
 from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
 
 from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
-from homeassistant.config_entries import ConfigFlow  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[reportMissingImports]
@@ -47,8 +45,10 @@ from .const import (
     LOGGER,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
+    request_timeout_from_options,
     RESPONSE_FORMAT_JSON_OBJECT,
 )
+from .markdown_strip import strip_markdown, StreamingMarkdownStripper
 from .types import DeepSeekConfigEntry
 from .structured_output import (
     append_structure_guidance_to_last_user_message,
@@ -64,8 +64,7 @@ from .vision import (
     async_user_message_content,
     conversation_entity_features_for_options,
     latest_user_attachments,
-    model_supports_vision,
-    raise_if_vision_unsupported_for_api,
+    raise_if_vision_unsupported,
     vision_enabled_in_options,
 )
 
@@ -190,44 +189,6 @@ class _HAJSONEncoder(json.JSONEncoder):
             return str(obj)
 
 
-def _strip_markdown(text: str) -> str:
-    """Strip common markdown formatting for TTS readability."""
-    if not text:
-        return text
-    
-    # Remove code block formatting (```python)
-    text = re.sub(r'```[a-z]*\n?', '', text)
-    # Remove inline code formatting
-    text = text.replace('`', '')
-    
-    # Remove blockquotes
-    text = re.sub(r'(?m)^\s*>\s+', '', text)
-    # Remove headings
-    text = re.sub(r'(?m)^#{1,6}\s+', '', text)
-    
-    # Remove bold/italic (asterisks and underscores)
-    text = re.sub(r'(?<!\w)\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)', r'\1', text)
-    
-    # Remove strikethrough
-    text = re.sub(r'(?<!\w)~~(?!\s)(.+?)(?<!\s)~~(?!\w)', r'\1', text)
-    
-    # Remove images
-    text = re.sub(r'!\[(.*?)\]\(.*?\)', r'\1', text)
-    # Remove links (replace with just the text)
-    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
-    
-    # Remove list formatting
-    text = re.sub(r'(?m)^\s*[-*+]\s+', '', text)
-    
-    # Remove arrows
-    text = text.replace('→', '').replace('->', '')
-    
-    return text.strip()
-
-
 def _record_http_version(runtime: Any, result: Any) -> None:
     """Remember the negotiated HTTP version of the streaming response.
 
@@ -307,10 +268,6 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up conversation entities."""
-    if not hasattr(config_entry, 'runtime_data') or config_entry.runtime_data is None:
-        LOGGER.error("DeepSeek client not initialized in config entry.")
-        return
-
     agent = DeepSeekConversationEntity(config_entry)
     async_add_entities([agent])
 
@@ -382,7 +339,9 @@ def _convert_content_to_messages(
             if tool_calls:
                 if role == "assistant":
                     msg["content"] = msg.get("content")
-                msg["tool_calls"] = [tc.model_dump(exclude_unset=True) if hasattr(tc, 'model_dump') else tc for tc in tool_calls]
+                msg["tool_calls"] = [
+                    tc.model_dump(exclude_unset=True) for tc in tool_calls
+                ]
             if tool_call_id:
                 msg["tool_call_id"] = tool_call_id
             messages.append(msg)
@@ -520,6 +479,7 @@ async def _transform_stream(
     thinking_enabled: bool = False,
     usage_events: list[CompletionUsage] | None = None,
     on_unexpected_reasoning: Callable[[], None] | None = None,
+    markdown_stripper: StreamingMarkdownStripper | None = None,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format.
 
@@ -531,6 +491,12 @@ async def _transform_stream(
     ``on_unexpected_reasoning`` is invoked once per stream if the API sends
     ``reasoning_content`` while reasoning is switched off — see
     ``_warn_unexpected_reasoning``.
+
+    ``markdown_stripper`` removes formatting from the text deltas as they pass
+    through. It has to happen here: Home Assistant forwards every delta to the
+    UI and to text-to-speech immediately, so stripping the finished answer only
+    ever fixed the transcript, never what was spoken. Reasoning text is left
+    alone - it is displayed, not read out.
     """
     current_tool_calls: list[dict[str, Any]] = []
     current_tool_call_args_buffer: dict[int, str] = {}
@@ -576,6 +542,10 @@ async def _transform_stream(
                 LOGGER.debug(
                     "Stream delta: using content from model_extra (attr empty or unset)"
                 )
+            if markdown_stripper is not None and content_delta:
+                # May return nothing: the stripper holds text back until a point
+                # a markdown construct cannot reach across. flush() releases it.
+                content_delta = markdown_stripper.feed(content_delta) or None
 
             text_deltas, role_emitted = _yield_assistant_text_deltas(
                 role_emitted=role_emitted,
@@ -596,10 +566,14 @@ async def _transform_stream(
                 if index >= len(current_tool_calls):
                     current_tool_calls.extend([{}] * (index - len(current_tool_calls) + 1))
                     function_name = tool_call_chunk.function.name if tool_call_chunk.function else None
-                    if tool_call_chunk.id and tool_call_chunk.type and function_name:
+                    if tool_call_chunk.id and function_name:
                         current_tool_calls[index] = {
                             "id": tool_call_chunk.id,
-                            "type": tool_call_chunk.type,
+                            # Several OpenAI-compatible gateways leave "type" out
+                            # of the opening chunk. Requiring it dropped the whole
+                            # tool call, so the model asked to switch a light and
+                            # nothing happened, with no error anywhere.
+                            "type": tool_call_chunk.type or "function",
                             "function": {"name": function_name, "arguments": ""}
                         }
                         current_tool_call_args_buffer[index] = ""
@@ -610,6 +584,16 @@ async def _transform_stream(
                     current_tool_call_args_buffer[index] += tool_call_chunk.function.arguments
 
         if finish_reason:
+            # Release held-back text before any tool_calls delta, so the
+            # assistant message keeps the order the model produced.
+            if markdown_stripper is not None and (tail := markdown_stripper.flush()):
+                text_deltas, role_emitted = _yield_assistant_text_deltas(
+                    role_emitted=role_emitted,
+                    content_delta=tail,
+                    reasoning_delta=None,
+                )
+                for text_delta in text_deltas:
+                    yield text_delta
             LOGGER.debug("Stream Finish Reason: %s", finish_reason)
             LOGGER.debug("Final Tool Args Buffer: %s", current_tool_call_args_buffer)
             LOGGER.debug("Final Current Tool Calls: %s", current_tool_calls)
@@ -657,6 +641,18 @@ async def _transform_stream(
             else:
                  raise HomeAssistantError(f"finish_reason_{finish_reason}")
 
+    # Some gateways end a stream without ever sending a finish_reason. Nothing
+    # the stripper is still holding may be lost; flush() is empty if the
+    # terminal chunk above already drained it.
+    if markdown_stripper is not None and (tail := markdown_stripper.flush()):
+        text_deltas, role_emitted = _yield_assistant_text_deltas(
+            role_emitted=role_emitted,
+            content_delta=tail,
+            reasoning_delta=None,
+        )
+        for text_delta in text_deltas:
+            yield text_delta
+
 
 async def async_handle_chat_log(
     hass: HomeAssistant,
@@ -667,6 +663,7 @@ async def async_handle_chat_log(
     force_json: bool = False,
     response_schema: dict[str, Any] | None = None,
     usage_source: str = "assist",
+    strip_markdown_output: bool = False,
 ) -> None:
     """Drive DeepSeek streaming chat completions against an HA ``ChatLog``.
 
@@ -675,6 +672,10 @@ async def async_handle_chat_log(
     ``force_json`` is true, sets ``response_format`` for structured AI Task
     output (``json_object`` on official DeepSeek, ``json_schema`` on custom
     gateways when ``response_schema`` is provided).
+
+    ``strip_markdown_output`` removes formatting from the streamed text. Only
+    Assist asks for it: an AI Task result is consumed by an automation, and for
+    a structured task stripping would break the JSON.
     """
     options = entry.options
     runtime = entry.runtime_data
@@ -684,6 +685,7 @@ async def async_handle_chat_log(
 
     client: openai.AsyncClient = runtime.client
     model = options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL)
+    base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
 
     tools: list[dict[str, Any]] | None = None
     tool_choice: str | dict[str, Any] | None = None
@@ -744,14 +746,7 @@ async def async_handle_chat_log(
                 "Vision is disabled in DeepSeek options. Enable "
                 "'Allow vision' to send image attachments."
             )
-        if not model_supports_vision(model):
-            raise HomeAssistantError(
-                f"The selected model ({model}) does not support image "
-                "attachments. Use deepseek-v4-flash or deepseek-v4-pro."
-            )
-        raise_if_vision_unsupported_for_api(
-            entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
-        )
+        raise_if_vision_unsupported(model, base_url=base_url)
 
     initial_messages = _convert_content_to_messages(
         chat_log.content,
@@ -774,11 +769,20 @@ async def async_handle_chat_log(
     max_tool_iterations = coerce_max_tool_iterations(
         options.get(CONF_MAX_TOOL_ITERATIONS, RECOMMENDED_MAX_TOOL_ITERATIONS)
     )
+    # Read per turn, not per client: options apply without a config entry reload.
+    # This is a read timeout, so it bounds the gap between two stream chunks -
+    # a long answer that keeps streaming is never cut off, a stalled endpoint is.
+    # Bound once here; every round of the tool loop reuses this view of the
+    # client, which shares the connection pool with the entry's client.
+    stream_timeout = request_timeout_from_options(options)
+    bounded_client = client.with_options(timeout=stream_timeout)
     LOGGER.debug(
-        "[Debug conversation]: max_tool_iterations=%d force_json=%s usage_source=%s",
+        "[Debug conversation]: max_tool_iterations=%d force_json=%s usage_source=%s "
+        "stream_timeout=%.0fs",
         max_tool_iterations,
         force_json,
         usage_source,
+        stream_timeout,
     )
 
     response_format: dict[str, Any] | None = None
@@ -786,14 +790,13 @@ async def async_handle_chat_log(
         if response_schema is not None:
             response_format = build_response_format_for_schema(
                 response_schema,
-                base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+                base_url=base_url,
             )
         else:
             response_format = {"type": RESPONSE_FORMAT_JSON_OBJECT}
 
     all_usage: list[CompletionUsage] = []
     messages = initial_messages
-    base_url = entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
 
     def _report_unexpected_reasoning() -> None:
         _warn_unexpected_reasoning(runtime, model=model, base_url=base_url)
@@ -811,7 +814,7 @@ async def async_handle_chat_log(
                 response_format=response_format,
             )
             LOGGER.debug("Model arguments for DeepSeek: %s", model_args)
-            result = await client.chat.completions.create(**model_args)
+            result = await bounded_client.chat.completions.create(**model_args)
             _record_http_version(runtime, result)
             new_contents = [
                 content
@@ -823,6 +826,11 @@ async def async_handle_chat_log(
                         thinking_enabled=thinking_on,
                         usage_events=all_usage,
                         on_unexpected_reasoning=_report_unexpected_reasoning,
+                        markdown_stripper=(
+                            StreamingMarkdownStripper()
+                            if strip_markdown_output and not force_json
+                            else None
+                        ),
                     ),
                 )
             ]
@@ -851,8 +859,6 @@ async def async_handle_chat_log(
             )
             raise HomeAssistantError("Maximum tool iterations reached")
 
-        for usage in all_usage:
-            runtime.usage.record(usage, source=usage_source)
     except openai.AuthenticationError as err:
         LOGGER.error("DeepSeek API key rejected: %s", err)
         entry.async_start_reauth(hass)
@@ -886,6 +892,13 @@ async def async_handle_chat_log(
         if error_msg == "content_filter":
             raise HomeAssistantError("Response blocked by content filter") from err
         raise HomeAssistantError(error_msg) from err
+    finally:
+        # Every round that produced a usage event was billed, whether or not a
+        # later round failed. Recording only on success silently undercounted
+        # exactly the expensive turns: a long tool loop that hits the iteration
+        # cap, or an API error several rounds in.
+        for usage in all_usage:
+            runtime.usage.record(usage, source=usage_source)
 
 
 class DeepSeekConversationEntity(
@@ -919,6 +932,7 @@ class DeepSeekConversationEntity(
         self._attr_supported_features = conversation_entity_features_for_options(
             entry.options,
             has_control=bool(entry.options.get(CONF_LLM_HASS_API)),
+            base_url=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         )
 
     @property
@@ -1013,6 +1027,9 @@ class DeepSeekConversationEntity(
                 chat_log,
                 agent_id=user_input.agent_id,
                 usage_source="assist",
+                strip_markdown_output=bool(
+                    options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN)
+                ),
             )
         except HomeAssistantError as err:
             return _intent_error_result(
@@ -1041,7 +1058,7 @@ class DeepSeekConversationEntity(
             )
         
         if options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN):
-            speech_text = _strip_markdown(speech_text)
+            speech_text = strip_markdown(speech_text)
 
         intent_response.async_set_speech(speech_text)
 
@@ -1058,14 +1075,14 @@ class DeepSeekConversationEntity(
 
         Options: apply in memory (no reload).
         Data (API key, base URL, Brave key): schedule reload so the OpenAI client
-        and optional web_search API are rebuilt. Config flow uses
+        and optional web_search API are rebuilt. The config flow uses
         ``async_update_and_abort`` (not reload_and_abort) so this listener owns
         the reload and avoids the HA 2026.12 double-reload warning.
         """
         data_changed = dict(entry.data) != dict(self.entry.data)
         self.entry = entry
-        if data_changed and hasattr(ConfigFlow, "async_update_and_abort"):
-            # Flow used async_update_and_abort; this listener owns the reload.
+        if data_changed:
+            # The flow used async_update_and_abort, so this listener owns the reload.
             LOGGER.debug(
                 "[Debug conversation]: entry.data changed; scheduling config entry reload"
             )
@@ -1074,14 +1091,5 @@ class DeepSeekConversationEntity(
 
         self._sync_entity_attributes_from_entry(entry)
         self.async_write_ha_state()
-        if data_changed:
-            # Legacy HA: config_flow already scheduled reload via reload_and_abort.
-            LOGGER.debug(
-                "[Debug conversation]: entry.data changed on legacy core; "
-                "reload already scheduled by config flow"
-            )
-        else:
-            LOGGER.debug(
-                "[Debug conversation]: Options applied in-memory (no reload)"
-            )
+        LOGGER.debug("[Debug conversation]: Options applied in-memory (no reload)")
 

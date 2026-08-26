@@ -63,7 +63,7 @@
                 "data_description": {
                     "brave_api_key": "Optional. Aktiviert eine Web Search (Brave) LLM-API. Danach unter Konfigurieren → Home-Assistant-API zusammen mit Assist auswählen."
                 },
-                "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4 Flash. Die Legacy-Namen deepseek-chat und deepseek-reasoner funktionieren noch, entfallen aber ab 2026-07-24 — rechtzeitig auf V4 umstellen."
+                "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4 Flash. Die Legacy-Namen deepseek-chat und deepseek-reasoner wurden am 24.07.2026 abgeschaltet und werden nicht mehr angenommen."
             },
             "reauth_confirm": {
                 "title": "DeepSeek erneut anmelden",
@@ -94,7 +94,8 @@
             "invalid_auth": "Ungültige Anmeldung",
             "api_error": "API-Fehler",
             "unknown": "Unbekannter Fehler",
-            "url_required": "Basis-URL ist erforderlich"
+            "url_required": "Basis-URL ist erforderlich",
+            "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
         },
         "abort": {
             "already_configured": "Bereits konfiguriert",
@@ -111,7 +112,8 @@
             "invalid_auth": "Ungültige Anmeldung",
             "api_error": "API-Fehler",
             "unknown": "Unbekannter Fehler",
-            "url_required": "Basis-URL ist erforderlich"
+            "url_required": "Basis-URL ist erforderlich",
+            "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
         },
         "step": {
             "init": {
@@ -132,7 +134,8 @@
                     "context_management_enabled": "Kontext-Management",
                     "max_tool_result_chars": "Max. Tool-Ergebnis (Zeichen)",
                     "max_history_rounds": "Max. Gesprächsrunden",
-                    "reasoning_effort": "Reasoning-Aufwand"
+                    "reasoning_effort": "Reasoning-Aufwand",
+                    "request_timeout": "Zeitlimit pro Anfrage"
                 },
                 "data_description": {
                     "prompt": "Jinja-Vorlage. Home Assistant liefert ha_name und llm_context; diese Integration ergänzt user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Unbekannte Werte sind leere Zeichenketten – daher mit einer if-Abfrage verzweigen statt auf None zu prüfen.",
@@ -142,12 +145,14 @@
                     "reasoning_effort": "Nur wirksam, wenn Reasoning aktiv ist.",
                     "temperature": "Nur wirksam, wenn Reasoning aus ist.",
                     "top_p": "Nur wirksam, wenn Reasoning aus ist.",
-                    "chat_model": "Legacy-IDs deepseek-chat und deepseek-reasoner funktionieren bis 2026-07-24.",
+                    "chat_model": "DeepSeek V4 Flash ist am schnellsten, V4 Pro am leistungsfähigsten. Für Bilder deepseek-v4-flash-vision-exp wählen. Die Legacy-IDs deepseek-chat und deepseek-reasoner wurden am 24.07.2026 abgeschaltet.",
                     "max_tool_iterations": "Maximale API-Runden, wenn das Modell Home-Assistant-Tools aufruft (1–20). Pro Runde können ein oder mehrere Tools laufen.",
-                    "vision_enabled": "Wenn aktiv, kann Assist Bild-Anhänge senden und generate_content Dateipfade nutzen. Funktioniert nur mit einer eigenen OpenAI-kompatiblen Basis-URL mit Multimodal-Chat; die offizielle api.deepseek.com ist nur Text. Meldet SUPPORT_ATTACHMENTS an Home Assistant, sofern verfügbar.",
+                    "vision_enabled": "Wenn aktiv, kann Assist Bildanhänge senden und generate_content Dateipfade nutzen. Erfordert ein Modell, das Bilder annimmt: deepseek-v4-flash-vision-exp bei der offiziellen API oder ein multimodales Modell an einer eigenen OpenAI-kompatiblen Basis-URL. Home Assistant werden Anhänge nur angeboten, wenn Option und Modell sie beide erlauben.",
                     "context_management_enabled": "Wenn aktiv, werden große Home-Assistant-Tool-Ergebnisse (z. B. GetLiveContext) vor dem API-Aufruf gekürzt, um Kontextlimit-Fehler zu vermeiden.",
                     "max_tool_result_chars": "Maximale Zeichen pro Tool-Ergebnis-JSON (Standard 12000). 0 = keine Kürzung. Nur wirksam, wenn Kontext-Management aktiv ist.",
-                    "max_history_rounds": "Maximale Anzahl User-Nachrichten in der Assist-Historie (Standard 0 = unbegrenzt). Älteste vollständige Runden werden vor jedem API-Aufruf entfernt; System-Prompt und die aktuelle Runde inkl. Tool-Ketten bleiben erhalten."
+                    "max_history_rounds": "Maximale Anzahl User-Nachrichten in der Assist-Historie (Standard 0 = unbegrenzt). Älteste vollständige Runden werden vor jedem API-Aufruf entfernt; System-Prompt und die aktuelle Runde inkl. Tool-Ketten bleiben erhalten.",
+                    "request_timeout": "Sekunden, die auf die API gewartet wird (Standard 60). Beim Streaming ist das der längste Abstand zwischen zwei Textstücken — eine lange Antwort wird also nie abgeschnitten, nur eine hängende Anfrage beendet. Die Aktion generate_content wartet länger (mindestens 300 s), weil sie nicht gestreamt wird.",
+                    "strip_markdown": "Entfernt Fettdruck, Überschriften, Listen und Links schon während die Antwort eintrifft, damit die Sprachausgabe die Zeichen nicht mitliest. Die Formatierung fehlt dann auch im gespeicherten Verlauf."
                 }
             }
         }
@@ -157,8 +162,7 @@
             "options": {
                 "deepseek-v4-flash": "DeepSeek V4 Flash (schnell, Standard)",
                 "deepseek-v4-pro": "DeepSeek V4 Pro (leistungsstärkster)",
-                "deepseek-chat": "Legacy: deepseek-chat (bis 2026-07-24)",
-                "deepseek-reasoner": "Legacy: deepseek-reasoner (bis 2026-07-24)"
+                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision (experimentell, Bildeingabe)"
             }
         },
         "reasoning_effort": {
@@ -223,6 +227,12 @@
                     "description": "Anzahl gefilterter Zeilen aus home-assistant.log (Standard 600, erlaubt 50–8000)."
                 }
             }
+        }
+    },
+    "issues": {
+        "legacy_chat_model": {
+            "title": "DeepSeek-Modell {old_model} wurde abgeschaltet",
+            "description": "DeepSeek liefert {old_model} seit {retired_on} nicht mehr aus, deshalb konnte „{entry_title}“ nicht mehr antworten. Das Modell wurde auf {new_model} umgestellt. Unter Konfigurieren kannst du ein anderes wählen; danach kannst du diese Meldung schließen."
         }
     }
 }

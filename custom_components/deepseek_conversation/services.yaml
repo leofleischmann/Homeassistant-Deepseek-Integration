@@ -1,12 +1,12 @@
 generate_content:
-  name: Generate content (DeepSeek) # Added (DeepSeek) for clarity
+  name: Generate content (DeepSeek)
   description: Sends a conversational query to DeepSeek. Optional per-call overrides for model, temperature, thinking, max_tokens, and JSON response format; unset fields use the integration options. When reasoning is enabled, the response includes a `reasoning` field alongside `text` and `usage`.
   fields:
     config_entry:
       required: true
       selector:
         config_entry:
-          integration: deepseek_conversation # Updated integration domain
+          integration: deepseek_conversation
     prompt:
       required: true
       selector:
@@ -34,7 +34,7 @@ generate_content:
       selector:
         number:
           min: 1
-          max: 1000000
+          max: 384000
           mode: box
     response_format:
       example: json_object
@@ -43,7 +43,6 @@ generate_content:
           options:
             - label: JSON object
               value: json_object
-    # Keep filenames, but note its functionality depends on API support
     filenames:
       selector:
         text:

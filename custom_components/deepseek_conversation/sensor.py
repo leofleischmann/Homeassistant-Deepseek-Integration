@@ -20,6 +20,21 @@ from .types import DeepSeekConfigEntry
 from .usage_metrics import CompletionUsage, UsageTracker
 
 
+def _write_state_if_added(entity: SensorEntity) -> None:
+    """Write entity state, unless Home Assistant has not added it yet.
+
+    ``UsageTracker`` binds these sensors during platform setup, which runs
+    before ``async_add_entities`` has registered them. An API call landing in
+    that window - an automation firing ``ai_task.generate_data`` while the entry
+    is still starting - would otherwise raise out of ``async_write_ha_state``
+    and fail the request. The value is kept either way and reaches the state
+    machine with the next update.
+    """
+    if entity.hass is None:
+        return
+    entity.async_write_ha_state()
+
+
 class DeepSeekUsageCounterSensor(RestoreSensor, SensorEntity):
     """Cumulative counter (persists across restarts)."""
 
@@ -59,11 +74,11 @@ class DeepSeekUsageCounterSensor(RestoreSensor, SensorEntity):
         if amount <= 0:
             return
         self._attr_native_value = int(self.native_value or 0) + amount
-        self.async_write_ha_state()
+        _write_state_if_added(self)
 
     def reset_to_zero(self) -> None:
         self._attr_native_value = 0
-        self.async_write_ha_state()
+        _write_state_if_added(self)
 
 
 class DeepSeekSnapshotSensor(SensorEntity):
@@ -90,11 +105,11 @@ class DeepSeekSnapshotSensor(SensorEntity):
 
     def set_value(self, value: int) -> None:
         self._attr_native_value = value
-        self.async_write_ha_state()
+        _write_state_if_added(self)
 
     def reset_to_zero(self) -> None:
         self._attr_native_value = 0
-        self.async_write_ha_state()
+        _write_state_if_added(self)
 
 
 class DeepSeekLastRequestSensor(SensorEntity):
@@ -129,12 +144,12 @@ class DeepSeekLastRequestSensor(SensorEntity):
             "source": source,
             "request_count": request_count,
         }
-        self.async_write_ha_state()
+        _write_state_if_added(self)
 
     def reset_to_zero(self) -> None:
         self._attr_native_value = 0
         self._attr_extra_state_attributes = {}
-        self.async_write_ha_state()
+        _write_state_if_added(self)
 
 
 async def async_setup_entry(

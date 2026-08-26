@@ -43,6 +43,7 @@ from .const import (
     CHAT_MODEL_OPTIONS,
     coerce_max_tokens,
     coerce_max_tool_iterations,
+    coerce_request_timeout,
     CONF_BASE_URL,
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
@@ -54,6 +55,7 @@ from .const import (
     CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
     CONF_REASONING_EFFORT,
+    CONF_REQUEST_TIMEOUT,
     CONF_STRIP_MARKDOWN,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
@@ -69,6 +71,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     MAX_TOKENS_UPPER_BOUND,
+    is_retired_chat_model,
     REASONING_EFFORT_SELECT,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOKENS,
@@ -77,8 +80,11 @@ from .const import (
     RECOMMENDED_MAX_HISTORY_ROUNDS,
     MAX_TOOL_ITERATIONS_UPPER_BOUND,
     RECOMMENDED_REASONING_EFFORT,
+    RECOMMENDED_REQUEST_TIMEOUT,
     RECOMMENDED_TEMPERATURE,
     RECOMMENDED_TOP_P,
+    REQUEST_TIMEOUT_LOWER_BOUND,
+    REQUEST_TIMEOUT_UPPER_BOUND,
 )
 
 def _normalize_llm_hass_api(value: Any) -> list[str] | None:
@@ -123,7 +129,7 @@ def _base_url_selector() -> TextSelector:
 
 
 def get_user_step_schema() -> vol.Schema:
-    """Schema for initial config (API key, URL, V4 / legacy model, optional Brave)."""
+    """Schema for initial config (API key, URL, model, optional Brave key)."""
     return vol.Schema(
         {
             vol.Required(CONF_API_KEY): _api_key_selector(),
@@ -176,6 +182,7 @@ DEFAULT_OPTIONS = {
     CONF_MAX_TOOL_RESULT_CHARS: RECOMMENDED_MAX_TOOL_RESULT_CHARS,
     CONF_MAX_HISTORY_ROUNDS: RECOMMENDED_MAX_HISTORY_ROUNDS,
     CONF_REASONING_EFFORT: RECOMMENDED_REASONING_EFFORT,
+    CONF_REQUEST_TIMEOUT: RECOMMENDED_REQUEST_TIMEOUT,
 }
 
 
@@ -275,24 +282,43 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Update entry data; reload is owned by the conversation update listener.
 
-        Prefer ``async_update_and_abort`` (HA 2026.x) so we do not combine an
-        update listener with ``async_update_reload_and_abort`` (breaks in 2026.12).
-        Older cores fall back to reload_and_abort; the listener then skips reload.
+        Deliberately not ``async_update_reload_and_abort``: combining that with an
+        update listener is what Home Assistant warns breaks in 2026.12.
         """
-        if hasattr(self, "async_update_and_abort"):
-            return self.async_update_and_abort(entry, **kwargs)
-        return self.async_update_reload_and_abort(entry, **kwargs)
+        return self.async_update_and_abort(entry, **kwargs)
+
+    def _async_show_user_form(
+        self,
+        user_input: dict[str, Any] | None = None,
+        errors: dict[str, str] | None = None,
+    ) -> ConfigFlowResult:
+        """Render the setup form, keeping whatever the user already typed.
+
+        Without the suggested values a rejected key or model empties every field
+        and the whole form has to be filled in again.
+        """
+        schema = get_user_step_schema()
+        if user_input:
+            schema = self.add_suggested_values_to_schema(schema, user_input)
+        return self.async_show_form(
+            step_id="user", data_schema=schema, errors=errors
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the initial step."""
         if user_input is None:
-            return self.async_show_form(
-                step_id="user", data_schema=get_user_step_schema()
-            )
+            return self._async_show_user_form()
 
         errors: dict[str, str] = {}
+
+        if is_retired_chat_model(
+            user_input.get(CONF_CHAT_MODEL),
+            base_url=user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+        ):
+            errors[CONF_CHAT_MODEL] = "model_retired"
+            return self._async_show_user_form(user_input, errors)
 
         try:
             await validate_input(self.hass, user_input)
@@ -335,9 +361,7 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                 options=entry_options,
             )
 
-        return self.async_show_form(
-            step_id="user", data_schema=get_user_step_schema(), errors=errors
-        )
+        return self._async_show_user_form(user_input, errors)
 
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
@@ -471,6 +495,14 @@ class DeepSeekOptionsFlow(OptionsFlow):
             else:
                 user_input[CONF_LLM_HASS_API] = normalized
 
+            # The model field takes free text, so a retired id can be typed back
+            # in. Refuse it here instead of letting every request fail later.
+            if is_retired_chat_model(
+                user_input.get(CONF_CHAT_MODEL),
+                base_url=config_entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+            ):
+                errors[CONF_CHAT_MODEL] = "model_retired"
+
             if not errors:
                 updated_options = {**config_entry.options, **user_input}
                 return self.async_create_entry(title="", data=updated_options)
@@ -542,7 +574,13 @@ def deepseek_config_option_schema(
         ): _chat_model_selector(),
         vol.Optional(
             CONF_MAX_TOKENS,
-            description={"suggested_value": options.get(CONF_MAX_TOKENS)},
+            # Coerced, not raw: entries saved under the old 1M ceiling would
+            # otherwise suggest a value above the selector maximum.
+            description={
+                "suggested_value": coerce_max_tokens(
+                    options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
+                )
+            },
             default=coerce_max_tokens(
                 options.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
             ),
@@ -647,6 +685,27 @@ def deepseek_config_option_schema(
                 max=MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
                 mode="box",
                 step=500,
+            )
+        ),
+        vol.Optional(
+            CONF_REQUEST_TIMEOUT,
+            # Fall back rather than suggest None: an entry saved before this
+            # option existed would otherwise open the form with an empty field.
+            description={
+                "suggested_value": options.get(
+                    CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT
+                )
+            },
+            default=coerce_request_timeout(
+                options.get(CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT)
+            ),
+        ): NumberSelector(
+            NumberSelectorConfig(
+                min=REQUEST_TIMEOUT_LOWER_BOUND,
+                max=REQUEST_TIMEOUT_UPPER_BOUND,
+                mode="box",
+                step=5,
+                unit_of_measurement="s",
             )
         ),
         vol.Optional(

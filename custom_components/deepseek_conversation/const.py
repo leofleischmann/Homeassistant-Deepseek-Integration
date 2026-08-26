@@ -24,6 +24,7 @@ CONF_CONTEXT_MANAGEMENT_ENABLED = "context_management_enabled"
 CONF_MAX_TOOL_RESULT_CHARS = "max_tool_result_chars"
 CONF_MAX_HISTORY_ROUNDS = "max_history_rounds"
 CONF_INCLUDE_USER_CONTEXT = "include_user_context"
+CONF_REQUEST_TIMEOUT = "request_timeout"
 CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
 CONF_FILENAMES = "filenames"
@@ -40,15 +41,24 @@ Answer truthfully. Reply in plain text unless the user asks for another format (
 When tools are available to read or change the home, use them when the user's request needs current state or actions.
 Keep answers concise for short questions; add detail only when asked or when it clearly helps."""
 
-# DeepSeek V4 (legacy IDs deepseek-chat / deepseek-reasoner retire 2026-07-24)
 RECOMMENDED_CHAT_MODEL = "deepseek-v4-flash"
+
+#: The only official model that accepts image input; see vision.py.
+VISION_CHAT_MODEL = "deepseek-v4-flash-vision-exp"
 
 CHAT_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
     ("deepseek-v4-flash", "DeepSeek V4 Flash (fast, default)"),
     ("deepseek-v4-pro", "DeepSeek V4 Pro (most capable)"),
-    ("deepseek-chat", "Legacy: deepseek-chat (until 2026-07-24)"),
-    ("deepseek-reasoner", "Legacy: deepseek-reasoner (until 2026-07-24)"),
+    (VISION_CHAT_MODEL, "DeepSeek V4 Flash Vision (experimental, image input)"),
 )
+
+#: Model ids that accept OpenAI-style ``image_url`` content parts.
+VISION_CHAT_MODELS: frozenset[str] = frozenset({VISION_CHAT_MODEL})
+
+#: Retired: the official API stopped serving these on LEGACY_CHAT_MODEL_RETIRED_ON.
+#: Entries still configured with one are migrated by migrate_legacy_chat_model().
+LEGACY_CHAT_MODELS: frozenset[str] = frozenset({"deepseek-chat", "deepseek-reasoner"})
+LEGACY_CHAT_MODEL_RETIRED_ON = "2026-07-24"
 
 RECOMMENDED_MAX_TOKENS = 1500
 RECOMMENDED_MAX_TOOL_ITERATIONS = 10
@@ -75,8 +85,67 @@ REASONING_EFFORT_SELECT: tuple[tuple[str, str], ...] = (
 REASONING_EFFORT_VALUES: frozenset[str] = frozenset(v for v, _ in REASONING_EFFORT_SELECT)
 RECOMMENDED_REASONING_EFFORT = "high"
 
-MAX_TOKENS_UPPER_BOUND = 1_000_000
+#: Ceiling for the reply length option. V4 models take a 1M token context but
+#: generate at most 384K, so anything above this could only ever be rejected.
+MAX_TOKENS_UPPER_BOUND = 384_000
 DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"
+
+# Request limits. The OpenAI SDK defaults to a 600 s timeout and two retries, so
+# an unresponsive endpoint can block a voice pipeline for ten minutes; a voice
+# assistant is better served by failing early.
+RECOMMENDED_REQUEST_TIMEOUT = 60
+REQUEST_TIMEOUT_LOWER_BOUND = 5
+REQUEST_TIMEOUT_UPPER_BOUND = 600
+#: Floor for non-streamed calls (generate_content). httpx applies the timeout
+#: per read: for a streamed call it is the gap between two chunks, while a
+#: blocking call must fit the whole generation into it - and a reasoning run
+#: with a large max_tokens legitimately takes minutes.
+MIN_BLOCKING_REQUEST_TIMEOUT = 300
+#: One retry, not the SDK default of two: on voice, a late answer is a failure.
+DEEPSEEK_MAX_RETRIES = 1
+
+
+def normalize_model_id(model: str | None) -> str:
+    """Return a model id in the form the catalogue sets above are keyed by."""
+    return (model or "").strip().lower()
+
+
+def is_official_deepseek_api_base_url(base_url: str | None) -> bool:
+    """True for DeepSeek's hosted API.
+
+    Only that endpoint has a model catalogue we can reason about: it serves the
+    ids in CHAT_MODEL_OPTIONS and nothing else. A custom OpenAI-compatible
+    gateway may map any id to any backend, so vision support, structured output
+    format and legacy-id migration all key off this.
+    """
+    raw = (base_url or DEEPSEEK_API_BASE_URL).strip().lower()
+    while raw.endswith("/"):
+        raw = raw[:-1]
+    if raw.endswith("/v1"):
+        raw = raw[:-3]
+    while raw.endswith("/"):
+        raw = raw[:-1]
+    return raw in ("https://api.deepseek.com", "http://api.deepseek.com")
+
+
+def migrate_legacy_chat_model(model: str | None, *, base_url: str | None) -> str | None:
+    """Return the replacement for a retired model id, or ``None`` to keep it.
+
+    ``deepseek-chat`` and ``deepseek-reasoner`` stopped being served by the
+    official API on LEGACY_CHAT_MODEL_RETIRED_ON, so an entry left on one of
+    them fails every request. A custom gateway may still route those ids
+    somewhere, so entries pointing at one are left untouched.
+    """
+    if not is_official_deepseek_api_base_url(base_url):
+        return None
+    if normalize_model_id(model) not in LEGACY_CHAT_MODELS:
+        return None
+    return RECOMMENDED_CHAT_MODEL
+
+
+def is_retired_chat_model(model: str | None, *, base_url: str | None) -> bool:
+    """Whether this endpoint has stopped serving ``model``."""
+    return migrate_legacy_chat_model(model, base_url=base_url) is not None
 
 
 def deepseek_chat_extra_body(*, thinking_enabled: bool) -> dict[str, Any]:
@@ -91,7 +160,7 @@ def deepseek_chat_extra_body(*, thinking_enabled: bool) -> dict[str, Any]:
 
 def model_uses_deepseek_thinking_api(model: str) -> bool:
     """Whether to send DeepSeek ``extra_body.thinking`` for this model id."""
-    m = (model or "").strip().lower()
+    m = normalize_model_id(model)
     if not m:
         return True
     return m.startswith("deepseek")
@@ -115,6 +184,41 @@ def coerce_max_tool_iterations(
     except (TypeError, ValueError):
         return fallback
     return max(1, min(n, MAX_TOOL_ITERATIONS_UPPER_BOUND))
+
+
+def coerce_request_timeout(
+    value: Any, *, fallback: int = RECOMMENDED_REQUEST_TIMEOUT
+) -> float:
+    """Parse request_timeout from config options; clamp to the allowed range."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return float(fallback)
+    if seconds <= 0:
+        return float(fallback)
+    return max(
+        float(REQUEST_TIMEOUT_LOWER_BOUND),
+        min(seconds, float(REQUEST_TIMEOUT_UPPER_BOUND)),
+    )
+
+
+def request_timeout_from_options(options: Mapping[str, Any]) -> float:
+    """Timeout for streamed calls: the longest accepted gap between two chunks."""
+    return coerce_request_timeout(
+        options.get(CONF_REQUEST_TIMEOUT, RECOMMENDED_REQUEST_TIMEOUT)
+    )
+
+
+def blocking_request_timeout_from_options(options: Mapping[str, Any]) -> float:
+    """Timeout for non-streamed calls, which must cover the whole generation.
+
+    See MIN_BLOCKING_REQUEST_TIMEOUT: the configured value is a stall detector
+    for streaming and would cut off a legitimate long reasoning run here.
+    """
+    return max(
+        request_timeout_from_options(options),
+        float(MIN_BLOCKING_REQUEST_TIMEOUT),
+    )
 
 
 def normalized_reasoning_effort(value: Any) -> str:
@@ -191,22 +295,37 @@ def build_chat_completion_args(
     return args
 
 
+def resolve_generate_content_model(
+    entry_options: Mapping[str, Any], service_data: Mapping[str, Any]
+) -> str:
+    """Return the model a ``generate_content`` call will use.
+
+    Split out so the caller can check image support and migrate a retired id
+    before any request is built.
+    """
+    model = str(entry_options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
+    if override_model := service_data.get(CONF_CHAT_MODEL):
+        model = str(override_model).strip() or model
+    return model
+
+
 def build_generate_content_completion_args(
     *,
     entry_options: Mapping[str, Any],
     messages: list[dict[str, Any]],
     service_data: Mapping[str, Any],
+    model: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Build completion kwargs for ``generate_content`` with optional per-call overrides.
 
     Overrides: chat_model, temperature, thinking_enabled, max_tokens, response_format.
-    Unset fields fall back to the config entry options. Used only from __init__.py.
+    Unset fields fall back to the config entry options. ``model`` overrides the
+    resolved id, so the caller can pass one it already migrated. Used only from
+    __init__.py.
     """
     effective_options = dict(entry_options)
-    model = str(entry_options.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
+    model = model or resolve_generate_content_model(entry_options, service_data)
 
-    if override_model := service_data.get(CONF_CHAT_MODEL):
-        model = str(override_model).strip() or model
     if CONF_TEMPERATURE in service_data:
         effective_options[CONF_TEMPERATURE] = service_data[CONF_TEMPERATURE]
     if CONF_THINKING_ENABLED in service_data:

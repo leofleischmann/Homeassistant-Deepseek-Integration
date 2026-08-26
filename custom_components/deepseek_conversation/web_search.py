@@ -32,6 +32,9 @@ from .const import CONF_BRAVE_API_KEY, DOMAIN, LOGGER
 BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 DEFAULT_RESULT_COUNT = 5
 MAX_RESULT_COUNT = 10
+#: This runs inside the Assist tool loop, so a hanging search hangs the whole
+#: voice turn. HA's shared client carries no explicit timeout of its own.
+SEARCH_TIMEOUT = 10.0
 WEB_SEARCH_API_PROMPT = (
     "Use web_search only for current facts from the public web "
     "(news, products, documentation, general knowledge). "
@@ -96,6 +99,7 @@ class WebSearchTool(llm.Tool):
                     "Accept-Encoding": "gzip",
                     "X-Subscription-Token": self._api_key,
                 },
+                timeout=SEARCH_TIMEOUT,
             )
         except Exception as err:
             LOGGER.error("[Debug web_search]: request failed: %s", err)

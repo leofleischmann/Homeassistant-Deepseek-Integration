@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import openai
 
+from .const import VISION_CHAT_MODEL
+
 _CONTEXT_HINT = (
     "The request was too large for the model: input tokens (system prompt, chat history, "
     "and especially large tool results such as GetLiveContext) exceed the model limit. "
@@ -17,10 +19,10 @@ def openai_exception_user_message(err: BaseException) -> str:
     text = str(err).lower()
     if "image_url" in text and "unknown variant" in text:
         return (
-            "The API endpoint does not accept image input (image_url content parts). "
-            "The official DeepSeek API (api.deepseek.com) is text-only. Use images "
-            "only with a vision-capable OpenAI-compatible gateway, or remove them "
-            "from the request."
+            "The API endpoint rejected the image (image_url content parts). On the "
+            f"official DeepSeek API only {VISION_CHAT_MODEL} accepts images - select "
+            "it under Configure -> Model. On a custom base URL, choose a model the "
+            "gateway serves with vision support, or send the request without images."
         )
     if isinstance(err, openai.BadRequestError):
         if any(

@@ -63,7 +63,7 @@
                 "data_description": {
                     "brave_api_key": "Optionnel. Active une API LLM Web Search (Brave). Ensuite, sélectionnez-la sous Configurer → API Home Assistant avec Assist."
                 },
-                "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4 Flash. Les anciens noms deepseek-chat et deepseek-reasoner fonctionnent encore mais seront retirés après le 2026-07-24 — passez à V4 dans les options quand vous êtes prêt."
+                "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4 Flash. Les anciens noms deepseek-chat et deepseek-reasoner ont été retirés le 2026-07-24 et ne sont plus acceptés."
             },
             "reauth_confirm": {
                 "title": "Réauthentifier DeepSeek",
@@ -94,7 +94,8 @@
             "invalid_auth": "Authentification invalide",
             "api_error": "Erreur d’API",
             "unknown": "Erreur inconnue",
-            "url_required": "L’URL de base est obligatoire"
+            "url_required": "L’URL de base est obligatoire",
+            "model_retired": "Ce modèle a été retiré par DeepSeek le 24/07/2026. Choisissez DeepSeek V4 Flash ou V4 Pro."
         },
         "abort": {
             "already_configured": "Déjà configuré",
@@ -111,7 +112,8 @@
             "invalid_auth": "Authentification invalide",
             "api_error": "Erreur d’API",
             "unknown": "Erreur inconnue",
-            "url_required": "L’URL de base est obligatoire"
+            "url_required": "L’URL de base est obligatoire",
+            "model_retired": "Ce modèle a été retiré par DeepSeek le 24/07/2026. Choisissez DeepSeek V4 Flash ou V4 Pro."
         },
         "step": {
             "init": {
@@ -132,7 +134,8 @@
                     "vision_enabled": "Autoriser la vision",
                     "context_management_enabled": "Gestion du contexte",
                     "max_tool_result_chars": "Taille max. résultat outil (car.)",
-                    "max_history_rounds": "Tours de conversation max."
+                    "max_history_rounds": "Tours de conversation max.",
+                    "request_timeout": "Délai d’attente par requête"
                 },
                 "data_description": {
                     "prompt": "Modèle Jinja. Home Assistant fournit ha_name et llm_context ; cette intégration ajoute user_name, user_id, user_is_admin, person_entity_id, person_name, person_state, device_id, device_name, user_area, user_floor. Les valeurs inconnues sont des chaînes vides : utilisez un test if plutôt qu'une comparaison à None.",
@@ -142,12 +145,14 @@
                     "reasoning_effort": "Utilisé uniquement si le raisonnement est activé.",
                     "temperature": "Utilisé uniquement si le raisonnement est désactivé.",
                     "top_p": "Utilisé uniquement si le raisonnement est désactivé.",
-                    "chat_model": "Les anciens identifiants deepseek-chat et deepseek-reasoner fonctionnent jusqu’au 2026-07-24.",
+                    "chat_model": "DeepSeek V4 Flash est le plus rapide, V4 Pro le plus performant. Choisissez deepseek-v4-flash-vision-exp pour envoyer des images. Les anciens identifiants deepseek-chat et deepseek-reasoner ont été retirés le 2026-07-24.",
                     "max_tool_iterations": "Nombre maximal de tours API lorsque le modèle appelle des outils Home Assistant (1–20). Chaque tour peut exécuter un ou plusieurs outils.",
-                    "vision_enabled": "Si activé, Assist peut envoyer des images en pièce jointe et generate_content peut utiliser des chemins de fichiers. Fonctionne uniquement avec une URL de base OpenAI-compatible personnalisée prenant en charge le multimodal ; l’endpoint officiel api.deepseek.com est texte seul. Déclare SUPPORT_ATTACHMENTS à Home Assistant lorsque disponible.",
+                    "vision_enabled": "Lorsque l’option est activée, Assist peut envoyer des images en pièce jointe et generate_content peut utiliser des chemins de fichiers. Nécessite un modèle acceptant les images : deepseek-v4-flash-vision-exp sur l’API officielle, ou un modèle multimodal sur une URL de base compatible OpenAI. Les pièces jointes ne sont proposées à Home Assistant que si l’option et le modèle l’autorisent tous les deux.",
                     "context_management_enabled": "Si activé, les grands résultats d’outils Home Assistant (ex. GetLiveContext) sont raccourcis avant l’appel API pour limiter les erreurs de contexte.",
                     "max_tool_result_chars": "Nombre maximal de caractères par résultat JSON d’outil (défaut 12000). 0 = pas de troncature. Uniquement si la gestion du contexte est activée.",
-                    "max_history_rounds": "Nombre maximal de tours utilisateur conservés dans l’historique Assist (défaut 0 = illimité). Les tours complets les plus anciens sont supprimés avant chaque appel API ; l’invite système et le tour en cours (y compris les chaînes d’outils) restent intacts."
+                    "max_history_rounds": "Nombre maximal de tours utilisateur conservés dans l’historique Assist (défaut 0 = illimité). Les tours complets les plus anciens sont supprimés avant chaque appel API ; l’invite système et le tour en cours (y compris les chaînes d’outils) restent intacts.",
+                    "request_timeout": "Secondes d’attente de l’API avant d’abandonner (60 par défaut). En streaming, il s’agit de l’écart maximal entre deux fragments : une longue réponse n’est donc jamais coupée, seule une requête bloquée est interrompue. L’action generate_content attend plus longtemps (au moins 300 s) car elle n’est pas diffusée en streaming.",
+                    "strip_markdown": "Supprime le gras, les titres, les listes et les liens pendant que la réponse arrive, afin que la synthèse vocale ne lise pas les symboles. Le formatage disparaît alors aussi de la conversation enregistrée."
                 }
             }
         }
@@ -157,8 +162,7 @@
             "options": {
                 "deepseek-v4-flash": "DeepSeek V4 Flash (rapide, par défaut)",
                 "deepseek-v4-pro": "DeepSeek V4 Pro (le plus puissant)",
-                "deepseek-chat": "Ancien : deepseek-chat (jusqu’au 2026-07-24)",
-                "deepseek-reasoner": "Ancien : deepseek-reasoner (jusqu’au 2026-07-24)"
+                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision (expérimental, entrée image)"
             }
         },
         "reasoning_effort": {
@@ -223,6 +227,12 @@
                     "description": "Lignes filtrées depuis home-assistant.log (défaut 600, plage 50–8000)."
                 }
             }
+        }
+    },
+    "issues": {
+        "legacy_chat_model": {
+            "title": "Le modèle DeepSeek {old_model} a été retiré",
+            "description": "DeepSeek ne sert plus {old_model} depuis le {retired_on}, « {entry_title} » ne pouvait donc plus répondre. Le modèle a été remplacé par {new_model}. Choisissez-en un autre via Configurer si besoin, puis fermez ce signalement."
         }
     }
 }
