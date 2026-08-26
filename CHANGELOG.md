@@ -4,27 +4,26 @@ All notable changes to this integration.
 
 ## [1.8.0] - 2026-08-26
 
-### Added
-- **Several agents on one API key.** An entry used to be a single agent, and its settings lived in the entry's own options. Each agent is now a subentry with its own name, prompt, model and tools — so a fast **V4 Flash** agent can answer voice while a **V4 Pro** agent with full tool access handles automations, and an AI Task entity runs on a third prompt entirely. Add them under the integration card: **Add conversation agent** or **Add AI task entity**. Each agent gets its own device, and each can be reconfigured on its own row.
-- Adding an agent is a two-step form: name, prompt, Home Assistant APIs and model, then a second step for reply length, reasoning, timeouts and context handling that only opens when **Recommended settings** is switched off. An agent left on the recommended settings stores only what you actually chose, so later changes to a default reach it.
+Nothing to do on upgrade: your settings become the first conversation agent, an AI Task agent is created alongside it, and both entities keep their entity id — `conversation.deepseek` still answers.
 
 ### Added
-- A `tests/` suite and a **Unit tests** CI job, run with the standard library so it needs no extra dependency.
+- **Several agents on one API key.** Each agent is a subentry with its own name, prompt, model and tools — a fast V4 Flash agent for voice, a V4 Pro agent for automations, an AI Task entity on a third prompt. Add them on the integration card; each gets its own device and its own reconfigure row.
+- Adding an agent is a two-step form. The second step only opens when **Recommended settings** is switched off, and an agent left on the defaults stores only what you chose.
+- A `tests/` suite and a **Unit tests** CI job, run with the standard library.
 
 ### Changed
-- **The second step is grouped and much shorter to read.** Its settings now sit in four collapsible groups — *Reply*, *Tools*, *Conversation* (Assist only) and *Limits and input* — with only the first one open. Every description is a single line; the reasoning behind a setting moved to the README, where there is room for it.
-- **One switch fewer.** *Context management* did nothing except force the two limits under it to zero, which is what zero already meant in either field. It is gone; an agent that had it switched off keeps its behaviour as explicit zeros.
-- **The conversation history cap is no longer offered to AI Task agents.** An AI Task chat log is a single turn, so the setting never did anything there.
-- **The gear icon is gone.** Agent settings belong to the agents now; the entry itself only holds the credentials, which are still changed through **⋮ → Reconfigure**.
-- `deepseek_conversation.generate_content` and `run_debug` address a config entry rather than a specific agent, so they follow the entry's **first conversation agent**, or its first agent of any kind if there is no conversation agent left. After the upgrade that is the agent carrying your previous settings, so nothing about these actions changes.
-- Editing an agent reloads the entry. Settings used to be applied in place, which is no longer possible now that an entity is built from a subentry.
-- The token counters and the **Reset usage** button stay on the config entry's own device: usage is billed per API key and has to keep adding up across every agent sharing it.
+- The second step is grouped into four collapsible sections — *Reply*, *Tools*, *Conversation* (Assist only) and *Limits and input* — each field described in one line.
+- **Context management** is gone. It only forced the two limits below it to zero, which is what zero already meant in either field.
+- The conversation history cap is no longer offered to AI Task agents, where a single-turn chat log made it meaningless.
+- **The gear icon is gone.** The entry holds only the credentials, still changed through **⋮ → Reconfigure**.
+- `generate_content` and `run_debug` follow the entry's first conversation agent, or its first agent of any kind if none is left.
+- Editing an agent reloads the entry; settings can no longer be applied in place.
+- Token counters and **Reset usage** stay on the entry's own device — usage is billed per API key and adds up across every agent sharing it.
 
 ### Fixed
-- **Emphasis markers were left in the spoken reply, and sometimes half-eaten.** The rules guarded every marker with a word-character check, which is right for `_` but wrong for `*` and `~~` — markdown lets those open inside a word. In Chinese every marker touches a word character on both sides (`今天**很好**啊`), and so does any mixed sentence (`**粗体**and english`), so the asterisks survived into text-to-speech. The `*` rules now carry no word guard, keep their `\w` guard on `_`, decline arithmetic like `5**2` and `3*4`, and refuse to take half of a `**` run and leave the other half behind.
-- **Three cases where the stream and the finished text could disagree.** Backticks are removed before the line rules run, so `` #` `` became a bare `#` that then swallowed a space as a heading; deleting backticks and arrows can leave trailing whitespace that the one-pass form trims but the stream had already sent; and an inline rule can create a list marker that was not in the text (`*-*` leaves `-`). All three are now accounted for when the stream decides where it may cut.
-- **A reply the stripper could not cut blocked Home Assistant for seconds.** Deciding where the stream may cut is done per delta, and every candidate position was weighed again each time - so a reply carrying something that blocks a cut, an unclosed `[` or a literal `*`, cost time quadratic in its own length: 2.2 seconds of blocked event loop for a reply with `3*4` in it, 8.8 for one with an open bracket. A position refused once cannot become acceptable later, so it is now weighed once; the expensive check also runs last instead of first, and arithmetic no longer counts as an opening marker at all. The same replies now cost 4 and 45 milliseconds.
-- Nothing to do on upgrade. Your existing settings become the first conversation agent, an AI Task agent is created with the same ones, and both entities keep their entity id — `conversation.deepseek` still answers, and voice pipelines and automations pointing at it are untouched. The Assist-only settings (markdown stripping, naming the speaker) are not carried into the AI Task agent, where they never did anything.
+- **Emphasis markers survived into the spoken reply.** Every marker was guarded by a word-character check, which is right for `_` but wrong for `*` and `~~`: markdown lets those open inside a word, as Chinese (`今天**很好**啊`) and mixed text (`**粗体**and english`) always do. The star rules now also decline arithmetic (`5**2`, `3*4`) and no longer take half of a `**` run.
+- Three cases where the stream and the finished text could disagree: a backtick exposing a heading marker, deleted text leaving trailing whitespace, and an inline rule creating a list marker (`*-*` leaves `-`).
+- **A reply the stripper could not cut blocked Home Assistant for seconds.** Every cut position was weighed again per delta, so an unclosed `[` cost time quadratic in the reply's own length — 8.8 seconds of blocked event loop, now 45 milliseconds.
 
 ## [1.7.0] - 2026-08-26
 
