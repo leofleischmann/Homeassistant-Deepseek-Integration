@@ -61,6 +61,7 @@ from .const import (
     RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .debug import async_run_debug_suite
+from .structured_output import ensure_json_mode_prompt_keyword
 from .types import DeepSeekConfigEntry, DeepSeekRuntimeData
 from .usage_metrics import UsageTracker, completion_usage_from_api
 from .user_context import async_render_standalone_prompt
@@ -166,6 +167,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
 
         messages.append({"role": "user", "content": user_content})
+
+        if call.data.get(CONF_RESPONSE_FORMAT) == RESPONSE_FORMAT_JSON_OBJECT:
+            if ensure_json_mode_prompt_keyword(messages):
+                LOGGER.debug(
+                    "[Debug generate_content]: prompt never mentioned json, which "
+                    "json_object mode requires; appended the missing hint"
+                )
 
         usage_payload: dict[str, int] | None = None
         response_text = ""

@@ -10,6 +10,10 @@ All notable changes to this integration.
 - **Attachment support was advertised on models that reject images.** It now needs the *Allow vision* option *and* a capable model.
 - **No request timeout.** The OpenAI SDK defaults (600 s, two retries) applied to Assist, so one unresponsive endpoint could block a voice pipeline for ten minutes. New **Request timeout** option, default 60 s: while streaming it bounds the gap between two chunks, so long answers are never cut off. `generate_content` is not streamed and waits at least 300 s. Retries drop from two to one, and the Brave web search tool is bounded at 10 s.
 - **Max tokens** could be set up to 1 000 000, which is the context window rather than the output limit. The ceiling is now 384 000, the most V4 generates.
+- **Token counters lost every failed turn.** Usage was recorded only after a whole turn succeeded, so an API error part-way through a tool loop, or hitting the iteration cap, discarded the tokens of the rounds that had already been billed. They are counted now whatever the outcome.
+- **Tool calls vanished on gateways that omit `type`.** The opening chunk of a streamed tool call had to carry `id`, `type` and the function name; several OpenAI-compatible gateways leave `type` out, and the call was dropped with nothing but a log line — the model asked to switch a light and nothing happened. `type` now defaults to `function`.
+- **`response_format: json_object` failed when the prompt never mentioned JSON.** DeepSeek requires the word in the prompt; `generate_content` adds it when it is missing, instead of returning an API error or an empty reply.
+- **Usage sensors could fail a request during startup.** An API call finishing between the sensors being bound and Home Assistant adding them raised out of the state write. Writes now wait until the entity exists.
 - The setup form keeps what you typed when the API key or the model is rejected.
 
 ### Added

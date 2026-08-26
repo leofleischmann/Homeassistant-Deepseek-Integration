@@ -119,6 +119,64 @@ def append_structure_guidance_to_last_user_message(
         "[Debug structured_output]: no user API message found; schema not injected"
     )
 
+
+#: Appended when a json_object request would otherwise never mention JSON.
+#: Lower case on purpose - that is the spelling the API guide asks for.
+_JSON_MODE_HINT = "\n\nReply with a single json object and nothing else."
+
+
+def _message_text(message: dict[str, Any]) -> str:
+    """Return the text of an API message, whether plain or in content parts."""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            part["text"]
+            for part in content
+            if isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part.get("text"), str)
+        )
+    return ""
+
+
+def _append_text(message: dict[str, Any], suffix: str) -> None:
+    """Append ``suffix`` to a message, in whichever shape its content has."""
+    content = message.get("content")
+    if isinstance(content, str):
+        message["content"] = content.rstrip() + suffix
+        return
+    if isinstance(content, list):
+        for part in reversed(content):
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
+            ):
+                part["text"] = part["text"].rstrip() + suffix
+                return
+        content.append({"type": "text", "text": suffix.strip()})
+
+
+def ensure_json_mode_prompt_keyword(messages: list[dict[str, Any]]) -> bool:
+    """Make sure the prompt mentions JSON, as ``json_object`` mode requires.
+
+    DeepSeek refuses a ``response_format: json_object`` request whose prompt
+    never contains the word "json", and answers with an API error or an empty
+    reply - neither of which points at the actual cause. A caller who sets the
+    option has already said what they want, so supply the missing word rather
+    than fail. Returns ``True`` when a hint had to be added.
+    """
+    if any("json" in _message_text(message).lower() for message in messages):
+        return False
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            _append_text(message, _JSON_MODE_HINT)
+            return True
+    return False
+
+
 def _structure_guidance_suffix(schema: dict[str, Any]) -> str:
     example = json.dumps(_example_from_schema(schema), indent=2)
     schema_text = json.dumps(schema, indent=2)

@@ -593,10 +593,14 @@ async def _transform_stream(
                 if index >= len(current_tool_calls):
                     current_tool_calls.extend([{}] * (index - len(current_tool_calls) + 1))
                     function_name = tool_call_chunk.function.name if tool_call_chunk.function else None
-                    if tool_call_chunk.id and tool_call_chunk.type and function_name:
+                    if tool_call_chunk.id and function_name:
                         current_tool_calls[index] = {
                             "id": tool_call_chunk.id,
-                            "type": tool_call_chunk.type,
+                            # Several OpenAI-compatible gateways leave "type" out
+                            # of the opening chunk. Requiring it dropped the whole
+                            # tool call, so the model asked to switch a light and
+                            # nothing happened, with no error anywhere.
+                            "type": tool_call_chunk.type or "function",
                             "function": {"name": function_name, "arguments": ""}
                         }
                         current_tool_call_args_buffer[index] = ""
@@ -850,8 +854,6 @@ async def async_handle_chat_log(
             )
             raise HomeAssistantError("Maximum tool iterations reached")
 
-        for usage in all_usage:
-            runtime.usage.record(usage, source=usage_source)
     except openai.AuthenticationError as err:
         LOGGER.error("DeepSeek API key rejected: %s", err)
         entry.async_start_reauth(hass)
@@ -885,6 +887,13 @@ async def async_handle_chat_log(
         if error_msg == "content_filter":
             raise HomeAssistantError("Response blocked by content filter") from err
         raise HomeAssistantError(error_msg) from err
+    finally:
+        # Every round that produced a usage event was billed, whether or not a
+        # later round failed. Recording only on success silently undercounted
+        # exactly the expensive turns: a long tool loop that hits the iteration
+        # cap, or an API error several rounds in.
+        for usage in all_usage:
+            runtime.usage.record(usage, source=usage_source)
 
 
 class DeepSeekConversationEntity(
