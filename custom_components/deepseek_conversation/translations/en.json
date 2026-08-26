@@ -48,6 +48,18 @@
     "exceptions": {
         "invalid_config_entry": {
             "message": "Config entry \"{config_entry}\" was not found or is not a DeepSeek Conversation entry."
+        },
+        "invalid_agent": {
+            "message": "\"{agent}\" is not a DeepSeek agent. Pick a conversation or AI task entity belonging to this integration."
+        },
+        "agent_entry_mismatch": {
+            "message": "The agent \"{agent}\" belongs to a different config entry than the one given. Name only the agent, or match the two."
+        },
+        "no_target": {
+            "message": "Name either a config entry or an agent."
+        },
+        "entry_not_loaded": {
+            "message": "The config entry \"{config_entry}\" is not loaded, so it cannot answer right now."
         }
     },
     "config": {
@@ -304,7 +316,7 @@
             "fields": {
                 "config_entry": {
                     "name": "Integration entry",
-                    "description": "DeepSeek Conversation config entry to use. The prompt, model and tools come from that entry's first conversation agent; the fields below override them for this call."
+                    "description": "DeepSeek Conversation config entry to use. Not needed when an agent is named above."
                 },
                 "prompt": {
                     "name": "Prompt",
@@ -333,6 +345,10 @@
                 "filenames": {
                     "name": "File paths",
                     "description": "Optional local image paths (must be allowed in allowlist_external_dirs)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Which agent answers, with its prompt, model and tools. Leave it empty to follow the entry's first agent."
                 }
             }
         },
@@ -342,11 +358,15 @@
             "fields": {
                 "config_entry": {
                     "name": "Integration entry",
-                    "description": "DeepSeek Conversation config entry to test."
+                    "description": "DeepSeek Conversation config entry to test. Not needed when an agent is named above."
                 },
                 "log_tail_lines": {
                     "name": "Log excerpt size",
                     "description": "Filtered log lines appended from home-assistant.log (default 600, allowed 50–8000)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Which agent answers, with its prompt, model and tools. Leave it empty to follow the entry's first agent."
                 }
             }
         }

@@ -9,6 +9,7 @@ Nothing to do on upgrade: your settings become the first conversation agent, an 
 ### Added
 - **Several agents on one API key.** Each agent is a subentry with its own name, prompt, model and tools — a fast V4 Flash agent for voice, a V4 Pro agent for automations, an AI Task entity on a third prompt. Add them on the integration card; each gets its own device and its own reconfigure row.
 - Adding an agent is a two-step form. The second step only opens when **Recommended settings** is switched off, and an agent left on the defaults stores only what you chose.
+- **`generate_content` and `run_debug` can name an agent.** One entity id (`agent: conversation.deepseek_pro`) says which credentials to use and which prompt and model to answer with, so an automation can pick the fast agent or the capable one. `config_entry` is now optional and still follows the entry's first agent.
 - A `tests/` suite and a **Unit tests** CI job, run with the standard library.
 - **Remove formatting** is on by default now — a reply is read out loud far more often than it is read. An agent that had it switched off only because that was the old default follows the new one; one where it was deliberately turned on is left alone.
 
@@ -17,7 +18,6 @@ Nothing to do on upgrade: your settings become the first conversation agent, an 
 - **Context management** is gone. It only forced the two limits below it to zero, which is what zero already meant in either field.
 - The conversation history cap is no longer offered to AI Task agents, where a single-turn chat log made it meaningless.
 - **The gear icon is gone.** The entry holds only the credentials, still changed through **⋮ → Reconfigure**.
-- `generate_content` and `run_debug` follow the entry's first conversation agent, or its first agent of any kind if none is left.
 - Editing an agent reloads the entry; settings can no longer be applied in place.
 - Token counters and **Reset usage** stay on the entry's own device — usage is billed per API key and adds up across every agent sharing it.
 

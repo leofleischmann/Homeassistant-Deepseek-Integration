@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Mapping
 from typing import Any, Callable, Coroutine
 
 import openai
@@ -44,7 +45,6 @@ from .const import (
     deepseek_chat_thinking_params,
     request_timeout_from_options,
 )
-from .types import default_agent_options
 from .usage_metrics import completion_usage_from_api
 
 REPORT_FILENAME = "deepseek_conversation_debug_report.txt"
@@ -246,10 +246,15 @@ async def async_run_debug_suite(
     hass: HomeAssistant,
     entry: ConfigEntry,
     *,
+    agent_options: Mapping[str, Any],
     log_tail_lines: int = 600,
     max_completion_tokens_test: int = 48,
 ) -> dict[str, Any]:
-    """Run extended diagnostics; write ``/config/deepseek_conversation_debug_report.txt``."""
+    """Run extended diagnostics; write ``/config/deepseek_conversation_debug_report.txt``.
+
+    ``agent_options`` are the settings the report probes with - the agent named
+    in the action, or the entry's first one.
+    """
     lines: list[str] = []
     out: dict[str, Any] = {
         "environment": {},
@@ -280,9 +285,7 @@ async def async_run_debug_suite(
         "config_dir": hass.config.config_dir,
         "component_in_loaded_components": DOMAIN in hass.config.components,
         "coerce_max_tokens_upper_bound": MAX_TOKENS_UPPER_BOUND,
-        "request_timeout_seconds": request_timeout_from_options(
-            default_agent_options(entry)
-        ),
+        "request_timeout_seconds": request_timeout_from_options(agent_options),
         # HTTP/1.1 here means every API round re-handshakes TLS, because the
         # OpenAI SDK closes each streamed response without draining it.
         "negotiated_http_version": getattr(
@@ -324,7 +327,7 @@ async def async_run_debug_suite(
         out["report_path"] = path
         return out
 
-    opts = dict(default_agent_options(entry))
+    opts = dict(agent_options)
     model = str(opts.get(CONF_CHAT_MODEL, RECOMMENDED_CHAT_MODEL))
     raw_mt = opts.get(CONF_MAX_TOKENS, RECOMMENDED_MAX_TOKENS)
     mt_coerced = coerce_max_tokens(raw_mt)

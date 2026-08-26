@@ -32,6 +32,8 @@ CONF_INCLUDE_USER_CONTEXT = "include_user_context"
 CONF_REQUEST_TIMEOUT = "request_timeout"
 CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
+CONF_AGENT = "agent"
+CONF_CONFIG_ENTRY = "config_entry"
 CONF_FILENAMES = "filenames"
 CONF_RESPONSE_FORMAT = "response_format"
 #: Set when an agent is left on the recommended settings, so the flow knows to

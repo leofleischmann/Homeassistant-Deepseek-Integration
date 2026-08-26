@@ -14,7 +14,11 @@ from typing import Any, TypeAlias
 
 import openai
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers import device_registry as dr  # pyright: ignore[reportMissingImports]
+from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
+from homeassistant.helpers import (  # pyright: ignore[reportMissingImports]
+    device_registry as dr,
+    entity_registry as er,
+)
 
 from .const import (
     CONF_CHAT_MODEL,
@@ -65,6 +69,27 @@ def default_agent_options(
         entry.subentries.values()
     )
     return subentries[0].data if subentries else {}
+
+
+def agent_for_entity(
+    hass: HomeAssistant, entity_id: str
+) -> tuple[ConfigEntry, Mapping[str, Any]] | None:
+    """Return the entry and settings behind one agent entity.
+
+    An agent entity is keyed by its subentry, so naming it in an action says
+    both which credentials to use and which prompt and model to answer with -
+    which a config entry id on its own cannot.
+    """
+    entity = er.async_get(hass).async_get(entity_id)
+    if entity is None or entity.config_entry_id is None:
+        return None
+    entry = hass.config_entries.async_get_entry(entity.config_entry_id)
+    if entry is None or entry.domain != DOMAIN:
+        return None
+    subentry = entry.subentries.get(entity.config_subentry_id or "")
+    if subentry is None:
+        return None
+    return entry, subentry.data
 
 
 def usage_device_info(entry: ConfigEntry) -> dr.DeviceInfo:

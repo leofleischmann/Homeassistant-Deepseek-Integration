@@ -27,10 +27,6 @@ actions:
         {% for e in integration_entities('deepseek_conversation') %}
         {%- if e.startswith('conversation.') %}{{ e }}{% break %}{% endif %}
         {% endfor %}
-      deepseek_config_entry: >-
-        {% for e in integration_entities('deepseek_conversation') %}
-        {%- if e.startswith('conversation.') %}{{ config_entry_id(e) }}{% break %}{% endif %}
-        {% endfor %}
       demo_context: >-
         Home Assistant local time: {{ now().strftime('%Y-%m-%d %H:%M') }}.
         Sun entity state: {{ states('sun.sun') }}.
@@ -38,7 +34,7 @@ actions:
 
   - action: deepseek_conversation.generate_content
     data:
-      config_entry: "{{ deepseek_config_entry }}"
+      agent: "{{ deepseek_agent_id }}"
       prompt: >-
         {{ demo_context }}
         Confirm in one short sentence that this generate_content demo works.
@@ -50,7 +46,7 @@ actions:
 
   - action: deepseek_conversation.generate_content
     data:
-      config_entry: "{{ deepseek_config_entry }}"
+      agent: "{{ deepseek_agent_id }}"
       prompt: >-
         What is 7 + 5? Think step by step, then put only the final number on the last line.
       thinking_enabled: true
@@ -59,7 +55,7 @@ actions:
 
   - action: deepseek_conversation.generate_content
     data:
-      config_entry: "{{ deepseek_config_entry }}"
+      agent: "{{ deepseek_agent_id }}"
       prompt: >-
         Return a JSON object with keys "integration" (string "deepseek_conversation"),
         "demo" (boolean true), and "sun" (current sun.sun state as string).
@@ -82,7 +78,6 @@ actions:
     data:
       title: DeepSeek Integration Demo
       message: >-
-        entry: {{ deepseek_config_entry }}
         agent: {{ deepseek_agent_id }}
 
         --- generate_content (text) ---

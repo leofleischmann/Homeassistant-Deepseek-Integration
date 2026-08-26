@@ -40,9 +40,9 @@ conditions:
 
 actions:
   - variables:
-      deepseek_config_entry: >-
+      deepseek_agent: >-
         {% for e in integration_entities('deepseek_conversation') %}
-        {%- if e.startswith('conversation.') %}{{ config_entry_id(e) }}{% break %}{% endif %}
+        {%- if e.startswith('conversation.') %}{{ e }}{% break %}{% endif %}
         {% endfor %}
       # Option (a) above needs no restart — swap this for your own picture:
       # image_path: /config/www/test.jpg
@@ -50,7 +50,7 @@ actions:
 
   - action: deepseek_conversation.generate_content
     data:
-      config_entry: "{{ deepseek_config_entry }}"
+      agent: "{{ deepseek_agent }}"
       prompt: >-
         Describe what you see in this image in two short sentences.
         Reply in English.

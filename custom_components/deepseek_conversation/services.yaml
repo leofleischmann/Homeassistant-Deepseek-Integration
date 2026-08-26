@@ -3,10 +3,17 @@ generate_content:
   description: Sends a conversational query to DeepSeek. Optional per-call overrides for model, temperature, thinking, max_tokens, and JSON response format; unset fields use the integration options. When reasoning is enabled, the response includes a `reasoning` field alongside `text` and `usage`.
   fields:
     config_entry:
-      required: true
       selector:
         config_entry:
           integration: deepseek_conversation
+    agent:
+      example: conversation.deepseek_conversation
+      selector:
+        entity:
+          integration: deepseek_conversation
+          domain:
+            - conversation
+            - ai_task
     prompt:
       required: true
       selector:
@@ -60,10 +67,17 @@ run_debug:
     creates a persistent notification (many API calls — small max_tokens per call but longer runtime).
   fields:
     config_entry:
-      required: true
       selector:
         config_entry:
           integration: deepseek_conversation
+    agent:
+      example: conversation.deepseek_conversation
+      selector:
+        entity:
+          integration: deepseek_conversation
+          domain:
+            - conversation
+            - ai_task
     log_tail_lines:
       default: 600
       example: 600

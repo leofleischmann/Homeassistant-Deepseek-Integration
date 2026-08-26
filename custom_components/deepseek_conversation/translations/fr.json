@@ -48,6 +48,18 @@
     "exceptions": {
         "invalid_config_entry": {
             "message": "L’entrée de configuration « {config_entry} » est introuvable ou n’appartient pas à DeepSeek Conversation."
+        },
+        "invalid_agent": {
+            "message": "« {agent} » n’est pas un agent DeepSeek. Choisissez une entité de conversation ou de tâche IA de cette intégration."
+        },
+        "agent_entry_mismatch": {
+            "message": "L’agent « {agent} » appartient à une autre entrée que celle indiquée. N’indiquez que l’agent, ou faites correspondre les deux."
+        },
+        "no_target": {
+            "message": "Indiquez soit une entrée de configuration, soit un agent."
+        },
+        "entry_not_loaded": {
+            "message": "L’entrée « {config_entry} » n’est pas chargée et ne peut pas répondre pour le moment."
         }
     },
     "config": {
@@ -304,7 +316,7 @@
             "fields": {
                 "config_entry": {
                     "name": "Entrée d’intégration",
-                    "description": "Entrée de configuration DeepSeek Conversation à utiliser. Le prompt, le modèle et les outils proviennent du premier agent conversationnel de cette entrée ; les champs ci-dessous les remplacent pour cet appel."
+                    "description": "Entrée de configuration DeepSeek Conversation à utiliser. Inutile si un agent est indiqué ci-dessus."
                 },
                 "prompt": {
                     "name": "Invite",
@@ -333,6 +345,10 @@
                 "response_format": {
                     "name": "Format de réponse",
                     "description": "Définir sur json_object pour demander une réponse JSON au modèle."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Quel agent répond, avec son prompt, son modèle et ses outils. Laissez vide pour suivre le premier agent de l’entrée."
                 }
             }
         },
@@ -342,11 +358,15 @@
             "fields": {
                 "config_entry": {
                     "name": "Entrée d’intégration",
-                    "description": "Quelle configuration DeepSeek Conversation tester."
+                    "description": "Entrée de configuration DeepSeek Conversation à tester. Inutile si un agent est indiqué ci-dessus."
                 },
                 "log_tail_lines": {
                     "name": "Lignes de journal",
                     "description": "Lignes filtrées depuis home-assistant.log (défaut 600, plage 50–8000)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Quel agent répond, avec son prompt, son modèle et ses outils. Laissez vide pour suivre le premier agent de l’entrée."
                 }
             }
         }

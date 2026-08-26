@@ -151,13 +151,16 @@ data:
   agent_id: conversation.deepseek
   text: "Turn off the living room lights."
 
-# Legacy: direct prompt → text (+ usage, optional reasoning)
+# Direct prompt → text (+ usage, optional reasoning). `agent` picks which
+# agent answers, with its prompt, model and tools.
 action: deepseek_conversation.generate_content
 data:
-  config_entry: <your config entry id>
+  agent: conversation.deepseek
   prompt: "Summarise today's weather in one sentence."
 response_variable: deepseek
 ```
+
+Both `generate_content` and `run_debug` take either an `agent` or a `config_entry`. Naming the agent is the precise one: a single entity id says which credentials to use *and* which prompt and model to answer with. A bare `config_entry` follows that entry's first agent, which is what these actions did before an entry could hold several.
 
 Sample automations: [`sample_automations/`](sample_automations/).
 

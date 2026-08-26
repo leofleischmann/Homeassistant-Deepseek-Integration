@@ -48,6 +48,18 @@
     "exceptions": {
         "invalid_config_entry": {
             "message": "Konfigurationseintrag \"{config_entry}\" wurde nicht gefunden oder gehört nicht zu DeepSeek Conversation."
+        },
+        "invalid_agent": {
+            "message": "„{agent}“ ist kein DeepSeek-Agent. Wähle eine Konversations- oder KI-Aufgaben-Entität dieser Integration."
+        },
+        "agent_entry_mismatch": {
+            "message": "Der Agent „{agent}“ gehört zu einem anderen Eintrag als dem angegebenen. Gib nur den Agenten an, oder lass beide zusammenpassen."
+        },
+        "no_target": {
+            "message": "Gib entweder einen Eintrag oder einen Agenten an."
+        },
+        "entry_not_loaded": {
+            "message": "Der Eintrag „{config_entry}“ ist nicht geladen und kann gerade nicht antworten."
         }
     },
     "config": {
@@ -304,7 +316,7 @@
             "fields": {
                 "config_entry": {
                     "name": "Integrations-Eintrag",
-                    "description": "Zu verwendender DeepSeek-Conversation-Eintrag. Prompt, Modell und Tools stammen vom ersten Konversationsagenten dieses Eintrags; die Felder unten überschreiben sie für diesen Aufruf."
+                    "description": "Zu verwendender DeepSeek-Conversation-Eintrag. Nicht nötig, wenn oben ein Agent angegeben ist."
                 },
                 "prompt": {
                     "name": "Prompt",
@@ -333,6 +345,10 @@
                 "filenames": {
                     "name": "Dateipfade",
                     "description": "Optionale lokale Bildpfade (müssen in allowlist_external_dirs erlaubt sein)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Welcher Agent antwortet, mit seinem Prompt, Modell und seinen Werkzeugen. Leer lassen, um dem ersten Agenten des Eintrags zu folgen."
                 }
             }
         },
@@ -342,11 +358,15 @@
             "fields": {
                 "config_entry": {
                     "name": "Integrations-Eintrag",
-                    "description": "Welcher DeepSeek-Conversation-Eintrag getestet werden soll."
+                    "description": "Zu prüfender DeepSeek-Conversation-Eintrag. Nicht nötig, wenn oben ein Agent angegeben ist."
                 },
                 "log_tail_lines": {
                     "name": "Log-Auszug (Zeilen)",
                     "description": "Anzahl gefilterter Zeilen aus home-assistant.log (Standard 600, erlaubt 50–8000)."
+                },
+                "agent": {
+                    "name": "Agent",
+                    "description": "Welcher Agent antwortet, mit seinem Prompt, Modell und seinen Werkzeugen. Leer lassen, um dem ersten Agenten des Eintrags zu folgen."
                 }
             }
         }

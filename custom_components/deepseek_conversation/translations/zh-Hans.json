@@ -48,6 +48,18 @@
     "exceptions": {
         "invalid_config_entry": {
             "message": "未找到配置条目「{config_entry}」，或该条目不属于 DeepSeek Conversation。"
+        },
+        "invalid_agent": {
+            "message": "“{agent}” 不是 DeepSeek 代理。请选择本集成的对话或 AI 任务实体。"
+        },
+        "agent_entry_mismatch": {
+            "message": "代理“{agent}”属于另一个配置项。请仅指定代理，或使两者一致。"
+        },
+        "no_target": {
+            "message": "请指定配置项或代理。"
+        },
+        "entry_not_loaded": {
+            "message": "配置项“{config_entry}”未加载，目前无法作答。"
         }
     },
     "config": {
@@ -304,7 +316,7 @@
             "fields": {
                 "config_entry": {
                     "name": "集成条目",
-                    "description": "要使用的 DeepSeek Conversation 配置项。提示词、模型和工具来自该配置项的第一个对话代理；下方字段将在本次调用中覆盖它们。"
+                    "description": "要使用的 DeepSeek Conversation 配置项。如已在上方指定代理，则无需填写。"
                 },
                 "prompt": {
                     "name": "提示词",
@@ -333,6 +345,10 @@
                 "filenames": {
                     "name": "文件路径",
                     "description": "可选的本地图片路径（须在 allowlist_external_dirs 中允许）。"
+                },
+                "agent": {
+                    "name": "代理",
+                    "description": "由哪个代理作答，使用它的提示词、模型和工具。留空则使用配置项的第一个代理。"
                 }
             }
         },
@@ -342,11 +358,15 @@
             "fields": {
                 "config_entry": {
                     "name": "集成条目",
-                    "description": "要测试的 DeepSeek Conversation 配置条目。"
+                    "description": "要测试的 DeepSeek Conversation 配置项。如已在上方指定代理，则无需填写。"
                 },
                 "log_tail_lines": {
                     "name": "日志摘录行数",
                     "description": "从 home-assistant.log 追加的过滤行数（默认 600，允许 50–8000）。"
+                },
+                "agent": {
+                    "name": "代理",
+                    "description": "由哪个代理作答，使用它的提示词、模型和工具。留空则使用配置项的第一个代理。"
                 }
             }
         }

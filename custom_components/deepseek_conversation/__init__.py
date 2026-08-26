@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from contextlib import suppress
 from types import MappingProxyType
 from typing import Any
@@ -11,6 +12,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import (  # pyright: ignore[reportMissingImports]
     ConfigEntry,
+    ConfigEntryState,
     ConfigSubentry,
 )
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, Platform  # pyright: ignore[reportMissingImports]
@@ -44,9 +46,11 @@ from .const import (
     adopt_strip_markdown_default,
     ai_task_options_from,
     blocking_request_timeout_from_options,
+    CONF_AGENT,
     build_generate_content_completion_args,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
+    CONF_CONFIG_ENTRY,
     CONF_FILENAMES,
     CONF_MAX_TOKENS,
     CONF_PROMPT,
@@ -77,6 +81,7 @@ from .const import (
 from .debug import async_run_debug_suite
 from .structured_output import ensure_json_mode_prompt_keyword
 from .types import (
+    agent_for_entity,
     default_agent_options,
     DeepSeekConfigEntry,
     DeepSeekRuntimeData,
@@ -208,20 +213,66 @@ def _async_migrate_options_to_subentries(
     )
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up DeepSeek Conversation."""
+@callback
+def _async_resolve_target(
+    hass: HomeAssistant, call: ServiceCall
+) -> tuple[DeepSeekConfigEntry, Mapping[str, Any]]:
+    """Return the entry an action addresses, and whose settings to answer with.
 
-    async def send_prompt(call: ServiceCall) -> ServiceResponse:
-        """Send a prompt to DeepSeek and return the response."""
-        entry_id = call.data["config_entry"]
-        entry = hass.config_entries.async_get_entry(entry_id)
+    Naming an agent is the precise way: one entity id says both which
+    credentials to use and which prompt and model to answer with. A bare config
+    entry still works and follows that entry's first agent, which is what every
+    call did before an entry could hold more than one.
+    """
+    agent_entity = call.data.get(CONF_AGENT)
+    entry_id = call.data.get(CONF_CONFIG_ENTRY)
 
-        if entry is None or entry.domain != DOMAIN:
+    if agent_entity:
+        resolved = agent_for_entity(hass, agent_entity)
+        if resolved is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_agent",
+                translation_placeholders={"agent": agent_entity},
+            )
+        entry, options = resolved
+        if entry_id and entry_id != entry.entry_id:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="agent_entry_mismatch",
+                translation_placeholders={"agent": agent_entity},
+            )
+    elif entry_id:
+        found = hass.config_entries.async_get_entry(entry_id)
+        if found is None or found.domain != DOMAIN:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="invalid_config_entry",
                 translation_placeholders={"config_entry": entry_id},
             )
+        entry, options = found, default_agent_options(found)
+    else:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="no_target"
+        )
+
+    if entry.state is not ConfigEntryState.LOADED:
+        # runtime_data only exists on a loaded entry, and reaching for it
+        # otherwise raises something nobody can act on.
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="entry_not_loaded",
+            translation_placeholders={"config_entry": entry.title},
+        )
+    return entry, options
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up DeepSeek Conversation."""
+
+    async def send_prompt(call: ServiceCall) -> ServiceResponse:
+        """Send a prompt to DeepSeek and return the response."""
+        entry, agent_options = _async_resolve_target(hass, call)
 
         runtime: DeepSeekRuntimeData = entry.runtime_data
         client: openai.AsyncClient = runtime.client
@@ -230,7 +281,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         # Resolved before anything is built: the per-call chat_model override
         # decides both whether images may be attached and whether the id is one
         # the API still serves.
-        agent_options = default_agent_options(entry)
         model = resolve_generate_content_model(agent_options, call.data)
         replacement = migrate_legacy_chat_model(model, base_url=base_url)
         if replacement is not None:
@@ -347,16 +397,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async def run_debug(call: ServiceCall) -> ServiceResponse:
         """Run DeepSeek diagnostics and write ``/config/deepseek_conversation_debug_report.txt``."""
-        entry_id = call.data["config_entry"]
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is None or entry.domain != DOMAIN:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="invalid_config_entry",
-                translation_placeholders={"config_entry": entry_id},
-            )
+        entry, agent_options = _async_resolve_target(hass, call)
         log_tail = int(call.data.get("log_tail_lines", 600))
-        report = await async_run_debug_suite(hass, entry, log_tail_lines=log_tail)
+        report = await async_run_debug_suite(
+            hass, entry, agent_options=agent_options, log_tail_lines=log_tail
+        )
         path = report.get("report_path", "")
         summary = report.get("summary") or report.get("tests", {}).get("summary", {})
         parts = [
@@ -411,8 +456,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         send_prompt,
         schema=vol.Schema(
             {
-                vol.Required("config_entry"): selector.ConfigEntrySelector(
+                vol.Optional(CONF_CONFIG_ENTRY): selector.ConfigEntrySelector(
                     {"integration": DOMAIN},
+                ),
+                vol.Optional(CONF_AGENT): selector.EntitySelector(
+                    {"integration": DOMAIN, "domain": ["conversation", "ai_task"]},
                 ),
                 vol.Required(CONF_PROMPT): cv.string,
                 vol.Optional(CONF_FILENAMES, default=[]): vol.All(
@@ -440,8 +488,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         run_debug,
         schema=vol.Schema(
             {
-                vol.Required("config_entry"): selector.ConfigEntrySelector(
+                vol.Optional(CONF_CONFIG_ENTRY): selector.ConfigEntrySelector(
                     {"integration": DOMAIN},
+                ),
+                vol.Optional(CONF_AGENT): selector.EntitySelector(
+                    {"integration": DOMAIN, "domain": ["conversation", "ai_task"]},
                 ),
                 vol.Optional("log_tail_lines", default=600): vol.All(
                     int, vol.Range(min=50, max=8000)
