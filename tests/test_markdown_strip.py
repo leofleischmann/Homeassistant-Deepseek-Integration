@@ -180,5 +180,59 @@ class TestStreamingInvariant(unittest.TestCase):
         self.assertEqual(stripper.flush(), "")
 
 
+class TestStreamingCost(unittest.TestCase):
+    """``feed`` runs in the event loop, so its cost has to stay linear.
+
+    Deciding a cut reads the pending text up to that cut and nothing after it,
+    so a position refused once is refused for good. Weighing them again per
+    delta made an uncuttable reply cost time quadratic in its own length -
+    seconds of blocked event loop for a reply of a few hundred characters.
+    """
+
+    @staticmethod
+    def feed_in_chunks(text: str, size: int = 4) -> int:
+        """Stream ``text`` and return the most it ever held back."""
+        stripper = StreamingMarkdownStripper()
+        peak = 0
+        for index in range(0, len(text), size):
+            stripper.feed(text[index : index + size])
+            peak = max(peak, len(stripper._pending))
+        stripper.flush()
+        return peak
+
+    def test_arithmetic_does_not_stall_the_stream(self) -> None:
+        """``3*4`` is not an opening marker, so it must not hold the reply."""
+        text = "Die Formel 3*4 ergibt 12. " * 20
+        self.assertLess(self.feed_in_chunks(text), 40)
+
+    def test_open_marker_holds_only_until_it_could_close(self) -> None:
+        """A star that really could open waits, but not for the whole reply."""
+        text = "wort*wort und mehr text hier dazu " * 20
+        self.assertLess(self.feed_in_chunks(text), 100)
+
+    def test_uncuttable_reply_stays_linear(self) -> None:
+        """An unclosed ``[`` blocks every cut; the work must still be linear."""
+        text = "Siehe [den Text und noch viel mehr Worte hier " * 25
+        calls = 0
+        original = markdown_strip._strip_core
+
+        def counting(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            return original(*args, **kwargs)
+
+        markdown_strip._strip_core = counting
+        try:
+            stripper = StreamingMarkdownStripper()
+            for index in range(0, len(text), 4):
+                stripper.feed(text[index : index + 4])
+            stripper.flush()
+        finally:
+            markdown_strip._strip_core = original
+
+        # One weighing per position the deltas brought in, not per delta.
+        self.assertLess(calls, len(text))
+
+
 if __name__ == "__main__":
     unittest.main()
