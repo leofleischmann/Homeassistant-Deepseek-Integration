@@ -9,7 +9,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable
 import datetime
 import json
-import re
 from typing import Any, Literal
 
 import openai
@@ -49,6 +48,7 @@ from .const import (
     request_timeout_from_options,
     RESPONSE_FORMAT_JSON_OBJECT,
 )
+from .markdown_strip import strip_markdown, StreamingMarkdownStripper
 from .types import DeepSeekConfigEntry
 from .structured_output import (
     append_structure_guidance_to_last_user_message,
@@ -187,44 +187,6 @@ class _HAJSONEncoder(json.JSONEncoder):
                 type(obj).__name__,
             )
             return str(obj)
-
-
-def _strip_markdown(text: str) -> str:
-    """Strip common markdown formatting for TTS readability."""
-    if not text:
-        return text
-    
-    # Remove code block formatting (```python)
-    text = re.sub(r'```[a-z]*\n?', '', text)
-    # Remove inline code formatting
-    text = text.replace('`', '')
-    
-    # Remove blockquotes
-    text = re.sub(r'(?m)^\s*>\s+', '', text)
-    # Remove headings
-    text = re.sub(r'(?m)^#{1,6}\s+', '', text)
-    
-    # Remove bold/italic (asterisks and underscores)
-    text = re.sub(r'(?<!\w)\*\*(?!\s)(.+?)(?<!\s)\*\*(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)', r'\1', text)
-    text = re.sub(r'(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)', r'\1', text)
-    
-    # Remove strikethrough
-    text = re.sub(r'(?<!\w)~~(?!\s)(.+?)(?<!\s)~~(?!\w)', r'\1', text)
-    
-    # Remove images
-    text = re.sub(r'!\[(.*?)\]\(.*?\)', r'\1', text)
-    # Remove links (replace with just the text)
-    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
-    
-    # Remove list formatting
-    text = re.sub(r'(?m)^\s*[-*+]\s+', '', text)
-    
-    # Remove arrows
-    text = text.replace('→', '').replace('->', '')
-    
-    return text.strip()
 
 
 def _record_http_version(runtime: Any, result: Any) -> None:
@@ -517,6 +479,7 @@ async def _transform_stream(
     thinking_enabled: bool = False,
     usage_events: list[CompletionUsage] | None = None,
     on_unexpected_reasoning: Callable[[], None] | None = None,
+    markdown_stripper: StreamingMarkdownStripper | None = None,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format.
 
@@ -528,6 +491,12 @@ async def _transform_stream(
     ``on_unexpected_reasoning`` is invoked once per stream if the API sends
     ``reasoning_content`` while reasoning is switched off — see
     ``_warn_unexpected_reasoning``.
+
+    ``markdown_stripper`` removes formatting from the text deltas as they pass
+    through. It has to happen here: Home Assistant forwards every delta to the
+    UI and to text-to-speech immediately, so stripping the finished answer only
+    ever fixed the transcript, never what was spoken. Reasoning text is left
+    alone - it is displayed, not read out.
     """
     current_tool_calls: list[dict[str, Any]] = []
     current_tool_call_args_buffer: dict[int, str] = {}
@@ -573,6 +542,10 @@ async def _transform_stream(
                 LOGGER.debug(
                     "Stream delta: using content from model_extra (attr empty or unset)"
                 )
+            if markdown_stripper is not None and content_delta:
+                # May return nothing: the stripper holds text back until a point
+                # a markdown construct cannot reach across. flush() releases it.
+                content_delta = markdown_stripper.feed(content_delta) or None
 
             text_deltas, role_emitted = _yield_assistant_text_deltas(
                 role_emitted=role_emitted,
@@ -611,6 +584,16 @@ async def _transform_stream(
                     current_tool_call_args_buffer[index] += tool_call_chunk.function.arguments
 
         if finish_reason:
+            # Release held-back text before any tool_calls delta, so the
+            # assistant message keeps the order the model produced.
+            if markdown_stripper is not None and (tail := markdown_stripper.flush()):
+                text_deltas, role_emitted = _yield_assistant_text_deltas(
+                    role_emitted=role_emitted,
+                    content_delta=tail,
+                    reasoning_delta=None,
+                )
+                for text_delta in text_deltas:
+                    yield text_delta
             LOGGER.debug("Stream Finish Reason: %s", finish_reason)
             LOGGER.debug("Final Tool Args Buffer: %s", current_tool_call_args_buffer)
             LOGGER.debug("Final Current Tool Calls: %s", current_tool_calls)
@@ -658,6 +641,18 @@ async def _transform_stream(
             else:
                  raise HomeAssistantError(f"finish_reason_{finish_reason}")
 
+    # Some gateways end a stream without ever sending a finish_reason. Nothing
+    # the stripper is still holding may be lost; flush() is empty if the
+    # terminal chunk above already drained it.
+    if markdown_stripper is not None and (tail := markdown_stripper.flush()):
+        text_deltas, role_emitted = _yield_assistant_text_deltas(
+            role_emitted=role_emitted,
+            content_delta=tail,
+            reasoning_delta=None,
+        )
+        for text_delta in text_deltas:
+            yield text_delta
+
 
 async def async_handle_chat_log(
     hass: HomeAssistant,
@@ -668,6 +663,7 @@ async def async_handle_chat_log(
     force_json: bool = False,
     response_schema: dict[str, Any] | None = None,
     usage_source: str = "assist",
+    strip_markdown_output: bool = False,
 ) -> None:
     """Drive DeepSeek streaming chat completions against an HA ``ChatLog``.
 
@@ -676,6 +672,10 @@ async def async_handle_chat_log(
     ``force_json`` is true, sets ``response_format`` for structured AI Task
     output (``json_object`` on official DeepSeek, ``json_schema`` on custom
     gateways when ``response_schema`` is provided).
+
+    ``strip_markdown_output`` removes formatting from the streamed text. Only
+    Assist asks for it: an AI Task result is consumed by an automation, and for
+    a structured task stripping would break the JSON.
     """
     options = entry.options
     runtime = entry.runtime_data
@@ -826,6 +826,11 @@ async def async_handle_chat_log(
                         thinking_enabled=thinking_on,
                         usage_events=all_usage,
                         on_unexpected_reasoning=_report_unexpected_reasoning,
+                        markdown_stripper=(
+                            StreamingMarkdownStripper()
+                            if strip_markdown_output and not force_json
+                            else None
+                        ),
                     ),
                 )
             ]
@@ -1022,6 +1027,9 @@ class DeepSeekConversationEntity(
                 chat_log,
                 agent_id=user_input.agent_id,
                 usage_source="assist",
+                strip_markdown_output=bool(
+                    options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN)
+                ),
             )
         except HomeAssistantError as err:
             return _intent_error_result(
@@ -1050,7 +1058,7 @@ class DeepSeekConversationEntity(
             )
         
         if options.get(CONF_STRIP_MARKDOWN, DEFAULT_STRIP_MARKDOWN):
-            speech_text = _strip_markdown(speech_text)
+            speech_text = strip_markdown(speech_text)
 
         intent_response.async_set_speech(speech_text)
 

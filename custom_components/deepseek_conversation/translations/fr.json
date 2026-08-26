@@ -151,7 +151,8 @@
                     "context_management_enabled": "Si activé, les grands résultats d’outils Home Assistant (ex. GetLiveContext) sont raccourcis avant l’appel API pour limiter les erreurs de contexte.",
                     "max_tool_result_chars": "Nombre maximal de caractères par résultat JSON d’outil (défaut 12000). 0 = pas de troncature. Uniquement si la gestion du contexte est activée.",
                     "max_history_rounds": "Nombre maximal de tours utilisateur conservés dans l’historique Assist (défaut 0 = illimité). Les tours complets les plus anciens sont supprimés avant chaque appel API ; l’invite système et le tour en cours (y compris les chaînes d’outils) restent intacts.",
-                    "request_timeout": "Secondes d’attente de l’API avant d’abandonner (60 par défaut). En streaming, il s’agit de l’écart maximal entre deux fragments : une longue réponse n’est donc jamais coupée, seule une requête bloquée est interrompue. L’action generate_content attend plus longtemps (au moins 300 s) car elle n’est pas diffusée en streaming."
+                    "request_timeout": "Secondes d’attente de l’API avant d’abandonner (60 par défaut). En streaming, il s’agit de l’écart maximal entre deux fragments : une longue réponse n’est donc jamais coupée, seule une requête bloquée est interrompue. L’action generate_content attend plus longtemps (au moins 300 s) car elle n’est pas diffusée en streaming.",
+                    "strip_markdown": "Supprime le gras, les titres, les listes et les liens pendant que la réponse arrive, afin que la synthèse vocale ne lise pas les symboles. Le formatage disparaît alors aussi de la conversation enregistrée."
                 }
             }
         }

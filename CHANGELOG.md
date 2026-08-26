@@ -14,6 +14,7 @@ All notable changes to this integration.
 - **Tool calls vanished on gateways that omit `type`.** The opening chunk of a streamed tool call had to carry `id`, `type` and the function name; several OpenAI-compatible gateways leave `type` out, and the call was dropped with nothing but a log line — the model asked to switch a light and nothing happened. `type` now defaults to `function`.
 - **`response_format: json_object` failed when the prompt never mentioned JSON.** DeepSeek requires the word in the prompt; `generate_content` adds it when it is missing, instead of returning an API error or an empty reply.
 - **Usage sensors could fail a request during startup.** An API call finishing between the sensors being bound and Home Assistant adding them raised out of the state write. Writes now wait until the entity exists.
+- **Markdown stripping came too late to help voice.** The option cleaned up the finished answer, but Home Assistant had already forwarded every chunk to the UI and to text-to-speech, so the asterisks were read out anyway. Formatting is now removed from the stream itself, holding text back only until a construct can no longer reach across the cut — 25 to 37 characters on real replies, well inside a sentence. AI Task output is untouched, so structured JSON cannot be damaged.
 - The setup form keeps what you typed when the API key or the model is rejected.
 
 ### Added

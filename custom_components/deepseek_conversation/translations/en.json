@@ -151,7 +151,8 @@
                     "context_management_enabled": "When on, large Home Assistant tool results (e.g. GetLiveContext) are shortened before sending to the API to reduce context-limit errors.",
                     "max_tool_result_chars": "Maximum characters per tool result JSON (default 12000). Set to 0 to disable truncation. Only applies when context management is enabled.",
                     "max_history_rounds": "Maximum user turns kept in Assist history (default 0 = unlimited). Older complete rounds are dropped before each API call; the system prompt and the current round including tool chains stay intact.",
-                    "request_timeout": "Seconds to wait for the API before giving up (default 60). While streaming this is the longest gap between two chunks, so a long answer is never cut off — only a stalled request is. The generate_content action waits longer (at least 300 s) because it is not streamed."
+                    "request_timeout": "Seconds to wait for the API before giving up (default 60). While streaming this is the longest gap between two chunks, so a long answer is never cut off — only a stalled request is. The generate_content action waits longer (at least 300 s) because it is not streamed.",
+                    "strip_markdown": "Removes bold, headings, lists and links while the reply is still streaming, so text-to-speech does not read the symbols out. The formatting is then absent from the stored conversation as well."
                 }
             }
         }
