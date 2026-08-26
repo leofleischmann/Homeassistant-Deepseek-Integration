@@ -8,6 +8,9 @@ All notable changes to this integration.
 - **Several agents on one API key.** An entry used to be a single agent, and its settings lived in the entry's own options. Each agent is now a subentry with its own name, prompt, model and tools — so a fast **V4 Flash** agent can answer voice while a **V4 Pro** agent with full tool access handles automations, and an AI Task entity runs on a third prompt entirely. Add them under the integration card: **Add conversation agent** or **Add AI task entity**. Each agent gets its own device, and each can be reconfigured on its own row.
 - Adding an agent is a two-step form: name, prompt, Home Assistant APIs and model, then a second step for reply length, reasoning, timeouts and context handling that only opens when **Recommended settings** is switched off. An agent left on the recommended settings stores only what you actually chose, so later changes to a default reach it.
 
+### Added
+- A `tests/` suite and a **Unit tests** CI job, run with the standard library so it needs no extra dependency.
+
 ### Changed
 - **The second step is grouped and much shorter to read.** Its settings now sit in four collapsible groups — *Reply*, *Tools*, *Conversation* (Assist only) and *Limits and input* — with only the first one open. Every description is a single line; the reasoning behind a setting moved to the README, where there is room for it.
 - **One switch fewer.** *Context management* did nothing except force the two limits under it to zero, which is what zero already meant in either field. It is gone; an agent that had it switched off keeps its behaviour as explicit zeros.
@@ -18,6 +21,8 @@ All notable changes to this integration.
 - The token counters and the **Reset usage** button stay on the config entry's own device: usage is billed per API key and has to keep adding up across every agent sharing it.
 
 ### Fixed
+- **Emphasis markers were left in the spoken reply, and sometimes half-eaten.** The rules guarded every marker with a word-character check, which is right for `_` but wrong for `*` and `~~` — markdown lets those open inside a word. In Chinese every marker touches a word character on both sides (`今天**很好**啊`), and so does any mixed sentence (`**粗体**and english`), so the asterisks survived into text-to-speech. The `*` rules now carry no word guard, keep their `\w` guard on `_`, decline arithmetic like `5**2` and `3*4`, and refuse to take half of a `**` run and leave the other half behind.
+- **Three cases where the stream and the finished text could disagree.** Backticks are removed before the line rules run, so `` #` `` became a bare `#` that then swallowed a space as a heading; deleting backticks and arrows can leave trailing whitespace that the one-pass form trims but the stream had already sent; and an inline rule can create a list marker that was not in the text (`*-*` leaves `-`). All three are now accounted for when the stream decides where it may cut.
 - Nothing to do on upgrade. Your existing settings become the first conversation agent, an AI Task agent is created with the same ones, and both entities keep their entity id — `conversation.deepseek` still answers, and voice pipelines and automations pointing at it are untouched. The Assist-only settings (markdown stripping, naming the speaker) are not carried into the AI Task agent, where they never did anything.
 
 ## [1.7.0] - 2026-08-26
