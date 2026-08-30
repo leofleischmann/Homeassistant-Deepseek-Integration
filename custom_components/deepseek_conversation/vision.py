@@ -1,7 +1,7 @@
 """Shared vision/image encoding for Assist and generate_content.
 
-Used by conversation.py (UserContent.attachments from Assist / AI Task) and
-__init__.py (generate_content filenames). Images are sent as OpenAI-style
+Used by chat_messages.py (UserContent.attachments from Assist / AI Task) and
+services.py (generate_content filenames). Images are sent as OpenAI-style
 ``image_url`` content parts with a base64 ``data:`` URL.
 
 Whether that is accepted depends on the **model**, not on the endpoint: the
@@ -9,7 +9,7 @@ official API serves ``deepseek-v4-flash-vision-exp`` for image input and rejects
 ``image_url`` parts everywhere else. A custom OpenAI-compatible gateway has a
 catalogue we cannot know - a DeepSeek model name there may be routed to any
 backend - so nothing is refused for those and the API answers for itself. Option
-CONF_VISION_ENABLED gates the feature entirely; see config_flow.py.
+CONF_VISION_ENABLED gates the feature entirely; see flow_schemas.py.
 """
 
 from __future__ import annotations
@@ -28,13 +28,12 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_VISION_ENABLED,
     DEFAULT_VISION_ENABLED,
-    is_official_deepseek_api_base_url,
     LOGGER,
-    normalize_model_id,
     RECOMMENDED_CHAT_MODEL,
     VISION_CHAT_MODEL,
     VISION_CHAT_MODELS,
 )
+from .models import is_official_deepseek_api_base_url, normalize_model_id
 
 
 def model_supports_vision(model: str | None, *, base_url: str | None = None) -> bool:
@@ -253,7 +252,7 @@ async def async_image_parts_from_filenames(
     """Encode ``generate_content`` ``filenames`` paths.
 
     Raises ``HomeAssistantError`` when paths were given but no image could be
-    encoded (missing file, disallowed path, or non-image type). Used from __init__.py.
+    encoded (missing file, disallowed path, or non-image type). Used from services.py.
     """
     files: list[tuple[Path, str | None]] = []
     disallowed: list[str] = []

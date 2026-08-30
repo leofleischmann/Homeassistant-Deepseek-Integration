@@ -1,6 +1,6 @@
 """Token usage tracking for DeepSeek API completions.
 
-Updated by conversation.py (Assist stream), __init__.py (generate_content), and
+Updated by chat_session.py (Assist stream), services.py (generate_content), and
 sensor.py (RestoreSensor entities). Manual reset via button.py -> reset_all().
 Stream usage requires stream_options in build_chat_completion_args().
 """

@@ -1,4 +1,9 @@
-"""Config flow for DeepSeek Conversation integration."""
+"""Config flow for DeepSeek Conversation integration.
+
+Flow control only: which step follows which, and what to do with the answers.
+The forms themselves are in ``flow_schemas.py``, and reaching the API to check
+a set of credentials is ``client.py``'s job.
+"""
 
 from __future__ import annotations
 
@@ -24,369 +29,74 @@ from homeassistant.const import (  # pyright: ignore[reportMissingImports]
 )
 from homeassistant.core import callback, HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
-from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImports]
     BooleanSelector,
-    NumberSelector,
-    NumberSelectorConfig,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     TemplateSelector,
-    TextSelector,
-    TextSelectorConfig,
-    TextSelectorType,
 )
 from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
-from .context_trim import (
-    MAX_HISTORY_ROUNDS_UPPER_BOUND,
-    MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
-    coerce_max_history_rounds,
-    coerce_max_tool_result_chars,
-)
+from .client import async_validate_credentials
 from .const import (
-    CHAT_MODEL_OPTIONS,
-    coerce_max_tokens,
-    coerce_max_tool_iterations,
-    coerce_request_timeout,
     CONF_BASE_URL,
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
-    CONF_INCLUDE_USER_CONTEXT,
-    CONF_MAX_TOOL_RESULT_CHARS,
-    CONF_MAX_HISTORY_ROUNDS,
-    CONF_MAX_TOKENS,
-    CONF_MAX_TOOL_ITERATIONS,
     CONF_PROMPT,
-    CONF_REASONING_EFFORT,
     CONF_RECOMMENDED,
-    CONF_REQUEST_TIMEOUT,
-    CONF_STRIP_MARKDOWN,
-    CONF_TEMPERATURE,
-    CONF_THINKING_ENABLED,
-    CONF_TOP_P,
-    CONF_VISION_ENABLED,
+    DEEPSEEK_API_BASE_URL,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
-    DEFAULT_INCLUDE_USER_CONTEXT,
-    DEFAULT_VISION_ENABLED,
-    DEFAULT_STRIP_MARKDOWN,
-    DEFAULT_THINKING_ENABLED,
-    DEEPSEEK_API_BASE_URL,
     DOMAIN,
     LOGGER,
-    MAX_TOKENS_UPPER_BOUND,
-    is_retired_chat_model,
-    REASONING_EFFORT_SELECT,
     RECOMMENDED_AI_TASK_OPTIONS,
-    RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_CONVERSATION_OPTIONS,
-    RECOMMENDED_MAX_TOKENS,
-    RECOMMENDED_MAX_TOOL_ITERATIONS,
-    RECOMMENDED_MAX_TOOL_RESULT_CHARS,
-    recommended_agent_options,
-    RECOMMENDED_MAX_HISTORY_ROUNDS,
-    MAX_TOOL_ITERATIONS_UPPER_BOUND,
-    RECOMMENDED_REASONING_EFFORT,
-    RECOMMENDED_REQUEST_TIMEOUT,
-    RECOMMENDED_TEMPERATURE,
-    RECOMMENDED_TOP_P,
-    REQUEST_TIMEOUT_LOWER_BOUND,
-    REQUEST_TIMEOUT_UPPER_BOUND,
     SUBENTRY_TYPE_AI_TASK,
     SUBENTRY_TYPE_CONVERSATION,
 )
-
-#: The advanced step, grouped. Order and collapsed state follow how often a
-#: setting is actually touched: the way an agent answers is open, the rest is
-#: folded away until someone goes looking for it.
-SECTION_RESPONSE = "response"
-SECTION_TOOLS = "tools"
-SECTION_CONVERSATION = "conversation"
-SECTION_LIMITS = "limits"
-
-ADVANCED_SECTIONS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
-    (
-        SECTION_RESPONSE,
-        (
-            CONF_MAX_TOKENS,
-            CONF_TEMPERATURE,
-            CONF_TOP_P,
-            CONF_THINKING_ENABLED,
-            CONF_REASONING_EFFORT,
-        ),
-        False,
-    ),
-    (SECTION_TOOLS, (CONF_MAX_TOOL_ITERATIONS, CONF_MAX_TOOL_RESULT_CHARS), True),
-    (
-        SECTION_CONVERSATION,
-        (CONF_STRIP_MARKDOWN, CONF_INCLUDE_USER_CONTEXT, CONF_MAX_HISTORY_ROUNDS),
-        True,
-    ),
-    (SECTION_LIMITS, (CONF_REQUEST_TIMEOUT, CONF_VISION_ENABLED), True),
+from .flow_schemas import (
+    advanced_field,
+    ADVANCED_SECTIONS,
+    chat_model_selector,
+    flatten_sections,
+    get_reconfigure_step_schema,
+    get_user_step_schema,
+    normalize_llm_hass_api,
+    SECTION_CONVERSATION,
+    STEP_REAUTH_DATA_SCHEMA,
 )
+from .models import is_retired_chat_model
+from .options import recommended_agent_options
 
 
-def _advanced_field(key: str, options: Mapping[str, Any]) -> tuple[Any, Any]:
-    """Return the (marker, selector) pair for one advanced setting."""
-    if key == CONF_MAX_TOKENS:
-        return (
-            vol.Optional(
-                key,
-                default=coerce_max_tokens(options.get(key, RECOMMENDED_MAX_TOKENS)),
-            ),
-            NumberSelector(
-                NumberSelectorConfig(
-                    min=1, max=MAX_TOKENS_UPPER_BOUND, mode="box", step=1
-                )
-            ),
-        )
-    if key == CONF_TEMPERATURE:
-        return (
-            vol.Optional(key, default=RECOMMENDED_TEMPERATURE),
-            NumberSelector(
-                NumberSelectorConfig(min=0, max=2, step=0.05, mode="slider")
-            ),
-        )
-    if key == CONF_TOP_P:
-        return (
-            vol.Optional(key, default=RECOMMENDED_TOP_P),
-            NumberSelector(
-                NumberSelectorConfig(min=0, max=1, step=0.05, mode="slider")
-            ),
-        )
-    if key == CONF_THINKING_ENABLED:
-        return (
-            vol.Optional(
-                key, default=options.get(key, DEFAULT_THINKING_ENABLED)
-            ),
-            BooleanSelector(),
-        )
-    if key == CONF_REASONING_EFFORT:
-        return (
-            vol.Optional(
-                key, default=options.get(key, RECOMMENDED_REASONING_EFFORT)
-            ),
-            SelectSelector(
-                SelectSelectorConfig(
-                    options=[
-                        SelectOptionDict(label=value, value=value)
-                        for value, _ in REASONING_EFFORT_SELECT
-                    ],
-                    translation_key=CONF_REASONING_EFFORT,
-                )
-            ),
-        )
-    if key == CONF_MAX_TOOL_ITERATIONS:
-        return (
-            vol.Optional(
-                key,
-                default=coerce_max_tool_iterations(
-                    options.get(key, RECOMMENDED_MAX_TOOL_ITERATIONS)
-                ),
-            ),
-            NumberSelector(
-                NumberSelectorConfig(
-                    min=1, max=MAX_TOOL_ITERATIONS_UPPER_BOUND, mode="box", step=1
-                )
-            ),
-        )
-    if key == CONF_MAX_TOOL_RESULT_CHARS:
-        return (
-            vol.Optional(
-                key,
-                default=coerce_max_tool_result_chars(
-                    options.get(key, RECOMMENDED_MAX_TOOL_RESULT_CHARS)
-                ),
-            ),
-            NumberSelector(
-                NumberSelectorConfig(
-                    min=0,
-                    max=MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
-                    mode="box",
-                    step=500,
-                )
-            ),
-        )
-    if key == CONF_MAX_HISTORY_ROUNDS:
-        return (
-            vol.Optional(
-                key,
-                default=coerce_max_history_rounds(
-                    options.get(key, RECOMMENDED_MAX_HISTORY_ROUNDS)
-                ),
-            ),
-            NumberSelector(
-                NumberSelectorConfig(
-                    min=0, max=MAX_HISTORY_ROUNDS_UPPER_BOUND, mode="box", step=1
-                )
-            ),
-        )
-    if key == CONF_REQUEST_TIMEOUT:
-        return (
-            vol.Optional(
-                key,
-                default=coerce_request_timeout(
-                    options.get(key, RECOMMENDED_REQUEST_TIMEOUT)
-                ),
-            ),
-            NumberSelector(
-                NumberSelectorConfig(
-                    min=REQUEST_TIMEOUT_LOWER_BOUND,
-                    max=REQUEST_TIMEOUT_UPPER_BOUND,
-                    mode="box",
-                    step=5,
-                    unit_of_measurement="s",
-                )
-            ),
-        )
-    if key == CONF_STRIP_MARKDOWN:
-        return (
-            vol.Optional(key, default=options.get(key, DEFAULT_STRIP_MARKDOWN)),
-            BooleanSelector(),
-        )
-    if key == CONF_INCLUDE_USER_CONTEXT:
-        return (
-            vol.Optional(
-                key, default=options.get(key, DEFAULT_INCLUDE_USER_CONTEXT)
-            ),
-            BooleanSelector(),
-        )
-    if key == CONF_VISION_ENABLED:
-        return (
-            vol.Optional(key, default=options.get(key, DEFAULT_VISION_ENABLED)),
-            BooleanSelector(),
-        )
-    raise ValueError(f"no selector defined for {key}")
+async def _async_check_credentials(
+    hass: HomeAssistant, data: dict[str, Any], *, context: str
+) -> dict[str, str]:
+    """Check a key and base URL, and return the form errors - empty if they work.
 
-
-def _flatten_sections(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Undo the nesting a sectioned form returns, so a subentry stays flat."""
-    flat: dict[str, Any] = {}
-    for value in user_input.values():
-        if isinstance(value, dict):
-            flat.update(value)
-    return flat
-
-
-def _normalize_llm_hass_api(value: Any) -> list[str] | None:
-    """Normalize CONF_LLM_HASS_API to a list for multi-select, or None if unset."""
-    if isinstance(value, list):
-        return value if value else None
-    if isinstance(value, str):
-        return [value] if value != "none" else None
-    return None
-
-
-def _chat_model_select_options() -> list[SelectOptionDict]:
-    return [SelectOptionDict(value=v, label=lbl) for v, lbl in CHAT_MODEL_OPTIONS]
-
-
-def _chat_model_selector() -> SelectSelector:
-    return SelectSelector(
-        SelectSelectorConfig(
-            options=_chat_model_select_options(),
-            custom_value=True,
-            translation_key=CONF_CHAT_MODEL,
-        )
-    )
-
-
-def _api_key_selector() -> TextSelector:
-    return TextSelector(
-        TextSelectorConfig(
-            type=TextSelectorType.PASSWORD,
-            autocomplete="current-password",
-        )
-    )
-
-
-def _base_url_selector() -> TextSelector:
-    return TextSelector(
-        TextSelectorConfig(
-            type=TextSelectorType.URL,
-            autocomplete="url",
-        )
-    )
-
-
-def get_user_step_schema() -> vol.Schema:
-    """Schema for initial config (API key, URL, model, optional Brave key)."""
-    return vol.Schema(
-        {
-            vol.Required(CONF_API_KEY): _api_key_selector(),
-            vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): _base_url_selector(),
-            vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
-            vol.Optional(
-                CONF_CHAT_MODEL, default=RECOMMENDED_CHAT_MODEL
-            ): _chat_model_selector(),
-        }
-    )
-
-
-STEP_REAUTH_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_API_KEY): _api_key_selector(),
-    }
-)
-
-
-def get_reconfigure_step_schema(entry: ConfigEntry) -> vol.Schema:
-    """Schema for reconfigure (DeepSeek key, base URL, optional Brave key).
-
-    Brave key: leave empty to keep the current key; enter ``-`` to remove it
-    (clears web search LLM API registration after reload).
-    """
-    return vol.Schema(
-        {
-            vol.Required(CONF_API_KEY): _api_key_selector(),
-            vol.Optional(
-                CONF_BASE_URL,
-                default=entry.data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
-            ): _base_url_selector(),
-            vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
-        }
-    )
-
-_PROBE_TIMEOUT = 10.0
-
-
-async def async_probe_deepseek_client(client: openai.AsyncOpenAI) -> None:
-    """Validate credentials via ``models.list()`` without using completion quota.
-
-    OpenAI-compatible gateways without ``/models`` (404/405/501) are skipped so the
-    first real chat call can surface auth issues. Used by config_flow and __init__.
+    Initial setup, reauth and reconfigure all ask the same question and turn the
+    same failures into the same error keys, so they share this. ``context`` only
+    names the step in the log line.
     """
     try:
-        await client.with_options(timeout=_PROBE_TIMEOUT).models.list()
+        await async_validate_credentials(hass, data)
+    except openai.APIConnectionError:
+        return {"base": "cannot_connect"}
+    except openai.AuthenticationError:
+        return {"base": "invalid_auth"}
     except openai.APIStatusError as err:
-        if err.status_code in (404, 405, 501):
-            LOGGER.debug(
-                "DeepSeek base URL does not implement /models (%s); skipping probe",
-                err.status_code,
-            )
-            return
-        raise
-
-
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
-    """Validate the user input allows us to connect."""
-    base_url = data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
-    if base_url:
-        base_url = base_url.strip()
-    if not base_url:
-        base_url = DEEPSEEK_API_BASE_URL
-
-    # The OpenAI client wraps Home Assistant's shared httpx client, which HA owns
-    # and closes on shutdown; closing it here would only trigger a framework
-    # warning without releasing anything, so the client is left for GC.
-    client = openai.AsyncOpenAI(
-        api_key=data[CONF_API_KEY],
-        base_url=base_url,
-        http_client=get_async_client(hass),
-    )
-    await async_probe_deepseek_client(client)
+        if err.status_code in (401, 403):
+            return {"base": "invalid_auth"}
+        LOGGER.error("DeepSeek API status error during %s: %s", context, err)
+        return {"base": "api_error"}
+    except openai.OpenAIError as err:
+        LOGGER.error("DeepSeek API error during %s: %s", context, err)
+        return {"base": "api_error"}
+    except Exception:
+        LOGGER.exception("Unexpected exception during %s", context)
+        return {"base": "unknown"}
+    return {}
 
 
 async def async_validate_reconfigure_input(
@@ -396,43 +106,21 @@ async def async_validate_reconfigure_input(
     current_base_url: str,
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
     """Validate API key and base URL for reconfigure (config or options flow)."""
-    errors: dict[str, str] = {}
     base_url = user_input.get(CONF_BASE_URL, current_base_url)
     if isinstance(base_url, str):
         base_url = base_url.strip()
     if not base_url:
-        errors[CONF_BASE_URL] = "url_required"
-        return errors, None
+        return {CONF_BASE_URL: "url_required"}, None
 
     validate_data = {
         CONF_API_KEY: user_input[CONF_API_KEY],
         CONF_BASE_URL: base_url,
     }
-    try:
-        await validate_input(hass, validate_data)
-    except openai.APIConnectionError:
-        errors["base"] = "cannot_connect"
-    except openai.AuthenticationError:
-        errors["base"] = "invalid_auth"
-    except openai.APIStatusError as err:
-        if err.status_code in (401, 403):
-            errors["base"] = "invalid_auth"
-        else:
-            LOGGER.error("DeepSeek API status error during reconfigure: %s", err)
-            errors["base"] = "api_error"
-    except openai.OpenAIError as e:
-        LOGGER.error("DeepSeek API error during reconfigure: %s", e)
-        errors["base"] = "api_error"
-    except Exception:
-        LOGGER.exception("Unexpected exception during reconfigure")
-        errors["base"] = "unknown"
-    else:
-        return {}, {
-            CONF_API_KEY: user_input[CONF_API_KEY],
-            CONF_BASE_URL: base_url,
-        }
-
-    return errors, None
+    if errors := await _async_check_credentials(
+        hass, validate_data, context="reconfigure"
+    ):
+        return errors, None
+    return {}, validate_data
 
 
 class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -474,73 +162,56 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self._async_show_user_form()
 
-        errors: dict[str, str] = {}
-
         if is_retired_chat_model(
             user_input.get(CONF_CHAT_MODEL),
             base_url=user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         ):
-            errors[CONF_CHAT_MODEL] = "model_retired"
-            return self._async_show_user_form(user_input, errors)
-
-        try:
-            await validate_input(self.hass, user_input)
-        except openai.APIConnectionError:
-            errors["base"] = "cannot_connect"
-        except openai.AuthenticationError:
-            errors["base"] = "invalid_auth"
-        except openai.APIStatusError as err:
-            if err.status_code in (401, 403):
-                errors["base"] = "invalid_auth"
-            else:
-                LOGGER.error("DeepSeek API status error during validation: %s", err)
-                errors["base"] = "api_error"
-        except openai.OpenAIError as e:
-            LOGGER.error("DeepSeek API error during validation: %s", e)
-            errors["base"] = "api_error"
-        except Exception:
-            LOGGER.exception("Unexpected exception during validation")
-            errors["base"] = "unknown"
-        else:
-            # Separate data (connection settings) from options (model settings)
-            entry_data = {
-                CONF_API_KEY: user_input[CONF_API_KEY],
-                CONF_BASE_URL: user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
-            }
-            brave_key = (user_input.get(CONF_BRAVE_API_KEY) or "").strip()
-            if brave_key:
-                entry_data[CONF_BRAVE_API_KEY] = brave_key
-                LOGGER.debug(
-                    "[Debug config_flow]: Brave Search key set on initial setup"
-                )
-            # The model picked here seeds both agents; each can be changed
-            # afterwards, and more agents added, without touching the key.
-            conversation_options = {**RECOMMENDED_CONVERSATION_OPTIONS}
-            ai_task_options = {**RECOMMENDED_AI_TASK_OPTIONS}
-            if model := user_input.get(CONF_CHAT_MODEL):
-                conversation_options[CONF_CHAT_MODEL] = model
-                ai_task_options[CONF_CHAT_MODEL] = model
-
-            return self.async_create_entry(
-                title="DeepSeek",
-                data=entry_data,
-                subentries=[
-                    {
-                        "subentry_type": SUBENTRY_TYPE_CONVERSATION,
-                        "data": conversation_options,
-                        "title": DEFAULT_CONVERSATION_NAME,
-                        "unique_id": None,
-                    },
-                    {
-                        "subentry_type": SUBENTRY_TYPE_AI_TASK,
-                        "data": ai_task_options,
-                        "title": DEFAULT_AI_TASK_NAME,
-                        "unique_id": None,
-                    },
-                ],
+            return self._async_show_user_form(
+                user_input, {CONF_CHAT_MODEL: "model_retired"}
             )
 
-        return self._async_show_user_form(user_input, errors)
+        if errors := await _async_check_credentials(
+            self.hass, user_input, context="validation"
+        ):
+            return self._async_show_user_form(user_input, errors)
+
+        # Separate data (connection settings) from options (model settings)
+        entry_data = {
+            CONF_API_KEY: user_input[CONF_API_KEY],
+            CONF_BASE_URL: user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+        }
+        brave_key = (user_input.get(CONF_BRAVE_API_KEY) or "").strip()
+        if brave_key:
+            entry_data[CONF_BRAVE_API_KEY] = brave_key
+            LOGGER.debug(
+                "[Debug config_flow]: Brave Search key set on initial setup"
+            )
+        # The model picked here seeds both agents; each can be changed
+        # afterwards, and more agents added, without touching the key.
+        conversation_options = {**RECOMMENDED_CONVERSATION_OPTIONS}
+        ai_task_options = {**RECOMMENDED_AI_TASK_OPTIONS}
+        if model := user_input.get(CONF_CHAT_MODEL):
+            conversation_options[CONF_CHAT_MODEL] = model
+            ai_task_options[CONF_CHAT_MODEL] = model
+
+        return self.async_create_entry(
+            title="DeepSeek",
+            data=entry_data,
+            subentries=[
+                {
+                    "subentry_type": SUBENTRY_TYPE_CONVERSATION,
+                    "data": conversation_options,
+                    "title": DEFAULT_CONVERSATION_NAME,
+                    "unique_id": None,
+                },
+                {
+                    "subentry_type": SUBENTRY_TYPE_AI_TASK,
+                    "data": ai_task_options,
+                    "title": DEFAULT_AI_TASK_NAME,
+                    "unique_id": None,
+                },
+            ],
+        )
 
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
@@ -562,25 +233,10 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_BASE_URL, DEEPSEEK_API_BASE_URL
                 ),
             }
-            try:
-                await validate_input(self.hass, validate_data)
-            except openai.APIConnectionError:
-                errors["base"] = "cannot_connect"
-            except openai.AuthenticationError:
-                errors["base"] = "invalid_auth"
-            except openai.APIStatusError as err:
-                if err.status_code in (401, 403):
-                    errors["base"] = "invalid_auth"
-                else:
-                    LOGGER.error("DeepSeek API status error during reauth: %s", err)
-                    errors["base"] = "api_error"
-            except openai.OpenAIError as e:
-                LOGGER.error("DeepSeek API error during reauth: %s", e)
-                errors["base"] = "api_error"
-            except Exception:
-                LOGGER.exception("Unexpected exception during reauth")
-                errors["base"] = "unknown"
-            else:
+            errors = await _async_check_credentials(
+                self.hass, validate_data, context="reauth"
+            )
+            if not errors:
                 return self._async_update_entry_and_abort(
                     reauth_entry,
                     data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
@@ -720,7 +376,7 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
         # Drop APIs that no longer exist - web search after the Brave key was
         # removed, say - so the form does not offer a value it cannot save.
         available_apis = {api.id for api in llm.async_get_apis(self.hass)}
-        if selected := _normalize_llm_hass_api(options.get(CONF_LLM_HASS_API)):
+        if selected := normalize_llm_hass_api(options.get(CONF_LLM_HASS_API)):
             options[CONF_LLM_HASS_API] = [
                 api for api in selected if api in available_apis
             ]
@@ -732,7 +388,7 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
                 errors[CONF_CHAT_MODEL] = "model_retired"
             else:
                 self._name = user_input.pop(CONF_NAME, None)
-                normalized = _normalize_llm_hass_api(user_input.get(CONF_LLM_HASS_API))
+                normalized = normalize_llm_hass_api(user_input.get(CONF_LLM_HASS_API))
                 user_input.pop(CONF_LLM_HASS_API, None)
                 options.update(user_input)
                 if normalized is None:
@@ -758,7 +414,7 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Ask for the settings the recommended defaults otherwise decide."""
         if user_input is not None:
-            self.options.update(_flatten_sections(user_input))
+            self.options.update(flatten_sections(user_input))
             return self._async_save()
 
         return self.async_show_form(
@@ -781,7 +437,7 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
         return {
             vol.Required(name): section(
                 vol.Schema(
-                    dict(_advanced_field(key, self.options) for key in keys)
+                    dict(advanced_field(key, self.options) for key in keys)
                 ),
                 {"collapsed": collapsed},
             )
@@ -830,7 +486,7 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
                 vol.Optional(CONF_LLM_HASS_API): SelectSelector(
                     SelectSelectorConfig(options=hass_apis, multiple=True)
                 ),
-                vol.Optional(CONF_CHAT_MODEL): _chat_model_selector(),
+                vol.Optional(CONF_CHAT_MODEL): chat_model_selector(),
                 vol.Required(CONF_RECOMMENDED, default=True): BooleanSelector(),
             }
         )

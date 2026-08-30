@@ -2,6 +2,19 @@
 
 All notable changes to this integration.
 
+## [1.8.1] - 2026-08-30
+
+No behaviour change on upgrade.
+
+### Changed
+- Internal modularisation: large modules split into smaller files with one job each.
+
+### Fixed
+- Unit tests no longer break on machines that have Home Assistant installed.
+
+### Added
+- More unit tests for models, options, request building and streaming.
+
 ## [1.8.0] - 2026-08-27
 
 Nothing to do on upgrade: your settings become the first conversation agent, an AI Task agent is created alongside it, and both entities keep their entity id. `conversation.deepseek` still answers.

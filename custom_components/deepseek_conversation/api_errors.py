@@ -14,6 +14,27 @@ _CONTEXT_HINT = (
 )
 
 
+def api_error_user_message(err: BaseException) -> str:
+    """Return the message the Assist agent shows for a failed API round.
+
+    Three SDK error types say more about the cause than their text does, so
+    they get a sentence of their own; everything else falls through to
+    ``openai_exception_user_message``.
+
+    This used to also return an ``intent.IntentResponseErrorCode`` alongside
+    the message. Every caller discarded it, and it could only ever have been
+    ``FAILED_TO_HANDLE`` at the one call site, so the code half is gone rather
+    than kept as decoration.
+    """
+    if isinstance(err, openai.AuthenticationError):
+        return "Authentication failed — check the DeepSeek API key"
+    if isinstance(err, openai.RateLimitError):
+        return "Rate limited by DeepSeek API"
+    if isinstance(err, openai.APIConnectionError):
+        return "Connection error with DeepSeek API"
+    return openai_exception_user_message(err)
+
+
 def openai_exception_user_message(err: BaseException) -> str:
     """Return a short explanation for Assist / service callers."""
     text = str(err).lower()

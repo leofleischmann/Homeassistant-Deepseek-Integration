@@ -5,7 +5,7 @@ Affects / influenced by:
   on the config entry; unregistered on entry unload.
 - Credential lives in ``entry.data`` (setup / reconfigure in ``config_flow.py``).
 - Appears in the Assist options multi-select via ``llm.async_get_apis``
-  (``CONF_LLM_HASS_API``); the conversation tool loop in ``conversation.py``
+  (``CONF_LLM_HASS_API``); the shared tool loop in ``chat_session.py``
   uses it only when the user selects this API.
 """
 

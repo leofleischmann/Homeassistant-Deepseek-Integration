@@ -1,7 +1,7 @@
 """AI Task support for DeepSeek Conversation.
 
 Registers one ``AITaskEntity`` per AI Task subentry, each on its own device.
-Uses the shared streaming loop in ``conversation.py`` (``async_handle_chat_log``).
+Uses the shared streaming loop in ``chat_session.py`` (``async_handle_chat_log``).
 Platform setup is wired from ``__init__.py``.
 
 HA's ``AITaskEntity`` prepares the chat log with a generic system prompt;
@@ -34,7 +34,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_AI_TASK,
 )
-from .conversation import async_handle_chat_log
+from .chat_session import async_handle_chat_log
 from .structured_output import structure_schema_for_task
 from .types import (
     agent_device_info,

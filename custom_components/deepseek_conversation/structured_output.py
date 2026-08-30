@@ -2,7 +2,7 @@
 
 Converts Home Assistant ``structure:`` schemas (voluptuous) to OpenAPI JSON
 Schema and guides the model when the API only supports ``json_object`` (official
-DeepSeek). Used by ``ai_task.py`` and ``conversation.py`` (``force_json``).
+DeepSeek). Used by ``ai_task.py`` and ``chat_session.py`` (``force_json``).
 """
 
 from __future__ import annotations
@@ -18,11 +18,8 @@ from voluptuous_openapi import convert
 from homeassistant.components import conversation  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 
-from .const import (
-    DEEPSEEK_API_BASE_URL,
-    is_official_deepseek_api_base_url,
-    RESPONSE_FORMAT_JSON_OBJECT,
-)
+from .const import DEEPSEEK_API_BASE_URL, RESPONSE_FORMAT_JSON_OBJECT
+from .models import is_official_deepseek_api_base_url
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Markdown removal for voice assistants, in one pass or across a stream.
 
 ``strip_markdown`` is the whole-text form used for the final speech string.
-``StreamingMarkdownStripper`` is the incremental form used by conversation.py
+``StreamingMarkdownStripper`` is the incremental form used by stream_transform.py
 while a reply is still arriving: Home Assistant forwards every delta straight to
 the UI and to text-to-speech, so stripping only the finished answer came far too
 late - the asterisks had already been spoken.
