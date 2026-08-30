@@ -102,6 +102,30 @@ async def async_probe_deepseek_client(client: openai.AsyncOpenAI) -> None:
         raise
 
 
+async def async_validate_credentials(hass: HomeAssistant, data: dict[str, Any]) -> None:
+    """Check that an API key and base URL the user typed actually work.
+
+    Used by the config flow, which has no config entry yet - hence the raw
+    mapping rather than one. The plain shared httpx client is enough here: this
+    is one short request, not a stream, so HTTP/2 buys nothing.
+    """
+    base_url = data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
+    if base_url:
+        base_url = base_url.strip()
+    if not base_url:
+        base_url = DEEPSEEK_API_BASE_URL
+
+    # The OpenAI client wraps Home Assistant's shared httpx client, which HA owns
+    # and closes on shutdown; closing it here would only trigger a framework
+    # warning without releasing anything, so the client is left for GC.
+    client = openai.AsyncOpenAI(
+        api_key=data[CONF_API_KEY],
+        base_url=base_url,
+        http_client=get_async_client(hass),
+    )
+    await async_probe_deepseek_client(client)
+
+
 def async_build_client(hass: HomeAssistant, entry: ConfigEntry) -> openai.AsyncOpenAI:
     """Build the API client one config entry answers through."""
     return openai.AsyncOpenAI(

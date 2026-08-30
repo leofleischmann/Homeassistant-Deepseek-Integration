@@ -9,7 +9,7 @@ official API serves ``deepseek-v4-flash-vision-exp`` for image input and rejects
 ``image_url`` parts everywhere else. A custom OpenAI-compatible gateway has a
 catalogue we cannot know - a DeepSeek model name there may be routed to any
 backend - so nothing is refused for those and the API answers for itself. Option
-CONF_VISION_ENABLED gates the feature entirely; see config_flow.py.
+CONF_VISION_ENABLED gates the feature entirely; see flow_schemas.py.
 """
 
 from __future__ import annotations
