@@ -1,9 +1,9 @@
 """Context trimming for Assist API requests.
 
 Caps serialized tool result JSON and optionally limits Assist history by user
-turn before messages are sent to DeepSeek. Used from chat_session.py (history)
-and chat_messages.py (tool results). Both
-limits are off at zero, which is the only switch either of them needs.
+turn before messages are sent to DeepSeek. Used from chat_session.py for the
+history and from chat_messages.py for tool results. Both limits are off at
+zero, which is the only switch either of them needs.
 """
 
 from __future__ import annotations

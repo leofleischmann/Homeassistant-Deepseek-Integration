@@ -57,6 +57,12 @@ def _homeassistant_available() -> bool:
     return _installed("homeassistant.const") and _installed("homeassistant.helpers.llm")
 
 
+def _attach(parent: str, child: str, module: types.ModuleType) -> None:
+    """Hang a stub off its parent, if the parent is one we created."""
+    if (owner := sys.modules.get(parent)) is not None:
+        setattr(owner, child, module)
+
+
 def _ensure_homeassistant() -> None:
     """Provide ``CONF_LLM_HASS_API`` and ``LLM_API_ASSIST`` if HA is missing.
 
@@ -93,18 +99,21 @@ def _ensure_api_stubs() -> None:
         openai_module.types = types_module  # type: ignore[attr-defined]
         types_module.chat = chat  # type: ignore[attr-defined]
 
-    if "homeassistant.components" not in sys.modules:
+    # `_installed`, not `in sys.modules`: a real Home Assistant that simply has
+    # not been imported yet is still a real Home Assistant, and stubbing over it
+    # would both shadow it and reach for a parent stub that was never created.
+    if not _installed("homeassistant.components.conversation"):
         components = _stub("homeassistant.components")
         components.__path__ = []  # type: ignore[attr-defined]
         components.conversation = _stub("homeassistant.components.conversation")  # type: ignore[attr-defined]
-        sys.modules["homeassistant"].components = components  # type: ignore[attr-defined]
+        _attach("homeassistant", "components", components)
 
-    if "homeassistant.exceptions" not in sys.modules:
+    if not _installed("homeassistant.exceptions"):
         exceptions = _stub(
             "homeassistant.exceptions",
             HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
         )
-        sys.modules["homeassistant"].exceptions = exceptions  # type: ignore[attr-defined]
+        _attach("homeassistant", "exceptions", exceptions)
 
 
 def _ensure_package() -> None:
