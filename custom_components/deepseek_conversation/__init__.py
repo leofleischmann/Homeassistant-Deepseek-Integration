@@ -43,42 +43,46 @@ from homeassistant.helpers.typing import ConfigType  # pyright: ignore[reportMis
 from .api_errors import openai_exception_user_message
 from .config_flow import async_probe_deepseek_client
 from .const import (
-    adopt_strip_markdown_default,
-    ai_task_options_from,
-    blocking_request_timeout_from_options,
     CONF_AGENT,
-    build_generate_content_completion_args,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_CONFIG_ENTRY,
     CONF_FILENAMES,
     CONF_MAX_TOKENS,
     CONF_PROMPT,
+    CONF_RECOMMENDED,
     CONF_RESPONSE_FORMAT,
     CONF_TEMPERATURE,
     CONF_THINKING_ENABLED,
-    CONF_RECOMMENDED,
+    DEEPSEEK_API_BASE_URL,
     DEEPSEEK_MAX_RETRIES,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DEFAULT_SYSTEM_PROMPT,
-    DEEPSEEK_API_BASE_URL,
     DOMAIN,
-    effective_thinking_enabled_for_generate_content,
-    fold_context_switch,
     LEGACY_CHAT_MODEL_RETIRED_ON,
     LOGGER,
     MAX_TOKENS_UPPER_BOUND,
-    migrate_legacy_chat_model,
-    reasoning_text_from_chat_message,
-    request_timeout_from_options,
-    resolve_generate_content_model,
     RESPONSE_FORMAT_JSON_OBJECT,
     SUBENTRY_TYPE_AI_TASK,
     SUBENTRY_TYPE_CONVERSATION,
     SUBENTRY_TYPES,
 )
 from .debug import async_run_debug_suite
+from .models import migrate_legacy_chat_model
+from .options import (
+    adopt_strip_markdown_default,
+    ai_task_options_from,
+    blocking_request_timeout_from_options,
+    fold_context_switch,
+    request_timeout_from_options,
+)
+from .request_builder import (
+    build_generate_content_completion_args,
+    effective_thinking_enabled_for_generate_content,
+    reasoning_text_from_chat_message,
+    resolve_generate_content_model,
+)
 from .structured_output import ensure_json_mode_prompt_keyword
 from .types import (
     agent_for_entity,

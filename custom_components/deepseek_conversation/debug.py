@@ -41,10 +41,9 @@ from .const import (
     RECOMMENDED_TOP_P,
     DEEPSEEK_API_BASE_URL,
     MAX_TOKENS_UPPER_BOUND,
-    coerce_max_tokens,
-    deepseek_chat_thinking_params,
-    request_timeout_from_options,
 )
+from .options import coerce_max_tokens, request_timeout_from_options
+from .request_builder import deepseek_chat_thinking_params
 from .usage_metrics import completion_usage_from_api
 
 REPORT_FILENAME = "deepseek_conversation_debug_report.txt"

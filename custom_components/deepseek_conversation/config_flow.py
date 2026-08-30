@@ -39,17 +39,8 @@ from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImp
 )
 from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
-from .context_trim import (
-    MAX_HISTORY_ROUNDS_UPPER_BOUND,
-    MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
-    coerce_max_history_rounds,
-    coerce_max_tool_result_chars,
-)
 from .const import (
     CHAT_MODEL_OPTIONS,
-    coerce_max_tokens,
-    coerce_max_tool_iterations,
-    coerce_request_timeout,
     CONF_BASE_URL,
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
@@ -76,18 +67,18 @@ from .const import (
     DEEPSEEK_API_BASE_URL,
     DOMAIN,
     LOGGER,
+    MAX_HISTORY_ROUNDS_UPPER_BOUND,
     MAX_TOKENS_UPPER_BOUND,
-    is_retired_chat_model,
+    MAX_TOOL_ITERATIONS_UPPER_BOUND,
+    MAX_TOOL_RESULT_CHARS_UPPER_BOUND,
     REASONING_EFFORT_SELECT,
     RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_CONVERSATION_OPTIONS,
+    RECOMMENDED_MAX_HISTORY_ROUNDS,
     RECOMMENDED_MAX_TOKENS,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
     RECOMMENDED_MAX_TOOL_RESULT_CHARS,
-    recommended_agent_options,
-    RECOMMENDED_MAX_HISTORY_ROUNDS,
-    MAX_TOOL_ITERATIONS_UPPER_BOUND,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_REQUEST_TIMEOUT,
     RECOMMENDED_TEMPERATURE,
@@ -96,6 +87,15 @@ from .const import (
     REQUEST_TIMEOUT_UPPER_BOUND,
     SUBENTRY_TYPE_AI_TASK,
     SUBENTRY_TYPE_CONVERSATION,
+)
+from .models import is_retired_chat_model
+from .options import (
+    coerce_max_history_rounds,
+    coerce_max_tokens,
+    coerce_max_tool_iterations,
+    coerce_max_tool_result_chars,
+    coerce_request_timeout,
+    recommended_agent_options,
 )
 
 #: The advanced step, grouped. Order and collapsed state follow how often a

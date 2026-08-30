@@ -28,8 +28,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .api_errors import openai_exception_user_message
 from .context_trim import format_tool_result_content, trim_messages_for_api
 from .const import (
-    build_chat_completion_args,
-    coerce_max_tool_iterations,
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_INCLUDE_USER_CONTEXT,
@@ -46,11 +44,12 @@ from .const import (
     LOGGER,
     RECOMMENDED_CHAT_MODEL,
     RECOMMENDED_MAX_TOOL_ITERATIONS,
-    request_timeout_from_options,
     RESPONSE_FORMAT_JSON_OBJECT,
     SUBENTRY_TYPE_CONVERSATION,
 )
 from .markdown_strip import strip_markdown, StreamingMarkdownStripper
+from .options import coerce_max_tool_iterations, request_timeout_from_options
+from .request_builder import build_chat_completion_args
 from .types import (
     agent_device_info,
     agent_subentries,

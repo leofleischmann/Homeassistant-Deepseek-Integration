@@ -11,41 +11,15 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from .const import (
-    CONF_MAX_HISTORY_ROUNDS,
-    CONF_MAX_TOOL_RESULT_CHARS,
-    LOGGER,
-    RECOMMENDED_MAX_HISTORY_ROUNDS,
-    RECOMMENDED_MAX_TOOL_RESULT_CHARS,
+from .const import LOGGER
+from .options import (
+    max_history_rounds_from_options,
+    max_tool_result_chars_from_options,
 )
-
-MAX_TOOL_RESULT_CHARS_UPPER_BOUND = 100_000
-MIN_TOOL_RESULT_CHARS = 500
-MAX_HISTORY_ROUNDS_UPPER_BOUND = 200
 
 _TRUNCATION_SUFFIX_TEMPLATE = (
     "\n… [truncated by DeepSeek integration, {omitted} chars omitted]"
 )
-
-
-def coerce_max_tool_result_chars(
-    value: Any, *, fallback: int = RECOMMENDED_MAX_TOOL_RESULT_CHARS
-) -> int:
-    """Parse max_tool_result_chars; 0 disables truncation."""
-    try:
-        n = int(float(value))
-    except (TypeError, ValueError):
-        return fallback
-    if n <= 0:
-        return 0
-    return max(MIN_TOOL_RESULT_CHARS, min(n, MAX_TOOL_RESULT_CHARS_UPPER_BOUND))
-
-
-def max_tool_result_chars_from_options(options: Mapping[str, Any]) -> int:
-    """Effective tool-result character limit; 0 means no truncation."""
-    return coerce_max_tool_result_chars(
-        options.get(CONF_MAX_TOOL_RESULT_CHARS, RECOMMENDED_MAX_TOOL_RESULT_CHARS)
-    )
 
 
 def truncate_tool_result_json(
@@ -95,26 +69,6 @@ def format_tool_result_content(
         serialized,
         max_chars=max_tool_result_chars_from_options(options),
         tool_name=tool_name,
-    )
-
-
-def coerce_max_history_rounds(
-    value: Any, *, fallback: int = RECOMMENDED_MAX_HISTORY_ROUNDS
-) -> int:
-    """Parse max_history_rounds; 0 keeps the full conversation history."""
-    try:
-        n = int(float(value))
-    except (TypeError, ValueError):
-        return fallback
-    if n <= 0:
-        return 0
-    return min(n, MAX_HISTORY_ROUNDS_UPPER_BOUND)
-
-
-def max_history_rounds_from_options(options: Mapping[str, Any]) -> int:
-    """Effective user-turn history cap; 0 means unlimited."""
-    return coerce_max_history_rounds(
-        options.get(CONF_MAX_HISTORY_ROUNDS, RECOMMENDED_MAX_HISTORY_ROUNDS)
     )
 
 

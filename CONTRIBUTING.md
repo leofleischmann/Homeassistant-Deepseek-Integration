@@ -17,7 +17,10 @@ Thanks for helping improve DeepSeek Conversation.
 
 1. Fork the repo (external contributors) or branch from `dev`.
 2. Make your changes on `dev` (or a feature branch based on `dev`).
-3. Ensure [CI](.github/workflows/ci.yml) passes (HACS validation + hassfest).
+3. Ensure [CI](.github/workflows/ci.yml) passes (HACS validation + hassfest + unit tests).
+   Run the unit tests locally with `python -m unittest discover -s tests` — they need
+   no Home Assistant install, because they cover the modules that depend only on the
+   standard library (`const`, `models`, `options`, `request_builder`, `markdown_strip`).
 4. Open a PR targeting **`dev`** with a clear title and short description.
 5. Maintainers merge to `dev`, test on a Home Assistant instance, then open a release PR **`dev` → `main`** when ready to ship.
 

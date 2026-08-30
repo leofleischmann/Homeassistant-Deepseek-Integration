@@ -28,13 +28,12 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_VISION_ENABLED,
     DEFAULT_VISION_ENABLED,
-    is_official_deepseek_api_base_url,
     LOGGER,
-    normalize_model_id,
     RECOMMENDED_CHAT_MODEL,
     VISION_CHAT_MODEL,
     VISION_CHAT_MODELS,
 )
+from .models import is_official_deepseek_api_base_url, normalize_model_id
 
 
 def model_supports_vision(model: str | None, *, base_url: str | None = None) -> bool:
