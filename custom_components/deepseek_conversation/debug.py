@@ -1,12 +1,20 @@
-"""Exhaustive debug suite for DeepSeek Conversation — service ``run_debug``."""
+"""Exhaustive debug suite for DeepSeek Conversation — service ``run_debug``.
+
+What the suite asks the API: a series of completions, two streams, a
+concurrency smoke test and a round-trip latency profile, each built by
+``probe_args`` so every probe sends the shape the integration would send.
+Assembling the report around those answers is ``debug_report.py``.
+
+The suite runs as one long sequence on purpose. The probes build on each
+other's findings - the token policy block needs the coerced limit, the high
+max_tokens probe needs the cap - and the report reads in the order they ran.
+"""
 
 from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-import importlib.metadata
 import json
-import os
 import sys
 import time
 from collections.abc import Mapping
@@ -15,7 +23,7 @@ from typing import Any, Callable, Coroutine
 import openai
 
 from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
-from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
+from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import entity_registry as er  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
@@ -42,98 +50,18 @@ from .const import (
     DEEPSEEK_API_BASE_URL,
     MAX_TOKENS_UPPER_BOUND,
 )
+from .debug_report import (
+    choice_meta,
+    ha_version,
+    pkg_version,
+    read_log_tail,
+    redact_entry,
+    REPORT_FILENAME,
+    write_report,
+)
 from .options import coerce_max_tokens, request_timeout_from_options
 from .request_builder import deepseek_chat_thinking_params
 from .usage_metrics import completion_usage_from_api
-
-REPORT_FILENAME = "deepseek_conversation_debug_report.txt"
-LOG_CANDIDATES = ("home-assistant.log", "home-assistant.log.1")
-
-
-def _redact_entry(entry: ConfigEntry) -> dict[str, Any]:
-    """Summarise the entry for the report, with the API key masked.
-
-    Settings live on the agents, so they are listed per subentry; the entry
-    itself carries only the connection.
-    """
-    data = {**entry.data}
-    if CONF_API_KEY in data:
-        data[CONF_API_KEY] = "***"
-    return {
-        "title": entry.title,
-        "entry_id": entry.entry_id,
-        "data": data,
-        "agents": [
-            {
-                "type": subentry.subentry_type,
-                "title": subentry.title,
-                "settings": dict(subentry.data),
-            }
-            for subentry in entry.subentries.values()
-        ],
-    }
-
-
-def _read_log_tail(config_dir: str, max_lines: int) -> str:
-    needles_primary = (
-        DOMAIN,
-        "deepseek",
-        "DeepSeek",
-        "deepseek debug",
-        "[deepseek debug]",
-        "Error talking to DeepSeek",
-        "async_provide_llm",
-        "ConverseError",
-    )
-    needles_error = ("ERROR", "Traceback", "Exception in ")
-    blocks: list[str] = []
-    for name in LOG_CANDIDATES:
-        path = os.path.join(config_dir, name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                file_lines = f.readlines()
-        except OSError as err:
-            return f"--- could not read {path}: {err} ---\n"
-        window = file_lines[-max_lines * 12 :]
-
-        def pick(nlist: tuple[str, ...]) -> list[str]:
-            out: list[str] = []
-            for line in window:
-                if any(n in line for n in nlist):
-                    out.append(line.rstrip("\n"))
-            return out[-max_lines:]
-
-        blocks.append(f"=== A) integration / deepseek (max {max_lines} lines) from {name} ===\n")
-        blocks.append("\n".join(pick(needles_primary)))
-        blocks.append(f"\n=== B) errors / trace (max {max_lines // 2} lines) from {name} ===\n")
-        blocks.append("\n".join(pick(needles_error)[-(max_lines // 2) :]))
-        blocks.append("\n")
-        return "".join(blocks)
-    return "No home-assistant.log found under config.\n"
-
-
-def _write_report(path: str, body: str) -> None:
-    """Write the debug report file (runs in the executor)."""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(body)
-
-
-def _ha_version() -> str:
-    try:
-        from homeassistant.const import __version__ as ver  # type: ignore[import-not-found]
-
-        return str(ver)
-    except Exception:
-        return "unknown"
-
-
-def _pkg_version(name: str) -> str:
-    try:
-        return importlib.metadata.version(name)
-    except importlib.metadata.PackageNotFoundError:
-        return "not installed"
 
 
 async def _timed(
@@ -150,28 +78,22 @@ async def _timed(
         return None, time.perf_counter() - t0, err
 
 
-def _msg_summary(msg: Any) -> dict[str, Any]:
-    if msg is None:
-        return {}
-    out: dict[str, Any] = {
-        "content_len": len((msg.content or "")),
-        "content_preview": (msg.content or "")[:240],
-    }
-    rc = getattr(msg, "reasoning_content", None)
-    if rc is not None:
-        out["reasoning_chars"] = len(rc) if isinstance(rc, str) else 0
-        out["reasoning_preview"] = (rc[:200] + "…") if isinstance(rc, str) and len(rc) > 200 else rc
-    return out
+def _thinking_params(
+    opts: Mapping[str, Any], model: str, *, enabled: bool
+) -> dict[str, Any]:
+    """The thinking kwargs the integration would send, at the configured effort.
 
-
-def _choice_meta(resp: Any) -> dict[str, Any]:
-    ch = resp.choices[0] if resp.choices else None
-    if not ch:
-        return {}
-    meta: dict[str, Any] = {"finish_reason": getattr(ch, "finish_reason", None)}
-    if getattr(ch, "message", None):
-        meta.update(_msg_summary(ch.message))
-    return meta
+    Every probe in the suite goes through this instead of spelling the call out,
+    so the report reflects what this agent's settings actually produce - and one
+    edit changes every probe rather than fourteen.
+    """
+    return deepseek_chat_thinking_params(
+        thinking_enabled=enabled,
+        reasoning_effort=str(
+            opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)
+        ),
+        model=model,
+    )
 
 
 async def _latency_profile(
@@ -199,13 +121,7 @@ async def _latency_profile(
         "messages": prompt,
         "max_tokens": 4,
         "stream": False,
-        **deepseek_chat_thinking_params(
-            thinking_enabled=False,
-            reasoning_effort=str(
-                opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)
-            ),
-            model=model,
-        ),
+        **_thinking_params(opts, model, enabled=False),
     }
 
     async def _one() -> float:
@@ -264,7 +180,7 @@ async def async_run_debug_suite(
         "streams": {},
         "edge_cases": {},
         "report_path": None,
-        "redacted_entry": _redact_entry(entry),
+        "redacted_entry": redact_entry(entry),
     }
 
     def log(msg: str) -> None:
@@ -276,10 +192,10 @@ async def async_run_debug_suite(
 
     # --- Environment ---
     env = {
-        "home_assistant_version": _ha_version(),
+        "home_assistant_version": ha_version(),
         "openai_sdk_version": getattr(openai, "__version__", "unknown"),
-        "voluptuous_openapi_version": _pkg_version("voluptuous-openapi"),
-        "h2_version": _pkg_version("h2"),
+        "voluptuous_openapi_version": pkg_version("voluptuous-openapi"),
+        "h2_version": pkg_version("h2"),
         "integration_domain": DOMAIN,
         "config_dir": hass.config.config_dir,
         "component_in_loaded_components": DOMAIN in hass.config.components,
@@ -320,9 +236,9 @@ async def async_run_debug_suite(
         for k, v in out["completions"].items():
             flat_abort[f"completion.{k}"] = v
         out["tests"] = flat_abort
-        report_body = "\n".join(lines) + "\n" + _read_log_tail(hass.config.config_dir, log_tail_lines)
+        report_body = "\n".join(lines) + "\n" + read_log_tail(hass.config.config_dir, log_tail_lines)
         path = hass.config.path(REPORT_FILENAME)
-        await hass.async_add_executor_job(_write_report, path, report_body)
+        await hass.async_add_executor_job(write_report, path, report_body)
         out["report_path"] = path
         return out
 
@@ -418,6 +334,24 @@ async def async_run_debug_suite(
         out["entities"] = [{"error": str(e)}]
         log(f"ENTITY registry FAIL: {e}")
 
+    def probe_args(
+        messages: list[dict[str, Any]],
+        max_tokens: int,
+        *,
+        thinking: bool = False,
+        stream: bool = False,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """Kwargs for one probe - the shape every request in this suite has."""
+        return {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "stream": stream,
+            **_thinking_params(opts, model, enabled=thinking),
+            **extra,
+        }
+
     # --- Completion tests ---
     async def _complete(name: str, kwargs: dict[str, Any]) -> None:
         log(f"--- completion {name} kwargs_keys={sorted(kwargs.keys())} ---")
@@ -427,7 +361,7 @@ async def async_run_debug_suite(
         )
         block: dict[str, Any] = {"ok": err is None, "seconds": round(dt, 3), "error": err}
         if err is None and res is not None:
-            block["choice"] = _choice_meta(res)
+            block["choice"] = choice_meta(res)
             block["model_from_response"] = getattr(res, "model", None)
             block["usage"] = getattr(res, "usage", None)
             if block["usage"] is not None and hasattr(block["usage"], "model_dump"):
@@ -438,17 +372,7 @@ async def async_run_debug_suite(
     # 1) ping with enough tokens for visible reply
     await _complete(
         "ping_max_tokens_8",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "Reply with the single word: PONG"}],
-            "max_tokens": 8,
-            "stream": False,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+        probe_args([{"role": "user", "content": "Reply with the single word: PONG"}], 8),
     )
 
     cap = max(8, min(max_completion_tokens_test, mt_coerced, 128))
@@ -466,73 +390,46 @@ async def async_run_debug_suite(
     log(f"TOKEN POLICY (debug only): {out['debug_token_policy']}")
 
     # 2) production-like no-thinking with sampling
-    args_nt: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": "Reply with exactly: OK"}],
-        "max_tokens": cap,
-        "stream": False,
-        "temperature": float(opts.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE)),
-        "top_p": float(opts.get(CONF_TOP_P, RECOMMENDED_TOP_P)),
-        **deepseek_chat_thinking_params(
-            thinking_enabled=False,
-            reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-            model=model,
-        ),
-    }
+    args_nt = probe_args(
+        [{"role": "user", "content": "Reply with exactly: OK"}],
+        cap,
+        temperature=float(opts.get(CONF_TEMPERATURE, RECOMMENDED_TEMPERATURE)),
+        top_p=float(opts.get(CONF_TOP_P, RECOMMENDED_TOP_P)),
+    )
     await _complete("non_stream_no_thinking_user_sampling", args_nt)
 
     # 3) thinking on, no sampling in kwargs (matches integration)
-    args_t: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": "Say hi in one short word."}],
-        "max_tokens": min(48, cap),
-        "stream": False,
-        **deepseek_chat_thinking_params(
-            thinking_enabled=True,
-            reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-            model=model,
-        ),
-    }
+    args_t = probe_args(
+        [{"role": "user", "content": "Say hi in one short word."}],
+        min(48, cap),
+        thinking=True,
+    )
     await _complete("non_stream_thinking_only", args_t)
 
     # 4) system + user (like service path)
     sys_prompt = (opts.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
     await _complete(
         "non_stream_with_system_message",
-        {
-            "model": model,
-            "messages": [
+        probe_args(
+            [
                 {"role": "system", "content": sys_prompt[:2000]},
                 {"role": "user", "content": "Confirm you are ready with one word."},
             ],
-            "max_tokens": min(24, cap),
-            "stream": False,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+            min(24, cap),
+        ),
     )
 
     # 5) mini multi-turn
     await _complete(
         "non_stream_multiturn",
-        {
-            "model": model,
-            "messages": [
+        probe_args(
+            [
                 {"role": "user", "content": "Remember code X7."},
                 {"role": "assistant", "content": "OK, code X7 noted."},
                 {"role": "user", "content": "Which code did I give?"},
             ],
-            "max_tokens": min(64, cap),
-            "stream": False,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+            min(64, cap),
+        ),
     )
 
     # 6) high max_tokens acceptance (still small completion text)
@@ -540,34 +437,18 @@ async def async_run_debug_suite(
     out["debug_token_policy"]["high_max_tokens_probe_request"] = high_cap
     await _complete(
         "non_stream_high_max_tokens_probe",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "Answer only: 1"}],
-            "max_tokens": high_cap,
-            "stream": False,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+        probe_args([{"role": "user", "content": "Answer only: 1"}], high_cap),
     )
     out["completions"]["_note_high_cap"] = f"Requested max_tokens={high_cap} (from coerced user limit)"
 
     # 7) observational: thinking + temperature (may be ignored or rejected by API)
-    args_conflict: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": "Reply only: test"}],
-        "max_tokens": 16,
-        "stream": False,
-        "temperature": 0.7,
-        "top_p": 0.9,
-        **deepseek_chat_thinking_params(
-            thinking_enabled=True,
-            reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-            model=model,
-        ),
-    }
+    args_conflict = probe_args(
+        [{"role": "user", "content": "Reply only: test"}],
+        16,
+        thinking=True,
+        temperature=0.7,
+        top_p=0.9,
+    )
     await _complete("non_stream_thinking_plus_sampling_params_observational", args_conflict)
 
     # --- Stream tests ---
@@ -650,82 +531,44 @@ async def async_run_debug_suite(
 
     await _stream(
         "stream_no_thinking",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "Count: 1,2,3 as digits only."}],
-            "max_tokens": 24,
-            "stream": True,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+        probe_args(
+            [{"role": "user", "content": "Count: 1,2,3 as digits only."}],
+            24,
+            stream=True,
+        ),
     )
 
     await _stream(
         "stream_thinking_on",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "Give a one-word answer: OK"}],
-            "max_tokens": 32,
-            "stream": True,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=True,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+        probe_args(
+            [{"role": "user", "content": "Give a one-word answer: OK"}],
+            32,
+            thinking=True,
+            stream=True,
+        ),
     )
 
     # --- Edge: max_tokens=1 and empty prompt edge ---
     await _complete(
         "edge_max_tokens_1",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "."}],
-            "max_tokens": 1,
-            "stream": False,
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+        probe_args([{"role": "user", "content": "."}], 1),
     )
 
     # --- Optional: JSON mode (may fail on some models) ---
     await _complete(
         "edge_json_object_mode",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": 'Return JSON with key "ok" true'}],
-            "max_tokens": 64,
-            "stream": False,
-            "response_format": {"type": "json_object"},
-            **deepseek_chat_thinking_params(
-                thinking_enabled=False,
-                reasoning_effort=str(opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)),
-                model=model,
-            ),
-        },
+        probe_args(
+            [{"role": "user", "content": 'Return JSON with key "ok" true'}],
+            64,
+            response_format={"type": "json_object"},
+        ),
     )
 
     # --- Parallel smoke: two tiny pings (concurrency sanity) ---
     async def _dual() -> tuple[str, str]:
         async def one(msg: str) -> str:
             r = await client.with_options(timeout=20.0).chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": msg}],
-                max_tokens=4,
-                stream=False,
-                **deepseek_chat_thinking_params(
-                    thinking_enabled=False,
-                    reasoning_effort=str(
-                        opts.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)
-                    ),
-                    model=model,
-                ),
+                **probe_args([{"role": "user", "content": msg}], 4)
             )
             return (r.choices[0].message.content or "").strip()
 
@@ -775,7 +618,7 @@ async def async_run_debug_suite(
 
     log("--- log excerpt ---")
     log_excerpt = await hass.async_add_executor_job(
-        _read_log_tail, hass.config.config_dir, log_tail_lines
+        read_log_tail, hass.config.config_dir, log_tail_lines
     )
     lines.append(log_excerpt)
     out["log_excerpt_chars"] = len(log_excerpt)
@@ -794,7 +637,7 @@ async def async_run_debug_suite(
 
     report_body = "\n".join(lines)
     path = hass.config.path(REPORT_FILENAME)
-    await hass.async_add_executor_job(_write_report, path, report_body)
+    await hass.async_add_executor_job(write_report, path, report_body)
     out["report_path"] = path
     LOGGER.info("DeepSeek exhaustive debug report written to %s", path)
 
