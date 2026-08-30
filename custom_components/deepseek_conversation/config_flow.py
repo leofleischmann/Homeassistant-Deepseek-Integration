@@ -39,6 +39,7 @@ from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImp
 )
 from homeassistant.helpers.typing import VolDictType  # pyright: ignore[reportMissingImports]
 
+from .client import async_probe_deepseek_client
 from .const import (
     CHAT_MODEL_OPTIONS,
     CONF_BASE_URL,
@@ -348,26 +349,6 @@ def get_reconfigure_step_schema(entry: ConfigEntry) -> vol.Schema:
             vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
         }
     )
-
-_PROBE_TIMEOUT = 10.0
-
-
-async def async_probe_deepseek_client(client: openai.AsyncOpenAI) -> None:
-    """Validate credentials via ``models.list()`` without using completion quota.
-
-    OpenAI-compatible gateways without ``/models`` (404/405/501) are skipped so the
-    first real chat call can surface auth issues. Used by config_flow and __init__.
-    """
-    try:
-        await client.with_options(timeout=_PROBE_TIMEOUT).models.list()
-    except openai.APIStatusError as err:
-        if err.status_code in (404, 405, 501):
-            LOGGER.debug(
-                "DeepSeek base URL does not implement /models (%s); skipping probe",
-                err.status_code,
-            )
-            return
-        raise
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:

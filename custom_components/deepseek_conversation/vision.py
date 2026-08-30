@@ -1,7 +1,7 @@
 """Shared vision/image encoding for Assist and generate_content.
 
 Used by chat_messages.py (UserContent.attachments from Assist / AI Task) and
-__init__.py (generate_content filenames). Images are sent as OpenAI-style
+services.py (generate_content filenames). Images are sent as OpenAI-style
 ``image_url`` content parts with a base64 ``data:`` URL.
 
 Whether that is accepted depends on the **model**, not on the endpoint: the
@@ -252,7 +252,7 @@ async def async_image_parts_from_filenames(
     """Encode ``generate_content`` ``filenames`` paths.
 
     Raises ``HomeAssistantError`` when paths were given but no image could be
-    encoded (missing file, disallowed path, or non-image type). Used from __init__.py.
+    encoded (missing file, disallowed path, or non-image type). Used from services.py.
     """
     files: list[tuple[Path, str | None]] = []
     disallowed: list[str] = []
