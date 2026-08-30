@@ -459,7 +459,8 @@ async def async_run_debug_suite(
         "note": (
             "Debug suite intentionally uses small max_tokens per call (ping=8; most tests "
             "use suite_cap <= 128) for speed and API cost. This is NOT the Assist conversation "
-            "path — see conversation.py model_args['max_tokens'] = coerce_max_tokens(options[...])."
+            "path — see request_builder.build_chat_completion_args(), which uses "
+            "coerce_max_tokens(options[...])."
         ),
     }
     log(f"TOKEN POLICY (debug only): {out['debug_token_policy']}")

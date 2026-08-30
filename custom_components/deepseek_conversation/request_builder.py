@@ -1,7 +1,7 @@
 """Assembling the kwargs for a chat completion request.
 
 One place decides what actually goes on the wire, so the Assist loop
-(``chat_session``/``conversation.py``), the ``generate_content`` action and the
+(``chat_session.py``), the ``generate_content`` action and the
 debug suite cannot drift apart on thinking flags, sampling parameters or the
 token limit.
 

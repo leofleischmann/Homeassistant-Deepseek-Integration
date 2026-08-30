@@ -1,6 +1,6 @@
 """Shared vision/image encoding for Assist and generate_content.
 
-Used by conversation.py (UserContent.attachments from Assist / AI Task) and
+Used by chat_messages.py (UserContent.attachments from Assist / AI Task) and
 __init__.py (generate_content filenames). Images are sent as OpenAI-style
 ``image_url`` content parts with a base64 ``data:`` URL.
 
