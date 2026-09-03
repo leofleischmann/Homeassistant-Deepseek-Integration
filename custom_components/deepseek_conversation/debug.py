@@ -59,6 +59,7 @@ from .debug_report import (
     REPORT_FILENAME,
     write_report,
 )
+from .openapi_schema import CONVERTERS
 from .options import coerce_max_tokens, request_timeout_from_options
 from .request_builder import deepseek_chat_thinking_params
 from .usage_metrics import completion_usage_from_api
@@ -194,7 +195,12 @@ async def async_run_debug_suite(
     env = {
         "home_assistant_version": ha_version(),
         "openai_sdk_version": getattr(openai, "__version__", "unknown"),
+        # Which library renders tool schemas decides whether tools work at all:
+        # core moved from voluptuous-openapi to probatio, and the two cannot be
+        # mixed (see openapi_schema.py). The chosen one is reported alongside.
         "voluptuous_openapi_version": pkg_version("voluptuous-openapi"),
+        "probatio_version": pkg_version("probatio"),
+        "openapi_schema_converters": [converter.name for converter in CONVERTERS],
         "h2_version": pkg_version("h2"),
         "integration_domain": DOMAIN,
         "config_dir": hass.config.config_dir,

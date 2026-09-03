@@ -2,6 +2,17 @@
 
 All notable changes to this integration.
 
+## [1.8.3] - 2026-09-03
+
+Nothing to do on upgrade. Required for recent Home Assistant releases, where no tool worked at all.
+
+### Fixed
+- **Every request failed once Home Assistant switched its schema library.** Core replaced `voluptuous-openapi` with `probatio` for rendering tool schemas. Both ask the caller's serializer whether it can handle a node and compare the answer against their *own* `UNSUPPORTED` marker by identity, so the old converter did not reject core's new serializer — it returned that marker as if it were the schema. Every tool reached the API as `"parameters": UNSUPPORTED` and the request died in the SDK with `Object of type _Unsupported is not JSON serializable`, on any model, with nothing in the log naming the cause. Both libraries are supported now: the marker is translated to the one the converter in use expects, and a result that is not a schema is refused rather than sent. Affected Assist tools and AI Task structured output alike.
+- A tool whose schema cannot be rendered is skipped with its name in the log, instead of being sent as something the SDK cannot serialise.
+
+### Added
+- The `run_debug` report records the installed `probatio` version and which converter is in use.
+
 ## [1.8.2] - 2026-09-03
 
 Nothing to do on upgrade. Fixes Assist announcing what it is about to check and then falling silent.

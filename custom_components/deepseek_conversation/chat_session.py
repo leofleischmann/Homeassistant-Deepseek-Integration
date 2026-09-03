@@ -17,7 +17,6 @@ import json
 from typing import Any
 
 import openai
-from voluptuous_openapi import convert  # pyright: ignore[reportMissingImports]
 
 from homeassistant.components import conversation  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
@@ -45,6 +44,7 @@ from .const import (
 )
 from .context_trim import trim_messages_for_api
 from .markdown_strip import StreamingMarkdownStripper
+from .openapi_schema import render_openapi_schema
 from .options import coerce_max_tool_iterations, request_timeout_from_options
 from .request_builder import build_chat_completion_args
 from .stream_transform import (
@@ -70,11 +70,14 @@ def _format_tool(
 ) -> dict[str, Any] | None:
     """Format one HA LLM tool for OpenAI-compatible ``tools`` array.
 
-    Returns ``None`` when ``voluptuous_openapi.convert`` fails so callers never
-    send an empty schema (which causes opaque API errors). See ``_format_tools_for_api``.
+    Returns ``None`` when the parameter schema cannot be rendered, so callers
+    never send an empty schema (which causes opaque API errors) nor an object
+    the SDK cannot serialise. See ``_format_tools_for_api``.
     """
     try:
-        parameters = convert(tool.parameters, custom_serializer=custom_serializer)
+        parameters = render_openapi_schema(
+            tool.parameters, custom_serializer=custom_serializer
+        )
     except Exception as err:
         LOGGER.warning(
             "[Debug conversation]: Skipping tool %s - parameter schema conversion "
