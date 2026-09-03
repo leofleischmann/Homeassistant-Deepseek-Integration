@@ -13,13 +13,13 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-from voluptuous_openapi import convert
 
 from homeassistant.components import conversation  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 
 from .const import DEEPSEEK_API_BASE_URL, RESPONSE_FORMAT_JSON_OBJECT
 from .models import is_official_deepseek_api_base_url
+from .openapi_schema import render_openapi_schema
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def structure_to_openapi_schema(
     custom_serializer: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Convert an HA AI Task structure schema to OpenAPI/JSON Schema."""
-    return convert(
+    return render_openapi_schema(
         structure,
         custom_serializer=custom_serializer or llm.selector_serializer,
     )
