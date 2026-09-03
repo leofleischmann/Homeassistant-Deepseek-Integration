@@ -2,6 +2,18 @@
 
 All notable changes to this integration.
 
+## [1.8.2] - 2026-09-03
+
+Nothing to do on upgrade. Fixes Assist announcing what it is about to check and then falling silent.
+
+### Fixed
+- **A tool call with invalid JSON arguments killed the turn.** The call was dropped with nothing but a log line, so no tool ran and the answer ended after whatever preamble had been spoken. Common malformations are repaired now (unquoted value, single quotes, `True`/`False`/`None`, trailing comma, markdown fence, double-encoded JSON); anything left goes back to the model as a tool result carrying the parse error, so it retries within the turn. A half-readable call is never guessed at and never executed.
+- **One such turn then broke every later question in that conversation**, because the assistant message it left behind had neither text nor tool calls and the API rejects those (`content or tool_calls must be set`). It is no longer sent.
+- **Tool calls were lost on gateways that split them differently**: `id` and the function name had to arrive in the opening chunk, and a call announced out of order was discarded. Chunks are now merged per index whatever they carry.
+
+### Added
+- Unit tests for tool-argument parsing and for assembling a tool call out of streamed chunks.
+
 ## [1.8.1] - 2026-08-30
 
 No behaviour change on upgrade.
