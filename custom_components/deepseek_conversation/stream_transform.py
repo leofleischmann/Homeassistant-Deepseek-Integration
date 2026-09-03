@@ -15,7 +15,6 @@ config entry's runtime data, which is why they take it rather than reading it.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Callable
-import json
 from typing import Any
 
 from openai import AsyncStream
@@ -27,6 +26,7 @@ from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 
 from .const import LOGGER
 from .markdown_strip import StreamingMarkdownStripper
+from .tool_arguments import ToolArgumentsError, parse_tool_arguments
 from .usage_metrics import CompletionUsage, completion_usage_from_api
 
 
@@ -141,6 +141,116 @@ def _stream_delta_text(delta: Any, field: str) -> str | None:
     return None
 
 
+def _merge_tool_call_chunk(
+    calls: dict[int, dict[str, Any]], chunk: Any
+) -> None:
+    """Fold one streamed tool_call chunk into the call being assembled at its index.
+
+    Every field is merged as it arrives rather than read once from an
+    "opening" chunk. That distinction is the whole point: the previous version
+    created the argument buffer only when the first chunk for an index already
+    carried both ``id`` and the function name, so a gateway that sends either
+    of them one chunk later - or announces a second tool call before the first
+    - lost the call completely, and lost it silently, because there was no
+    parse left to fail on. Only ``index`` has to be present, and the caller has
+    already checked it.
+    """
+    call = calls.setdefault(
+        chunk.index,
+        # Several OpenAI-compatible gateways leave "type" out of the opening
+        # chunk. Requiring it dropped the whole tool call, so the model asked
+        # to switch a light and nothing happened, with no error anywhere.
+        {"id": None, "name": None, "type": "function", "arguments": ""},
+    )
+    if chunk.id:
+        call["id"] = chunk.id
+    if chunk.type:
+        call["type"] = chunk.type
+    if (function := chunk.function) is not None:
+        if function.name:
+            call["name"] = function.name
+        if function.arguments:
+            call["arguments"] += function.arguments
+
+
+def _external_tool_input(*, call_id: str | None, name: str) -> llm.ToolInput | None:
+    """Build a tool call Home Assistant must record but must not execute.
+
+    ``external`` is what keeps a call whose arguments could not be read out of
+    ``async_call_tool``; the assistant message still needs it so the error
+    result below it has a ``tool_call_id`` to answer. Should a core release not
+    know the field, ``None`` says so and the caller drops the call instead -
+    running it with empty arguments could switch the wrong thing.
+    """
+    fields: dict[str, Any] = {"tool_name": name, "tool_args": {}}
+    if call_id:
+        fields["id"] = call_id
+    try:
+        return llm.ToolInput(**fields, external=True)
+    except TypeError:
+        LOGGER.error(
+            "This Home Assistant version's ToolInput has no 'external' field, so "
+            "the failed tool call %s cannot be reported back to the model",
+            name,
+        )
+        return None
+
+
+def _finalize_tool_calls(
+    calls: dict[int, dict[str, Any]],
+) -> tuple[list[llm.ToolInput], list[conversation.ToolResultContentDeltaDict]]:
+    """Turn the assembled tool calls into HA tool inputs, plus results for the broken ones.
+
+    A call whose arguments will not parse is not dropped any more. It is
+    returned as an external tool call together with a tool result carrying the
+    parse error, which lands in the chat log as the answer to that call: the
+    tool loop sees an unresponded tool result, sends another round, and the
+    model gets to correct itself. Dropping it instead ended the turn wherever
+    the model happened to be - typically after an announcement it had already
+    streamed, and never spoken again.
+    """
+    tool_inputs: list[llm.ToolInput] = []
+    failed_results: list[conversation.ToolResultContentDeltaDict] = []
+    for index in sorted(calls):
+        call = calls[index]
+        if not (name := call["name"]):
+            LOGGER.warning(
+                "Tool call at index %d never received a function name; dropping it: %s",
+                index,
+                call,
+            )
+            continue
+        raw_arguments = call["arguments"]
+        try:
+            tool_args = parse_tool_arguments(raw_arguments)
+        except ToolArgumentsError as err:
+            LOGGER.error("Failed to read tool arguments for %s: %s", name, err)
+            if (failed_call := _external_tool_input(call_id=call["id"], name=name)) is None:
+                continue
+            tool_inputs.append(failed_call)
+            failed_results.append(
+                {
+                    "role": "tool_result",
+                    "tool_call_id": failed_call.id,
+                    "tool_name": name,
+                    "tool_result": {
+                        "error": "InvalidToolArguments",
+                        "error_text": (
+                            f"The arguments of this call could not be read: {err}. "
+                            "Send the call again with valid JSON arguments."
+                        ),
+                    },
+                }
+            )
+            continue
+        fields: dict[str, Any] = {"tool_name": name, "tool_args": tool_args}
+        if call["id"]:
+            fields["id"] = call["id"]
+        tool_inputs.append(llm.ToolInput(**fields))
+        LOGGER.debug("Successfully parsed tool input: %s", tool_inputs[-1])
+    return tool_inputs, failed_results
+
+
 async def transform_stream(
     result: AsyncStream[ChatCompletionChunk],
     *,
@@ -148,13 +258,21 @@ async def transform_stream(
     usage_events: list[CompletionUsage] | None = None,
     on_unexpected_reasoning: Callable[[], None] | None = None,
     markdown_stripper: StreamingMarkdownStripper | None = None,
-) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
+) -> AsyncGenerator[
+    conversation.AssistantContentDeltaDict | conversation.ToolResultContentDeltaDict,
+    None,
+]:
     """Transform a DeepSeek delta stream (ChatCompletionChunk) into HA format.
 
     One stream per API round. The first chunk that carries text or a tool call
     also carries ``role`` so Home Assistant starts a fresh assistant message
     (same pattern as the stock Ollama integration); ending the stream lets HA
     finalize the message and run any pending tool calls.
+
+    Mostly assistant deltas, but a tool call the model sent unreadable
+    arguments for also produces a ``tool_result`` delta holding the parse
+    error - see ``_finalize_tool_calls`` for why that is better than dropping
+    the call.
 
     ``on_unexpected_reasoning`` is invoked once per stream if the API sends
     ``reasoning_content`` while reasoning is switched off — see
@@ -166,8 +284,7 @@ async def transform_stream(
     ever fixed the transcript, never what was spoken. Reasoning text is left
     alone - it is displayed, not read out.
     """
-    current_tool_calls: list[dict[str, Any]] = []
-    current_tool_call_args_buffer: dict[int, str] = {}
+    current_tool_calls: dict[int, dict[str, Any]] = {}
     role_emitted = False
     reported_unexpected_reasoning = False
     async for chunk in result:
@@ -230,26 +347,7 @@ async def transform_stream(
                 if tool_call_chunk.index is None:
                     LOGGER.warning("Tool call chunk missing index: %s", tool_call_chunk)
                     continue
-                index = tool_call_chunk.index
-                if index >= len(current_tool_calls):
-                    current_tool_calls.extend([{}] * (index - len(current_tool_calls) + 1))
-                    function_name = tool_call_chunk.function.name if tool_call_chunk.function else None
-                    if tool_call_chunk.id and function_name:
-                        current_tool_calls[index] = {
-                            "id": tool_call_chunk.id,
-                            # Several OpenAI-compatible gateways leave "type" out
-                            # of the opening chunk. Requiring it dropped the whole
-                            # tool call, so the model asked to switch a light and
-                            # nothing happened, with no error anywhere.
-                            "type": tool_call_chunk.type or "function",
-                            "function": {"name": function_name, "arguments": ""}
-                        }
-                        current_tool_call_args_buffer[index] = ""
-                        LOGGER.debug("Tool Call Start Detected: Index=%d, ID=%s, Name=%s", index, tool_call_chunk.id, function_name)
-                    else:
-                         LOGGER.warning("Incomplete tool call start info in chunk: %s", tool_call_chunk)
-                if tool_call_chunk.function and tool_call_chunk.function.arguments and index in current_tool_call_args_buffer:
-                    current_tool_call_args_buffer[index] += tool_call_chunk.function.arguments
+                _merge_tool_call_chunk(current_tool_calls, tool_call_chunk)
 
         if finish_reason:
             # Release held-back text before any tool_calls delta, so the
@@ -263,32 +361,9 @@ async def transform_stream(
                 for text_delta in text_deltas:
                     yield text_delta
             LOGGER.debug("Stream Finish Reason: %s", finish_reason)
-            LOGGER.debug("Final Tool Args Buffer: %s", current_tool_call_args_buffer)
             LOGGER.debug("Final Current Tool Calls: %s", current_tool_calls)
             if finish_reason == "tool_calls":
-                tool_inputs = []
-                for index, args_str in current_tool_call_args_buffer.items():
-                    if index < len(current_tool_calls) and current_tool_calls[index]:
-                        tool_call_info = current_tool_calls[index]
-                        if "function" in tool_call_info and "name" in tool_call_info["function"]:
-                            try:
-                                LOGGER.debug("Attempting to parse args for %s: %s", tool_call_info["function"]["name"], args_str)
-                                tool_args = json.loads(args_str) if args_str else {}
-                                tool_inputs.append(
-                                    llm.ToolInput(
-                                        id=tool_call_info["id"],
-                                        tool_name=tool_call_info["function"]["name"],
-                                        tool_args=tool_args,
-                                    )
-                                )
-                                LOGGER.debug("Successfully parsed tool input: %s", tool_inputs[-1])
-                            except json.JSONDecodeError as e:
-                                LOGGER.error(
-                                    "Failed to decode tool arguments for %s: %s. Error: %s",
-                                    tool_call_info["function"]["name"], args_str, e
-                                )
-                        else:
-                             LOGGER.warning("Missing function info for tool call at index %d", index)
+                tool_inputs, failed_results = _finalize_tool_calls(current_tool_calls)
                 if tool_inputs:
                     if not role_emitted:
                         # Tool-only iteration (no content/thinking streamed):
@@ -298,8 +373,14 @@ async def transform_stream(
                         role_emitted = True
                     else:
                         yield {"tool_calls": tool_inputs}
-                current_tool_calls = []
-                current_tool_call_args_buffer = {}
+                for failed_result in failed_results:
+                    # Handed to the model as the answer to its own broken call,
+                    # so the tool loop keeps going and it can retry. The delta
+                    # closes the assistant message chat_log was building, hence
+                    # the reset: any text after this starts a fresh one.
+                    yield failed_result
+                    role_emitted = False
+                current_tool_calls = {}
             elif finish_reason == "stop":
                 pass
             elif finish_reason == "length":

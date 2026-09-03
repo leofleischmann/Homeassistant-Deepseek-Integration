@@ -150,6 +150,24 @@ def convert_content_to_messages(
                 ]
             if tool_call_id:
                 msg["tool_call_id"] = tool_call_id
+            if "tool_calls" not in msg and not msg.get("content"):
+                # "Invalid assistant message: content or tool_calls must be
+                # set" - and because the whole chat log is rebuilt for every
+                # request, one such message fails every later turn of that
+                # conversation, not just the round that produced it. An
+                # assistant turn can end up empty when it carried only
+                # reasoning that is not replayed (see
+                # _include_assistant_reasoning_in_request); there is nothing
+                # left to send, so leave it out entirely. For the other roles
+                # an empty string is a message, and dropping one would break
+                # the user/tool pairing the API checks.
+                if role == "assistant":
+                    LOGGER.debug(
+                        "[Debug conversation]: skipping an assistant message with "
+                        "neither content nor tool calls"
+                    )
+                    continue
+                msg["content"] = ""
             messages.append(msg)
 
     return messages
