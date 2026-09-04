@@ -18,6 +18,10 @@ from integration_modules import load
 const = load("const")
 options = load("options")
 
+#: Read from const rather than spelled out: it is Home Assistant's key, and
+#: this is the module under test's own view of it.
+LLM_API = const.CONF_LLM_HASS_API
+
 
 class TestCoerceMaxTokens(unittest.TestCase):
     def test_usable_values_pass_through(self) -> None:
@@ -254,6 +258,59 @@ class TestFoldContextSwitch(unittest.TestCase):
                 const.CONF_MAX_HISTORY_ROUNDS: 0,
             },
         )
+
+
+class TestMoveWebSearchSelection(unittest.TestCase):
+    """Web search stops being a globally registered LLM API (#38).
+
+    An agent that had selected it has to keep searching the web without the
+    user having to notice that the setting moved.
+    """
+
+    LEGACY = f"{const.LEGACY_WEB_SEARCH_API_ID_PREFIX}01JABCDEF"
+
+    def test_an_agent_that_never_selected_it_is_left_alone(self) -> None:
+        for stored in ({}, {LLM_API: ["assist"]}, {LLM_API: "assist"}):
+            with self.subTest(stored=stored):
+                self.assertIsNone(options.move_web_search_selection(stored))
+
+    def test_the_selection_becomes_the_setting(self) -> None:
+        moved = options.move_web_search_selection(
+            {LLM_API: ["assist", self.LEGACY], const.CONF_CHAT_MODEL: "m"}
+        )
+        self.assertEqual(
+            moved,
+            {
+                LLM_API: ["assist"],
+                const.CONF_WEB_SEARCH: True,
+                const.CONF_CHAT_MODEL: "m",
+            },
+        )
+
+    def test_web_search_alone_leaves_no_empty_selection_behind(self) -> None:
+        """An empty list is not what "nothing selected" looks like in a subentry."""
+        moved = options.move_web_search_selection({LLM_API: [self.LEGACY]})
+        self.assertEqual(moved, {const.CONF_WEB_SEARCH: True})
+
+    def test_a_single_stored_string_is_understood_too(self) -> None:
+        """Entries older than version 2 stored one id rather than a list."""
+        self.assertEqual(
+            options.move_web_search_selection({LLM_API: self.LEGACY}),
+            {const.CONF_WEB_SEARCH: True},
+        )
+
+    def test_another_entry_s_web_search_api_moves_as_well(self) -> None:
+        """The id carried the entry id, so two keys meant two different ids."""
+        other = f"{const.LEGACY_WEB_SEARCH_API_ID_PREFIX}01JZZZZZZ"
+        self.assertEqual(
+            options.move_web_search_selection({LLM_API: [other]}),
+            {const.CONF_WEB_SEARCH: True},
+        )
+
+    def test_the_original_settings_are_not_written_through(self) -> None:
+        stored = {LLM_API: [self.LEGACY]}
+        options.move_web_search_selection(stored)
+        self.assertEqual(stored, {LLM_API: [self.LEGACY]})
 
 
 if __name__ == "__main__":

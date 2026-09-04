@@ -47,6 +47,7 @@ from .user_context import (
     strip_speaker_block,
 )
 from .vision import conversation_entity_features_for_options
+from .agent_tools import agent_llm_api
 
 
 def _intent_error_result(
@@ -172,13 +173,18 @@ class DeepSeekConversationEntity(
         try:
             await chat_log.async_provide_llm_data(
                 llm_context=llm_context,
-                user_llm_hass_api=options.get(CONF_LLM_HASS_API),
+                user_llm_hass_api=agent_llm_api(
+                    self.hass, self.entry, options, options.get(CONF_LLM_HASS_API)
+                ),
                 user_llm_prompt=speaker.apply_to_prompt(user_llm_prompt),
                 user_extra_system_prompt=merge_extra_system_prompt(
                     caller_extra, speaker_block
                 ),
             )
-        except conversation.ConverseError as err:
+        except HomeAssistantError as err:
+            # Not just ConverseError (which is one): Home Assistant wraps a
+            # failing API id in that, but an API object we hand it is called
+            # directly, so whatever it raises arrives here unwrapped.
             LOGGER.error("Error during chat_log.async_provide_llm_data: %s", err)
             return _intent_error_result(
                 language=user_input.language,

@@ -73,7 +73,7 @@
                     "chat_model": "Modèle"
                 },
                 "data_description": {
-                    "brave_api_key": "Optionnel. Active une API LLM Web Search (Brave). Ensuite, sélectionnez-la sous Configurer → API Home Assistant avec Assist."
+                    "brave_api_key": "Optionnel. Ajoute une option Recherche web à chaque agent de cette intégration. Eux seuls peuvent l'utiliser."
                 },
                 "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4 Flash. Les anciens noms deepseek-chat et deepseek-reasoner ont été retirés le 2026-07-24 et ne sont plus acceptés."
             },
@@ -130,6 +130,7 @@
                         "name": "Nom",
                         "prompt": "Instructions",
                         "llm_hass_api": "API Home Assistant",
+                        "web_search": "Recherche web (Brave)",
                         "chat_model": "Modèle",
                         "recommended": "Paramètres recommandés"
                     },
@@ -137,7 +138,8 @@
                         "prompt": "Un modèle. Les variables disponibles sont dans le README.",
                         "llm_hass_api": "Rien de sélectionné signifie aucun contrôle de votre maison.",
                         "chat_model": "Flash est le plus rapide, Pro le plus puissant, Vision accepte les images.",
-                        "recommended": "Désactivé ouvre une seconde étape avec tout le reste."
+                        "recommended": "Désactivé ouvre une seconde étape avec tout le reste.",
+                        "web_search": "Permet à cet agent de consulter le web public avec votre clé Brave."
                     }
                 },
                 "advanced": {
@@ -172,7 +174,7 @@
                                 "max_tool_iterations": "Combien de fois le modèle peut appeler des outils avant de répondre.",
                                 "max_tool_result_chars": "Raccourcit les longs résultats d’outil. 0 les conserve entiers."
                             },
-                            "description": "Actif uniquement si une API Home Assistant est choisie."
+                            "description": "Actif uniquement si cet agent dispose d'outils."
                         },
                         "conversation": {
                             "name": "Conversation",
@@ -224,6 +226,7 @@
                         "name": "Nom",
                         "prompt": "Instructions",
                         "llm_hass_api": "API Home Assistant",
+                        "web_search": "Recherche web (Brave)",
                         "chat_model": "Modèle",
                         "recommended": "Paramètres recommandés"
                     },
@@ -231,7 +234,8 @@
                         "prompt": "Un modèle. Les variables disponibles sont dans le README.",
                         "llm_hass_api": "Rien de sélectionné signifie aucun contrôle de votre maison.",
                         "chat_model": "Flash est le plus rapide, Pro le plus puissant, Vision accepte les images.",
-                        "recommended": "Désactivé ouvre une seconde étape avec tout le reste."
+                        "recommended": "Désactivé ouvre une seconde étape avec tout le reste.",
+                        "web_search": "Permet à cet agent de consulter le web public avec votre clé Brave."
                     }
                 },
                 "advanced": {
@@ -266,7 +270,7 @@
                                 "max_tool_iterations": "Combien de fois le modèle peut appeler des outils avant de répondre.",
                                 "max_tool_result_chars": "Raccourcit les longs résultats d’outil. 0 les conserve entiers."
                             },
-                            "description": "Actif uniquement si une API Home Assistant est choisie."
+                            "description": "Actif uniquement si cet agent dispose d'outils."
                         },
                         "limits": {
                             "name": "Limites et entrées",

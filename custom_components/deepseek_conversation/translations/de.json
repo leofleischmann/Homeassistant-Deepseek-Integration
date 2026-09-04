@@ -73,7 +73,7 @@
                     "chat_model": "Modell"
                 },
                 "data_description": {
-                    "brave_api_key": "Optional. Aktiviert eine Web Search (Brave) LLM-API. Danach unter Konfigurieren → Home-Assistant-API zusammen mit Assist auswählen."
+                    "brave_api_key": "Optional. Ergänzt bei jedem Agenten dieser Integration einen Schalter Web-Suche. Nur sie können ihn nutzen."
                 },
                 "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4 Flash. Die Legacy-Namen deepseek-chat und deepseek-reasoner wurden am 24.07.2026 abgeschaltet und werden nicht mehr angenommen."
             },
@@ -130,6 +130,7 @@
                         "name": "Name",
                         "prompt": "Anweisungen",
                         "llm_hass_api": "Home-Assistant-API",
+                        "web_search": "Web-Suche (Brave)",
                         "chat_model": "Modell",
                         "recommended": "Empfohlene Einstellungen"
                     },
@@ -137,7 +138,8 @@
                         "prompt": "Eine Vorlage. Verfügbare Variablen stehen in der README.",
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
                         "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
-                        "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen."
+                        "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
+                        "web_search": "Erlaubt diesem Agenten, mit deinem Brave-Schlüssel im offenen Web nachzuschlagen."
                     }
                 },
                 "advanced": {
@@ -172,7 +174,7 @@
                                 "max_tool_iterations": "Wie oft das Modell vor der Antwort Werkzeuge aufrufen darf.",
                                 "max_tool_result_chars": "Kürzt lange Werkzeugergebnisse. 0 behält sie ganz."
                             },
-                            "description": "Nur wirksam, wenn eine Home-Assistant-API gewählt ist."
+                            "description": "Nur wirksam, wenn dieser Agent Werkzeuge hat."
                         },
                         "conversation": {
                             "name": "Konversation",
@@ -224,6 +226,7 @@
                         "name": "Name",
                         "prompt": "Anweisungen",
                         "llm_hass_api": "Home-Assistant-API",
+                        "web_search": "Web-Suche (Brave)",
                         "chat_model": "Modell",
                         "recommended": "Empfohlene Einstellungen"
                     },
@@ -231,7 +234,8 @@
                         "prompt": "Eine Vorlage. Verfügbare Variablen stehen in der README.",
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
                         "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
-                        "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen."
+                        "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
+                        "web_search": "Erlaubt diesem Agenten, mit deinem Brave-Schlüssel im offenen Web nachzuschlagen."
                     }
                 },
                 "advanced": {
@@ -266,7 +270,7 @@
                                 "max_tool_iterations": "Wie oft das Modell vor der Antwort Werkzeuge aufrufen darf.",
                                 "max_tool_result_chars": "Kürzt lange Werkzeugergebnisse. 0 behält sie ganz."
                             },
-                            "description": "Nur wirksam, wenn eine Home-Assistant-API gewählt ist."
+                            "description": "Nur wirksam, wenn dieser Agent Werkzeuge hat."
                         },
                         "limits": {
                             "name": "Grenzen und Eingaben",

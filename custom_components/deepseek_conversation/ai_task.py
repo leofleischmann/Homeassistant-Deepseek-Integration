@@ -43,6 +43,7 @@ from .types import (
 )
 from .user_context import EMPTY_SPEAKER_CONTEXT
 from .vision import ai_task_entity_features_for_options
+from .agent_tools import agent_llm_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ def _parse_structured_task_response(text: str) -> Any:
 
 async def _async_apply_entry_llm_options(
     hass: HomeAssistant,
+    entry: DeepSeekConfigEntry,
     options: Mapping[str, Any],
     chat_log: conversation.ChatLog,
     task: ai_task.GenDataTask,
@@ -78,10 +80,11 @@ async def _async_apply_entry_llm_options(
     strings - so one prompt can be shared with Assist without tripping over
     undefined names.
     """
-    user_llm_hass_api = (
-        task.llm_api
-        if task.llm_api is not None
-        else options.get(CONF_LLM_HASS_API)
+    user_llm_hass_api = agent_llm_api(
+        hass,
+        entry,
+        options,
+        task.llm_api if task.llm_api is not None else options.get(CONF_LLM_HASS_API),
     )
     user_llm_prompt = (options.get(CONF_PROMPT) or "").strip() or DEFAULT_SYSTEM_PROMPT
     user_llm_prompt = EMPTY_SPEAKER_CONTEXT.apply_to_prompt(user_llm_prompt)
@@ -157,7 +160,9 @@ class DeepSeekAITaskEntity(ai_task.AITaskEntity):
         )
 
         options = self.subentry.data
-        await _async_apply_entry_llm_options(self.hass, options, chat_log, task)
+        await _async_apply_entry_llm_options(
+            self.hass, self.entry, options, chat_log, task
+        )
 
         response_schema = None
         if task.structure is not None:

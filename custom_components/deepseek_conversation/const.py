@@ -42,6 +42,13 @@ CONF_INCLUDE_USER_CONTEXT = "include_user_context"
 CONF_REQUEST_TIMEOUT = "request_timeout"
 CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
+#: Per agent: may this one search the web with the entry's Brave key. Until
+#: 1.8.4 the tool was a globally registered LLM API instead, which put it in
+#: every *other* conversation integration's API picker as well (#38).
+CONF_WEB_SEARCH = "web_search"
+#: How that API's id was built, so migration can recognise an agent that had
+#: selected it and turn the selection into CONF_WEB_SEARCH.
+LEGACY_WEB_SEARCH_API_ID_PREFIX = f"{DOMAIN}_web_search_"
 CONF_AGENT = "agent"
 CONF_CONFIG_ENTRY = "config_entry"
 CONF_FILENAMES = "filenames"
@@ -161,7 +168,13 @@ RECOMMENDED_AI_TASK_OPTIONS: dict[str, Any] = {
 #: The settings the first step of the agent form asks for. Everything else is
 #: an override of a recommended default. See options.recommended_agent_options().
 BASIC_AGENT_OPTIONS: frozenset[str] = frozenset(
-    {CONF_RECOMMENDED, CONF_PROMPT, CONF_LLM_HASS_API, CONF_CHAT_MODEL}
+    {
+        CONF_RECOMMENDED,
+        CONF_PROMPT,
+        CONF_LLM_HASS_API,
+        CONF_WEB_SEARCH,
+        CONF_CHAT_MODEL,
+    }
 )
 
 #: Settings that only mean something when a person is on the other end.

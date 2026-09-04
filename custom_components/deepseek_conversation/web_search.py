@@ -1,16 +1,18 @@
-"""Brave Search web tool as a Home Assistant LLM API.
+"""The Brave Search web tool.
 
 Affects / influenced by:
-- Registered from ``__init__.async_setup_entry`` when ``CONF_BRAVE_API_KEY`` is set
-  on the config entry; unregistered on entry unload.
-- Credential lives in ``entry.data`` (setup / reconfigure in ``config_flow.py``).
-- Appears in the Assist options multi-select via ``llm.async_get_apis``
-  (``CONF_LLM_HASS_API``); the shared tool loop in ``chat_session.py``
-  uses it only when the user selects this API.
+- The credential lives in ``entry.data`` (setup / reconfigure in
+  ``config_flow.py``); ``CONF_WEB_SEARCH`` in an agent's subentry says whether
+  that agent may use it.
+- ``agent_tools.py`` is what puts the tool in front of an agent. It is
+  deliberately never registered with ``llm.async_register_api``: that registry
+  is global, so registering it put a "Web Search (Brave)" entry into every
+  *other* conversation integration's settings as well (#38).
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol # pyright: ignore[reportMissingImports]
@@ -21,13 +23,12 @@ from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[repor
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.llm import (  # pyright: ignore[reportMissingImports]
-    APIInstance,
     LLMContext,
     ToolInput,
 )
 from homeassistant.util.json import JsonObjectType  # pyright: ignore[reportMissingImports]
 
-from .const import CONF_BRAVE_API_KEY, DOMAIN, LOGGER
+from .const import CONF_BRAVE_API_KEY, CONF_WEB_SEARCH, LOGGER
 
 BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 DEFAULT_RESULT_COUNT = 5
@@ -42,9 +43,14 @@ WEB_SEARCH_API_PROMPT = (
 )
 
 
-def web_search_api_id(entry_id: str) -> str:
-    """Stable LLM API id for a DeepSeek config entry's Brave web search."""
-    return f"{DOMAIN}_web_search_{entry_id}"
+def brave_api_key(entry: ConfigEntry) -> str:
+    """The Brave subscription token on this entry, or an empty string."""
+    return (entry.data.get(CONF_BRAVE_API_KEY) or "").strip()
+
+
+def web_search_enabled(entry: ConfigEntry, options: Mapping[str, Any]) -> bool:
+    """Whether this agent asked for web search and the entry can provide it."""
+    return bool(options.get(CONF_WEB_SEARCH)) and bool(brave_api_key(entry))
 
 
 class WebSearchTool(llm.Tool):
@@ -155,54 +161,3 @@ class WebSearchTool(llm.Tool):
             query,
         )
         return {"query": query, "results": results}
-
-
-class WebSearchAPI(llm.API):
-    """LLM API exposing Brave web_search for a DeepSeek config entry."""
-
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Bind API id/name to the config entry that holds the Brave key."""
-        super().__init__(
-            hass=hass,
-            id=web_search_api_id(entry.entry_id),
-            name=f"{entry.title} Web Search (Brave)",
-        )
-        self._entry = entry
-
-    async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
-        """Build an API instance with the current Brave key from entry data."""
-        api_key = (self._entry.data.get(CONF_BRAVE_API_KEY) or "").strip()
-        if not api_key:
-            raise HomeAssistantError(
-                "Brave Search API key is missing; reconfigure the DeepSeek integration"
-            )
-        return APIInstance(
-            api=self,
-            api_prompt=WEB_SEARCH_API_PROMPT,
-            llm_context=llm_context,
-            tools=[WebSearchTool(api_key)],
-        )
-
-
-def async_register_web_search_api(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> None:
-    """Register the Brave web search LLM API when a key is configured.
-
-    Call from ``async_setup_entry``. Unregisters automatically on entry unload.
-    """
-    api_key = (entry.data.get(CONF_BRAVE_API_KEY) or "").strip()
-    if not api_key:
-        LOGGER.debug(
-            "[Debug web_search]: no Brave key on entry %s; skip API registration",
-            entry.entry_id,
-        )
-        return
-
-    LOGGER.debug(
-        "[Debug web_search]: registering LLM API id=%s for entry %s",
-        web_search_api_id(entry.entry_id),
-        entry.entry_id,
-    )
-    unregister = llm.async_register_api(hass, WebSearchAPI(hass=hass, entry=entry))
-    entry.async_on_unload(unregister)

@@ -18,7 +18,7 @@ Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the br
 | **Agents** | One API key, as many agents as you like — a fast one for voice, a capable one for automations, an AI Task entity on its own prompt ([details](#agents)) |
 | **Assist** | Pick an agent in your voice assistant settings; same config for voice and text chat |
 | **Who is speaking** | Optional: pass the Home Assistant user and room into the prompt so replies can be personalised ([details](#who-is-speaking)) |
-| **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool when a Brave API key is set |
+| **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional Brave Search web tool, switched on per agent when a Brave API key is set |
 | **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
 | **Images** | Select `deepseek-v4-flash-vision-exp` to send camera snapshots and attachments to the official API ([details](#images)) |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
@@ -43,7 +43,7 @@ Release download badge counts GitHub `deepseek_conversation.zip` assets, not the
 
 1. **Settings → Devices & services → Add integration → DeepSeek Conversation**
 2. Enter API key (optional: custom base URL, model, Brave Search API key)
-3. Setup creates one conversation agent and one AI Task entity. Open an agent's row to set its prompt, model and tools. If you set a Brave key, also select **Web Search (Brave)** under Home Assistant API
+3. Setup creates one conversation agent and one AI Task entity. Open an agent's row to set its prompt, model and tools. If you set a Brave key, each agent's row also gains a **Web search (Brave)** switch
 4. Assign the conversation agent to your Assist pipeline / voice assistant
 
 Change API key, base URL, or Brave Search key via the integration card **⋮ → Reconfigure**.
