@@ -5,5 +5,7 @@ __pycache__/
 .Python
 .venv/
 venv/
+# Echtes Home Assistant zum Testen, gebaut von scripts/ha_testenv.py (~1 GB)
+.venv-ha/
 .env
 deepseek_conversation.zip

@@ -73,7 +73,7 @@
                     "chat_model": "模型"
                 },
                 "data_description": {
-                    "brave_api_key": "可选。启用 Web Search (Brave) LLM API。设置后请在配置 → Home Assistant API 中与 Assist 一并勾选。"
+                    "brave_api_key": "可选。为本集成的每个代理添加“网页搜索”开关，仅它们可以使用。"
                 },
                 "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 和 deepseek-reasoner 已于 2026-07-24 下线，不再受支持。"
             },
@@ -130,6 +130,7 @@
                         "name": "名称",
                         "prompt": "指令",
                         "llm_hass_api": "Home Assistant API",
+                        "web_search": "网页搜索（Brave）",
                         "chat_model": "模型",
                         "recommended": "推荐设置"
                     },
@@ -137,7 +138,8 @@
                         "prompt": "一个模板。可用变量见 README。",
                         "llm_hass_api": "未选择则无法控制你的家。",
                         "chat_model": "Flash 最快，Pro 最强，Vision 可接收图片。",
-                        "recommended": "关闭后将打开包含其余项的第二步。"
+                        "recommended": "关闭后将打开包含其余项的第二步。",
+                        "web_search": "允许该代理使用你的 Brave 密钥在公开网络上查询。"
                     }
                 },
                 "advanced": {
@@ -172,7 +174,7 @@
                                 "max_tool_iterations": "模型作答前可调用工具的次数。",
                                 "max_tool_result_chars": "缩短过长的工具结果。0 表示保留全部。"
                             },
-                            "description": "仅在选择了 Home Assistant API 时生效。"
+                            "description": "仅在该代理拥有工具时生效。"
                         },
                         "conversation": {
                             "name": "对话",
@@ -224,6 +226,7 @@
                         "name": "名称",
                         "prompt": "指令",
                         "llm_hass_api": "Home Assistant API",
+                        "web_search": "网页搜索（Brave）",
                         "chat_model": "模型",
                         "recommended": "推荐设置"
                     },
@@ -231,7 +234,8 @@
                         "prompt": "一个模板。可用变量见 README。",
                         "llm_hass_api": "未选择则无法控制你的家。",
                         "chat_model": "Flash 最快，Pro 最强，Vision 可接收图片。",
-                        "recommended": "关闭后将打开包含其余项的第二步。"
+                        "recommended": "关闭后将打开包含其余项的第二步。",
+                        "web_search": "允许该代理使用你的 Brave 密钥在公开网络上查询。"
                     }
                 },
                 "advanced": {
@@ -266,7 +270,7 @@
                                 "max_tool_iterations": "模型作答前可调用工具的次数。",
                                 "max_tool_result_chars": "缩短过长的工具结果。0 表示保留全部。"
                             },
-                            "description": "仅在选择了 Home Assistant API 时生效。"
+                            "description": "仅在该代理拥有工具时生效。"
                         },
                         "limits": {
                             "name": "限制与输入",

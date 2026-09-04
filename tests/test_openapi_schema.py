@@ -5,9 +5,10 @@ its caller's serializer answer against its own ``UNSUPPORTED`` sentinel by
 identity — so the wrong pairing does not raise, it returns the *other*
 library's sentinel as if it were a schema. That object reached the API inside
 the tools array and killed every request in the SDK's ``json.dumps``. Two
-guards are pinned down below: the serializer's answer is translated to the
-sentinel the converter in use expects, and a non-dict result is refused
-whatever produced it.
+guards are pinned down below: any serializer answer that is not a schema is
+translated into the sentinel the converter in use expects, and a rendered
+result is refused unless it survives ``json.dumps`` — at every depth, because
+a marker can be buried inside an otherwise ordinary schema.
 
 The converters are injected rather than installed, so this runs on a bare
 Python without either library::
@@ -43,19 +44,16 @@ OLD_UNSUPPORTED = _Sentinel("old")
 
 
 class _UsingConverters(unittest.TestCase):
-    """Install a converter list, and the sentinels it knows, for one test."""
+    """Install a converter list for one test."""
 
     def setUp(self) -> None:
         self._converters = openapi_schema.CONVERTERS
-        self._known = openapi_schema.KNOWN_UNSUPPORTED
 
     def tearDown(self) -> None:
         openapi_schema.CONVERTERS = self._converters
-        openapi_schema.KNOWN_UNSUPPORTED = self._known
 
     def use(self, *converters: Converter) -> None:
         openapi_schema.CONVERTERS = list(converters)
-        openapi_schema.KNOWN_UNSUPPORTED = (NEW_UNSUPPORTED, OLD_UNSUPPORTED)
 
 
 class TestSentinelTranslation(_UsingConverters):
@@ -75,6 +73,33 @@ class TestSentinelTranslation(_UsingConverters):
         # OLD_UNSUPPORTED as the schema, which is the reported failure.
         rendered = render("x", custom_serializer=lambda schema: OLD_UNSUPPORTED)
         self.assertEqual(rendered, {"type": "object", "properties": {}})
+
+    def test_a_marker_no_list_could_know_about_is_translated_too(self) -> None:
+        """The rule is "not a schema means defer", so a third library is covered."""
+
+        def new_converter(schema, *, custom_serializer=None):
+            answer = custom_serializer(schema)
+            if answer is not NEW_UNSUPPORTED:
+                return answer
+            return {"type": "object", "properties": {}}
+
+        self.use(Converter("new", new_converter, NEW_UNSUPPORTED))
+        rendered = render("x", custom_serializer=lambda schema: _Sentinel("third"))
+        self.assertEqual(rendered, {"type": "object", "properties": {}})
+
+    def test_a_serializer_that_answers_none_defers_instead_of_leaking(self) -> None:
+        """Core's MergedAPI hands back the raw node when its serializers all pass."""
+
+        def new_converter(schema, *, custom_serializer=None):
+            answer = custom_serializer(schema)
+            if answer is not NEW_UNSUPPORTED:
+                return answer
+            return {"type": "string"}
+
+        self.use(Converter("new", new_converter, NEW_UNSUPPORTED))
+        self.assertEqual(
+            render("x", custom_serializer=lambda schema: None), {"type": "string"}
+        )
 
     def test_a_real_answer_from_the_serializer_is_passed_through(self) -> None:
         def converter(schema, *, custom_serializer=None):
@@ -121,6 +146,38 @@ class TestRenderOpenapiSchema(_UsingConverters):
         self.use(Converter("leaky", leaky, NEW_UNSUPPORTED))
         with self.assertRaises(SchemaConversionError):
             render("x")
+
+    def test_a_marker_buried_inside_the_schema_is_caught_as_well(self) -> None:
+        """What checking only the top level missed: one unrenderable property.
+
+        A converter asks the serializer per node and returns its answer where
+        the node was, so the object arrives as a property value while the
+        schema around it looks perfectly ordinary.
+        """
+
+        def leaky(schema, *, custom_serializer=None):
+            return {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "area": _Sentinel("buried")},
+            }
+
+        self.use(Converter("leaky", leaky, NEW_UNSUPPORTED))
+        with self.assertRaises(SchemaConversionError) as caught:
+            render("x")
+        self.assertIn("cannot be sent as JSON", str(caught.exception))
+
+    def test_a_converter_that_buries_one_gives_way_to_one_that_does_not(self) -> None:
+        def leaky(schema, *, custom_serializer=None):
+            return {"properties": {"area": _Sentinel("buried")}}
+
+        def clean(schema, *, custom_serializer=None):
+            return {"properties": {"area": {"type": "string"}}}
+
+        self.use(
+            Converter("leaky", leaky, NEW_UNSUPPORTED),
+            Converter("clean", clean, OLD_UNSUPPORTED),
+        )
+        self.assertEqual(render("x"), {"properties": {"area": {"type": "string"}}})
 
     def test_the_next_converter_is_tried_when_one_cannot_read_the_schema(self) -> None:
         """A core whose schema objects the newer library does not understand."""

@@ -42,6 +42,7 @@ from .options import (
     adopt_strip_markdown_default,
     ai_task_options_from,
     fold_context_switch,
+    move_web_search_selection,
 )
 
 
@@ -58,7 +59,37 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version < 3:
         _async_migrate_options_to_subentries(hass, entry)
 
+    if entry.version < 4:
+        _async_migrate_web_search_api_to_option(hass, entry)
+        hass.config_entries.async_update_entry(entry, version=4)
+
     return True
+
+
+@callback
+def _async_migrate_web_search_api_to_option(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Turn a selected Brave web search API into the agent's own setting.
+
+    Web search used to be a registered LLM API, chosen in the same picker as
+    Assist. That registry is global, so it also appeared in every other
+    conversation integration's settings (#38); the tool is private to this
+    integration's agents now and has its own switch. An agent that had picked
+    the API keeps web search - the choice moves, the behaviour does not.
+    """
+    for subentry in list(entry.subentries.values()):
+        if subentry.subentry_type not in SUBENTRY_TYPES:
+            continue
+        moved = move_web_search_selection(subentry.data)
+        if moved is None:
+            continue
+        hass.config_entries.async_update_subentry(entry, subentry, data=moved)
+        LOGGER.info(
+            "Web search is now a setting of the agent %s rather than a Home "
+            "Assistant API, so it is no longer offered to other integrations",
+            subentry.title,
+        )
 
 
 @callback

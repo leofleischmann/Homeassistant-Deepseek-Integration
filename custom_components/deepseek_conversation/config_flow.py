@@ -45,6 +45,7 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_PROMPT,
     CONF_RECOMMENDED,
+    CONF_WEB_SEARCH,
     DEEPSEEK_API_BASE_URL,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
@@ -68,6 +69,7 @@ from .flow_schemas import (
 )
 from .models import is_retired_chat_model
 from .options import recommended_agent_options
+from .web_search import brave_api_key
 
 
 async def _async_check_credentials(
@@ -126,7 +128,7 @@ async def async_validate_reconfigure_input(
 class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for DeepSeek Conversation."""
 
-    VERSION = 3
+    VERSION = 4
 
     def _async_update_entry_and_abort(
         self, entry: ConfigEntry, **kwargs: Any
@@ -338,6 +340,10 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
     def _base_url(self) -> str:
         return self._get_entry().data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
 
+    def _has_brave_key(self) -> bool:
+        """Whether the entry can offer web search to its agents at all."""
+        return bool(brave_api_key(self._get_entry()))
+
     def _default_name(self) -> str:
         return (
             DEFAULT_CONVERSATION_NAME
@@ -373,13 +379,17 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
         options = self.options
         errors: dict[str, str] = {}
 
-        # Drop APIs that no longer exist - web search after the Brave key was
-        # removed, say - so the form does not offer a value it cannot save.
+        # Drop APIs that no longer exist - one whose integration was removed
+        # since - so the form does not offer a value it cannot save.
         available_apis = {api.id for api in llm.async_get_apis(self.hass)}
         if selected := normalize_llm_hass_api(options.get(CONF_LLM_HASS_API)):
             options[CONF_LLM_HASS_API] = [
                 api for api in selected if api in available_apis
             ]
+        # Same for web search once the Brave key is gone: the field is not on
+        # the form any more, so nothing would clear a stored True.
+        if not self._has_brave_key():
+            options.pop(CONF_WEB_SEARCH, None)
 
         if user_input is not None:
             if is_retired_chat_model(
@@ -396,6 +406,9 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
                     options.pop(CONF_LLM_HASS_API, None)
                 else:
                     options[CONF_LLM_HASS_API] = normalized
+                if not options.get(CONF_WEB_SEARCH):
+                    # Off is the default, so storing it says nothing extra.
+                    options.pop(CONF_WEB_SEARCH, None)
 
                 if options.get(CONF_RECOMMENDED):
                     return self._async_save()
@@ -486,6 +499,21 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
                 vol.Optional(CONF_LLM_HASS_API): SelectSelector(
                     SelectSelectorConfig(options=hass_apis, multiple=True)
                 ),
+            }
+        )
+        # Asked here rather than in the advanced step, because that step only
+        # opens once the recommended settings are switched off - and web search
+        # is a choice about this agent, not an expert setting.
+        if self._has_brave_key():
+            schema[
+                vol.Optional(
+                    CONF_WEB_SEARCH,
+                    default=bool(self.options.get(CONF_WEB_SEARCH)),
+                )
+            ] = BooleanSelector()
+
+        schema.update(
+            {
                 vol.Optional(CONF_CHAT_MODEL): chat_model_selector(),
                 vol.Required(CONF_RECOMMENDED, default=True): BooleanSelector(),
             }

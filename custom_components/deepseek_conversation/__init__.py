@@ -30,7 +30,6 @@ from .migration import (
 from .services import async_setup_services
 from .types import DeepSeekConfigEntry, DeepSeekRuntimeData
 from .usage_metrics import UsageTracker
-from .web_search import async_register_web_search_api
 
 PLATFORMS = (Platform.AI_TASK, Platform.CONVERSATION, Platform.SENSOR, Platform.BUTTON)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -59,9 +58,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: DeepSeekConfigEntry) -> 
 
     client = await async_create_client(hass, entry)
     entry.runtime_data = DeepSeekRuntimeData(client=client, usage=UsageTracker())
-
-    # Optional Brave web_search LLM API (see web_search.py); only when key in entry.data.
-    async_register_web_search_api(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 

@@ -2,6 +2,18 @@
 
 All notable changes to this integration.
 
+## [1.8.4] - 2026-09-04
+
+Web search moves off the shared Home Assistant API list onto the agent that owns it. An agent that had it selected keeps it — the setting moves for you.
+
+### Fixed
+- **The Brave web search tool was offered to every other conversation integration.** It was registered with `llm.async_register_api`, and that registry is what Home Assistant builds *every* agent's **Home Assistant API** picker from — so Anthropic, Gemini, OpenAI and OpenRouter agents could all search the web on this integration's Brave key. It is no longer registered anywhere; each agent has its own **Web search (Brave)** switch instead, shown once the entry carries a Brave key.
+- **A tool schema could still reach the API as something the SDK cannot serialise.** 1.8.3 fixed the cause of `Object of type _Unsupported is not JSON serializable` — if you still see it, updating is the fix. Two ways back to it are closed too: any serializer answer that is not a schema now means “you render it”, whichever library it came from, and the result is checked with the same `json.dumps` the SDK uses, at every depth rather than only at the top. A schema that fails that costs one skipped tool named in the log, never the whole request.
+
+### Added
+- `run_debug` reports whether the entry has a Brave key and whether the agent has web search on.
+- Tests for the moved setting, and — against a real Home Assistant — for the agent-private tool API and for a mismatch between two schema libraries.
+
 ## [1.8.3] - 2026-09-03
 
 Nothing to do on upgrade. Required for recent Home Assistant releases, where no tool worked at all.

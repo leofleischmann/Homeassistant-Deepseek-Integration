@@ -3,31 +3,38 @@
 Home Assistant moved this conversion from ``voluptuous_openapi.convert`` to
 ``probatio.to_openapi``. The two take the same arguments and behave the same
 way with one exception that matters enormously: each asks the caller's
-``custom_serializer`` first and then compares its answer against **its own**
-``UNSUPPORTED`` sentinel, by identity.
+``custom_serializer`` first and returns whatever it answers, unless that answer
+is **its own** ``UNSUPPORTED`` sentinel, which it recognises by identity.
 
-That identity check is why they cannot be mixed. Calling the old converter on a
-core that hands out the new serializer compares ``probatio.UNSUPPORTED`` against
-``voluptuous_openapi.UNSUPPORTED``, finds them different, and returns the
-foreign sentinel as if it were a finished schema. Every tool then reached the
-API as ``"parameters": UNSUPPORTED`` and the whole request died inside the SDK's
-``json.dumps`` with ``Object of type _Unsupported is not JSON serializable`` -
-so no tool worked at all, on any model, with nothing in the log naming the
-cause.
+That identity check is why they cannot be mixed. Calling one converter with a
+serializer built against the other compares two different sentinels, finds them
+different, and returns the foreign one as if it were a finished schema. Every
+tool then reached the API as ``"parameters": UNSUPPORTED`` and the whole request
+died inside the SDK's ``json.dumps`` with ``Object of type _Unsupported is not
+JSON serializable`` - so no tool worked at all, on any model, with nothing in
+the log naming the cause.
 
-Two things make that impossible here rather than one. The serializer is wrapped
-so that *any* library's "I cannot render this" answer is translated into the
-sentinel the converter actually being used checks for, which removes the
-mismatch at its source; and a result that is not a dict is refused whatever
-produced it, so a sentinel can never reach the request even if some future
-library brings a third one. Converters are then simply tried in turn, core's
-current one first, which also settles the separate question of which library
-understands the schema object core handed us.
+Two rules keep that from happening again, and neither needs to know which
+libraries exist:
+
+* the serializer is wrapped so that any answer which is **not a schema** means
+  "defer", translated into the sentinel the converter in use recognises. Every
+  library's marker is an opaque singleton, so this covers the two that exist
+  today and any third one equally, without a list to keep up to date;
+* a rendered result is refused unless it survives ``json.dumps`` - the same call
+  the SDK makes. A converter asks the serializer for every node and returns that
+  answer where the node was, so a marker can be buried inside an otherwise
+  ordinary schema, where checking only the top level would not see it.
+
+Converters are then simply tried in turn, core's current one first, which also
+settles the separate question of which library understands the schema object
+core handed us.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from typing import Any, NamedTuple
 
 from .const import LOGGER
@@ -73,32 +80,45 @@ def _available_converters() -> list[_Converter]:
 #: Resolved once at import; the installed set cannot change while HA runs.
 CONVERTERS = _available_converters()
 
-#: Every "cannot render this" marker we know, for recognising a foreign one.
-KNOWN_UNSUPPORTED = tuple(converter.unsupported for converter in CONVERTERS)
-
-
-def _is_unsupported(value: Any) -> bool:
-    """Whether a serializer's answer is any library's UNSUPPORTED marker."""
-    return any(value is sentinel for sentinel in KNOWN_UNSUPPORTED)
-
 
 def _translating(
     custom_serializer: Callable[..., Any] | None, unsupported: Any
 ) -> Callable[..., Any] | None:
-    """Wrap a serializer so its "unsupported" answer is one this converter knows.
+    """Wrap a serializer so "I cannot render this" is said in the right dialect.
 
-    Without this the answer is compared by identity against a sentinel from a
-    different library, silently succeeds, and the marker object is returned as
-    the schema. A real schema is passed through untouched.
+    The contract both libraries define is: answer with a schema object, or with
+    the sentinel meaning "you handle it". A schema object is always a dict, so
+    anything else is the second answer however it is spelled - the other
+    library's sentinel, a future third one, or a ``None`` from a serializer that
+    reads the contract differently. All of them become the sentinel this
+    converter checks for, which is the only value it will not hand back as a
+    schema.
     """
     if custom_serializer is None:
         return None
 
     def translate(schema: Any) -> Any:
         answer = custom_serializer(schema)
-        return unsupported if _is_unsupported(answer) else answer
+        return answer if isinstance(answer, dict) else unsupported
 
     return translate
+
+
+def _unsendable(rendered: Any) -> str | None:
+    """Why ``rendered`` must not be sent, or ``None`` if it may be.
+
+    ``json.dumps`` is the same call the OpenAI SDK makes on the finished
+    request, so a schema that passes here reaches the API intact - and one that
+    does not costs a skipped tool with its name in the log, rather than a whole
+    request failing on a ``TypeError`` raised deep inside the SDK.
+    """
+    if not isinstance(rendered, dict):
+        return f"returned {rendered!r} instead of a schema"
+    try:
+        json.dumps(rendered)
+    except (TypeError, ValueError) as err:
+        return f"returned a schema that cannot be sent as JSON ({err})"
+    return None
 
 
 def render_openapi_schema(
@@ -124,15 +144,16 @@ def render_openapi_schema(
         except Exception as err:  # noqa: BLE001 - any failure means "try the next one"
             problems.append(f"{converter.name} raised {type(err).__name__}: {err}")
             continue
-        if isinstance(rendered, dict):
-            if problems:
-                LOGGER.debug(
-                    "[Debug conversation]: rendered the schema with %s after %s",
-                    converter.name,
-                    "; ".join(problems),
-                )
-            return rendered
-        problems.append(f"{converter.name} returned {rendered!r} instead of a schema")
+        if (refusal := _unsendable(rendered)) is not None:
+            problems.append(f"{converter.name} {refusal}")
+            continue
+        if problems:
+            LOGGER.debug(
+                "[Debug conversation]: rendered the schema with %s after %s",
+                converter.name,
+                "; ".join(problems),
+            )
+        return rendered
 
     if not CONVERTERS:
         problems.append("neither probatio nor voluptuous_openapi is installed")

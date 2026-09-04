@@ -21,6 +21,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
+
 from .const import (
     ASSIST_ONLY_OPTIONS,
     BASIC_AGENT_OPTIONS,
@@ -29,6 +31,8 @@ from .const import (
     CONF_MAX_TOOL_RESULT_CHARS,
     CONF_REQUEST_TIMEOUT,
     CONF_STRIP_MARKDOWN,
+    CONF_WEB_SEARCH,
+    LEGACY_WEB_SEARCH_API_ID_PREFIX,
     MAX_HISTORY_ROUNDS_UPPER_BOUND,
     MAX_TOKENS_UPPER_BOUND,
     MAX_TOOL_ITERATIONS_UPPER_BOUND,
@@ -195,3 +199,34 @@ def fold_context_switch(options: dict[str, Any]) -> dict[str, Any]:
         options[CONF_MAX_TOOL_RESULT_CHARS] = 0
         options[CONF_MAX_HISTORY_ROUNDS] = 0
     return options
+
+
+def move_web_search_selection(options: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Turn a selected Brave web search API into the agent's own setting.
+
+    Web search used to be a registered LLM API, picked in the same list as
+    Assist. That registry is global, so it also appeared in every other
+    conversation integration's settings (#38). The tool is private to this
+    integration's agents now and has its own switch, so an agent that had
+    selected the API keeps web search - the choice moves, the behaviour does not.
+
+    Returns the agent's new settings, or ``None`` when it never selected it.
+    """
+    selected = options.get(CONF_LLM_HASS_API)
+    api_ids = [selected] if isinstance(selected, str) else list(selected or [])
+    kept = [
+        api_id
+        for api_id in api_ids
+        if not str(api_id).startswith(LEGACY_WEB_SEARCH_API_ID_PREFIX)
+    ]
+    if len(kept) == len(api_ids):
+        return None
+
+    moved = {**options, CONF_WEB_SEARCH: True}
+    if kept:
+        moved[CONF_LLM_HASS_API] = kept
+    else:
+        # An empty list is not the same as "no control": the form stores the
+        # key only when something is selected.
+        moved.pop(CONF_LLM_HASS_API, None)
+    return moved

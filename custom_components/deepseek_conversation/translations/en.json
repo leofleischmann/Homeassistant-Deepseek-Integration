@@ -73,7 +73,7 @@
                     "chat_model": "Model"
                 },
                 "data_description": {
-                    "brave_api_key": "Optional. Enables a Web Search (Brave) LLM API. After setup, select it under Configure → Home Assistant API together with Assist."
+                    "brave_api_key": "Optional. Adds a Web search switch to each of this integration's agents. Only they can use it."
                 },
                 "description": "Connect to the DeepSeek API. Default model is DeepSeek V4 Flash. The legacy names deepseek-chat and deepseek-reasoner were retired on 2026-07-24 and are no longer accepted."
             },
@@ -130,6 +130,7 @@
                         "name": "Name",
                         "prompt": "Instructions",
                         "llm_hass_api": "Home Assistant API",
+                        "web_search": "Web search (Brave)",
                         "chat_model": "Model",
                         "recommended": "Recommended settings"
                     },
@@ -137,7 +138,8 @@
                         "prompt": "A template. See the README for the available variables.",
                         "llm_hass_api": "Nothing selected means no control over your home.",
                         "chat_model": "Flash is fastest, Pro strongest, Vision accepts images.",
-                        "recommended": "Off opens a second step with everything else."
+                        "recommended": "Off opens a second step with everything else.",
+                        "web_search": "Lets this agent look things up on the public web with your Brave key."
                     }
                 },
                 "advanced": {
@@ -172,7 +174,7 @@
                                 "max_tool_iterations": "How often the model may call tools before answering.",
                                 "max_tool_result_chars": "Shortens long tool results. 0 keeps them whole."
                             },
-                            "description": "Only used when a Home Assistant API is selected."
+                            "description": "Only used when this agent has tools."
                         },
                         "conversation": {
                             "name": "Conversation",
@@ -224,6 +226,7 @@
                         "name": "Name",
                         "prompt": "Instructions",
                         "llm_hass_api": "Home Assistant API",
+                        "web_search": "Web search (Brave)",
                         "chat_model": "Model",
                         "recommended": "Recommended settings"
                     },
@@ -231,7 +234,8 @@
                         "prompt": "A template. See the README for the available variables.",
                         "llm_hass_api": "Nothing selected means no control over your home.",
                         "chat_model": "Flash is fastest, Pro strongest, Vision accepts images.",
-                        "recommended": "Off opens a second step with everything else."
+                        "recommended": "Off opens a second step with everything else.",
+                        "web_search": "Lets this agent look things up on the public web with your Brave key."
                     }
                 },
                 "advanced": {
@@ -266,7 +270,7 @@
                                 "max_tool_iterations": "How often the model may call tools before answering.",
                                 "max_tool_result_chars": "Shortens long tool results. 0 keeps them whole."
                             },
-                            "description": "Only used when a Home Assistant API is selected."
+                            "description": "Only used when this agent has tools."
                         },
                         "limits": {
                             "name": "Limits and input",
