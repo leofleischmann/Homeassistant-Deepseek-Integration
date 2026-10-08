@@ -2,6 +2,13 @@
 
 All notable changes to this integration.
 
+## [1.8.5] - 2026-10-08
+
+Nothing to do on upgrade. Required on Home Assistant 2026.10, where the integration did not start.
+
+### Fixed
+- **Setup failed on Home Assistant 2026.10.** Core pins `openai==3.10.0` and installs every custom requirement against that pin. The manifest allowed only `openai<3`, so the resolver refused to load the integration. It now requires `openai>=1.68.2`, which accepts the version the running Core pins, including the 2.x line shipped from 2026.2 through 2026.9.
+
 ## [1.8.4] - 2026-09-04
 
 Web search moves off the shared Home Assistant API list onto the agent that owns it. An agent that had it selected keeps it — the setting moves for you.

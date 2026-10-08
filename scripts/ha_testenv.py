@@ -16,6 +16,12 @@ from the manifests: the integration's own ``requirements``, and then the
 ``requirements`` of the core components it depends on, taken from the core that
 was just installed. Ask for a different version and it brings its own.
 
+Those requirements are installed with that core's ``package_constraints.txt``,
+the same file Home Assistant passes to uv. ``openai`` in the integration
+manifest is a floor only (see ``client.py``); without the constraints file this
+environment would install a newer SDK than the core under test. ``h2`` and
+``voluptuous-openapi`` keep their own upper bounds in the manifest.
+
 Usage (or via ``hatest.bat``)::
 
     python scripts/ha_testenv.py              # latest Home Assistant
@@ -107,19 +113,27 @@ def component_requirements(components: Path, roots: list[str]) -> list[str]:
     return sorted(set(found))
 
 
-def install(interpreter: Path, packages: list[str], *, what: str) -> list[str]:
+def install(
+    interpreter: Path,
+    packages: list[str],
+    *,
+    what: str,
+    constraints: Path,
+) -> list[str]:
     """Install ``packages``, and return the ones that would not install.
 
-    One pip call for the common case; on failure each package is retried alone,
-    so a single unbuildable wheel costs that package rather than the whole
-    environment.
+    ``constraints`` is the ``package_constraints.txt`` of the Home Assistant
+    just installed. Core passes that file to every requirement install
+    (``homeassistant/requirements.py``). One pip call for the common case; on
+    failure each package is retried alone, so a single unbuildable wheel costs
+    that package rather than the whole environment.
     """
     if not packages:
         return []
     print(f"Installing {what} ({len(packages)}) ...")
-    attempt = subprocess.run(
-        [str(interpreter), "-m", "pip", "install", "-q", *packages]
-    )
+    print(f"[Debug ha_testenv]: constraints {constraints}")
+    command = [str(interpreter), "-m", "pip", "install", "-q", "-c", str(constraints)]
+    attempt = subprocess.run([*command, *packages])
     if attempt.returncode == 0:
         return []
 
@@ -127,11 +141,14 @@ def install(interpreter: Path, packages: list[str], *, what: str) -> list[str]:
     failed: list[str] = []
     for package in packages:
         one = subprocess.run(
-            [str(interpreter), "-m", "pip", "install", "-q", package],
+            [*command, package],
             capture_output=True,
             text=True,
         )
         if one.returncode != 0:
+            detail = (one.stderr or "").strip().splitlines()
+            tail = detail[-1] if detail else "no stderr"
+            print(f"[Debug ha_testenv]: install failed for {package}: {tail}")
             failed.append(package)
     return failed
 
@@ -161,16 +178,27 @@ def main() -> int:
     installed = capture(
         interpreter, "from homeassistant.const import __version__; print(__version__)"
     )
-    components = Path(
+    core_root = Path(
         capture(
             interpreter,
             "import homeassistant, pathlib;"
             " print(pathlib.Path(homeassistant.__file__).parent)",
         )
-    ) / "components"
+    )
+    components = core_root / "components"
+    constraints = core_root / "package_constraints.txt"
+    if not constraints.is_file():
+        print(
+            f"[Debug ha_testenv]: package_constraints.txt missing at {constraints}. "
+            "Manifest requirements are not installed without it."
+        )
+        return 1
 
     failed = install(
-        interpreter, list(manifest.get("requirements", [])), what="the integration's own"
+        interpreter,
+        list(manifest.get("requirements", [])),
+        what="the integration's own",
+        constraints=constraints,
     )
     # Both the hard and the soft dependencies: the tests import the conversation
     # and ai_task chains, and after_dependencies is where those are declared.
@@ -183,7 +211,12 @@ def main() -> int:
         for package in component_requirements(components, roots)
         if package.split("==")[0].split(">")[0].split("[")[0].strip() not in UNBUILDABLE
     ]
-    failed += install(interpreter, wanted, what=f"what {', '.join(roots)} declare")
+    failed += install(
+        interpreter,
+        wanted,
+        what=f"what {', '.join(roots)} declare",
+        constraints=constraints,
+    )
 
     print(f"\nHome Assistant {installed} ready in {VENV}")
     if failed:

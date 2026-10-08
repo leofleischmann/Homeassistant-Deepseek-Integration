@@ -13,6 +13,16 @@ from __future__ import annotations
 
 from typing import Any
 
+# Package versions are declared in manifest.json. Home Assistant installs them
+# with package_constraints.txt, which pins the openai build for that Core
+# release, so openai has a floor only (openai>=1.68.2). An upper bound makes
+# setup fail as soon as Core's pin crosses it. h2 keeps an upper bound (<5)
+# because the httpx version Core pins requires h2<5. voluptuous-openapi keeps
+# an upper bound (<0.5) for cores before 2026.9; from 2026.9 on, Core ships
+# probatio and openapi_schema.py tries that converter first.
+# scripts/ha_testenv.py installs these same requirements against that
+# constraints file, so the test environment resolves openai the way a real
+# start does.
 import openai
 
 from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
