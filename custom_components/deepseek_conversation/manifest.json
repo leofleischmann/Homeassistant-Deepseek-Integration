@@ -18,9 +18,9 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/leofleischmann/Homeassistant-Deepseek-Integration/issues",
   "requirements": [
-    "openai>=1.68.2,<4",
+    "openai>=1.68.2",
     "voluptuous-openapi>=0.2.0,<0.5",
     "h2>=4.1.0,<5"
   ],
-  "version": "1.8.4"
+  "version": "1.8.5"
 }
