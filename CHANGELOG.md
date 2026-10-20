@@ -2,6 +2,16 @@
 
 All notable changes to this integration.
 
+## [1.8.6] - 2026-10-20
+
+Nothing to do on upgrade. Removes a warning in the Home Assistant log and keeps web search working on future releases.
+
+### Fixed
+- **Home Assistant warned that the `web_search` tool is provided without an integration.** Core 2026.10 added an `integration` attribute to every LLM tool, naming the integration that provides it, and logs `Detected that custom integration 'deepseek_conversation' provides the LLM tool web_search without an integration. This will stop working in Home Assistant 2027.10` for each tool that leaves it unset. Nothing was broken - the tool kept working, because core fills the domain in itself as a stopgap - but that stopgap goes away with the deprecation, at which point the tool would be refused. It now names the integration itself. Reported in #44 and #45.
+
+### Added
+- Tests, against a real Home Assistant, that every tool this integration adds names it, and that the name is the domain core derives from the directory.
+
 ## [1.8.5] - 2026-10-08
 
 Nothing to do on upgrade. Required on Home Assistant 2026.10, where the integration did not start.

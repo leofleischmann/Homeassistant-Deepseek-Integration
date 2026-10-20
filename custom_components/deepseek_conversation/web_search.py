@@ -28,7 +28,7 @@ from homeassistant.helpers.llm import (  # pyright: ignore[reportMissingImports]
 )
 from homeassistant.util.json import JsonObjectType  # pyright: ignore[reportMissingImports]
 
-from .const import CONF_BRAVE_API_KEY, CONF_WEB_SEARCH, LOGGER
+from .const import CONF_BRAVE_API_KEY, CONF_WEB_SEARCH, DOMAIN, LOGGER
 
 BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 DEFAULT_RESULT_COUNT = 5
@@ -69,6 +69,12 @@ class WebSearchTool(llm.Tool):
             ),
         }
     )
+    #: Which integration provides the tool. Home Assistant 2026.10 reports every
+    #: tool that leaves this unset and refuses it from the release named in
+    #: ``llm.TOOL_INTEGRATION_BREAKS_IN_HA_VERSION`` (#44). Core derives the same
+    #: domain from the module path as a stopgap; saying it here is what survives
+    #: that stopgap being removed. Harmless on cores that have no such attribute.
+    integration = DOMAIN
 
     def __init__(self, api_key: str) -> None:
         """Store the Brave subscription token for this tool instance."""

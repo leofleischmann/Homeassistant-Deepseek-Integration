@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 from types import MappingProxyType, SimpleNamespace
 import unittest
 
@@ -84,6 +85,21 @@ def _tool_input_has_external() -> bool:
 
 requires_external = unittest.skipUnless(
     _tool_input_has_external(), "this core's ToolInput has no 'external' field"
+)
+
+
+#: Core's ``llm.Tool`` grew an ``integration`` attribute naming the integration
+#: that provides the tool, and reports every tool that leaves it unset. Older
+#: cores have no such notion, so the cases about it skip there instead of
+#: asserting against a core that never asks.
+def _tool_has_integration() -> bool:
+    if HA_REASON:
+        return False
+    return hasattr(llm.Tool, "integration")
+
+
+requires_tool_integration = unittest.skipUnless(
+    _tool_has_integration(), "this core's llm.Tool has no 'integration' attribute"
 )
 
 
@@ -511,6 +527,22 @@ class TestAgentToolsAPI(unittest.TestCase):
         )
         self.assertEqual(names, ["web_search"])
 
+    @requires_tool_integration
+    def test_every_tool_this_integration_adds_names_it(self) -> None:
+        """Whatever we put in the instance is ours and has to say so (#44).
+
+        Asked of the instance rather than of the class so that a second tool
+        added later is covered without anyone remembering to extend this; no
+        Home Assistant API is selected, so every tool here is one of ours.
+        """
+        instance, _names = asyncio.run(
+            self._tools({self.const.CONF_WEB_SEARCH: True}, None)
+        )
+        self.assertEqual(
+            {tool.name: tool.integration for tool in instance.tools},
+            {"web_search": self.const.DOMAIN},
+        )
+
     def test_a_selection_that_no_longer_exists_fails_as_core_would(self) -> None:
         """Switching web search on must not change how a broken selection behaves.
 
@@ -558,6 +590,48 @@ class TestAgentToolsAPI(unittest.TestCase):
         self.assertEqual(
             sorted(web_search["function"]["parameters"]["properties"]),
             ["count", "query"],
+        )
+
+
+@requires_ha
+class TestToolsNameTheirIntegration(unittest.TestCase):
+    """Every tool of ours says which integration provides it (#44, #45).
+
+    Home Assistant 2026.10 added ``llm.Tool.integration`` and logs a warning
+    for each tool that leaves it at the class default; from the release in
+    ``llm.TOOL_INTEGRATION_BREAKS_IN_HA_VERSION`` such a tool is refused.
+    Nothing was broken when it was reported - the warning is about the release
+    after next - which is exactly why it is worth a test: core tags the tool
+    itself as a stopgap, so once that stopgap goes, only what the tool says
+    about itself is left.
+
+    The default is read off core rather than written down here, so a release
+    that changes it is a failure and not a quietly passing test.
+    """
+
+    def setUp(self) -> None:
+        self.web_search = load("web_search")
+        self.const = load("const")
+
+    @requires_tool_integration
+    def test_web_search_does_not_leave_the_default_in_place(self) -> None:
+        """Core's own test is ``tool.integration is None``; ours must pass it."""
+        self.assertIsNone(llm.Tool.integration)
+        self.assertEqual(
+            self.web_search.WebSearchTool("brave-key").integration,
+            self.const.DOMAIN,
+        )
+
+    @requires_tool_integration
+    def test_the_domain_is_the_one_core_derives_from_the_module_path(self) -> None:
+        """Core reads it from ``custom_components/<domain>``; so must we.
+
+        A tag that disagreed with the directory would silence the warning and
+        still attribute the tool to an integration that does not exist.
+        """
+        self.assertEqual(
+            self.const.DOMAIN,
+            pathlib.Path(self.web_search.__file__).parent.name,
         )
 
 
