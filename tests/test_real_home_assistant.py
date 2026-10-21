@@ -209,6 +209,27 @@ class TestSchemaRendering(unittest.TestCase):
         with self.assertRaises(self.openapi_schema.SchemaConversionError):
             self.openapi_schema.render_openapi_schema(_schemas()["selectors"])
 
+    def test_core_s_serializer_is_what_types_a_bare_validator(self) -> None:
+        """The everyday path has to put a real type on every leaf.
+
+        A converter may leave a validator it does not recognise untyped, and
+        the installed ones disagree about that: ``cv.string`` is a plain
+        function, which probatio renders as ``{}`` while voluptuous-openapi
+        guesses from the return annotation - and guesses ``cv.boolean`` wrong.
+        Core's serializer knows Home Assistant's own validators and is the one
+        actually in use for Assist tools and AI Task structures, so what the
+        model is told about a parameter does not ride on which library core
+        ships. That is the property worth holding, rather than any converter's
+        guess, and it is why the untyped rendering is left alone elsewhere.
+        """
+        rendered = self.openapi_schema.render_openapi_schema(
+            _schemas()["plain_strings"], custom_serializer=llm.selector_serializer
+        )
+        self.assertEqual(rendered["properties"]["name"], {"type": "string"})
+        self.assertEqual(
+            rendered["properties"]["domain"]["items"], {"type": "string"}
+        )
+
 
 @requires_ha
 class TestMixedSchemaLibraries(unittest.TestCase):
@@ -275,6 +296,15 @@ class TestMixedSchemaLibraries(unittest.TestCase):
         Core's ``MergedAPI`` asks each API's serializer in turn and returns the
         first answer, so one leaf can come back in the wrong dialect while
         everything around it is fine.
+
+        What the shim promises is that the dialect stops mattering: a mixture
+        renders exactly as a serializer that defers on every node in the right
+        dialect would. Asserting that equality rather than a literal type is
+        deliberate - what a converter makes of a node it has to render itself
+        is the converter's business and differs between libraries, so a literal
+        here would pin this test to whichever one core happened to ship. The
+        original bug fails it either way: a leaked marker is not what deferring
+        produces, and would not survive ``json.dumps``.
         """
         mine, theirs = self.converters[0], self.converters[1]
 
@@ -284,7 +314,11 @@ class TestMixedSchemaLibraries(unittest.TestCase):
         rendered = self.openapi_schema.render_openapi_schema(
             _schemas()["plain_strings"], custom_serializer=mixed_dialect
         )
-        self.assertEqual(rendered["properties"]["name"], {"type": "string"})
+        deferred = self.openapi_schema.render_openapi_schema(
+            _schemas()["plain_strings"], custom_serializer=lambda _node: None
+        )
+        self.assertEqual(rendered, deferred)
+        self.assertEqual(sorted(rendered["properties"]), ["area", "domain", "name"])
         json.dumps(rendered)
 
     def test_core_s_own_serializer_renders_through_the_shim(self) -> None:

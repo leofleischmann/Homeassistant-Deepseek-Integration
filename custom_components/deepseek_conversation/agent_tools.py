@@ -110,7 +110,17 @@ class AgentToolsAPI(llm.API):
             api_prompt="\n\n".join(prompts),
             llm_context=llm_context,
             tools=tools,
-            custom_serializer=base.custom_serializer if base is not None else None,
+            # Core's serializer when the agent selected no Home Assistant API,
+            # because without one there is nobody to carry it and a converter
+            # left to itself renders a validator it does not recognise untyped
+            # - our own tools use plain types today, so nothing changes for
+            # them, but a tool added later would quietly lose its parameter
+            # types. ``structured_output.py`` falls back the same way.
+            custom_serializer=(
+                base.custom_serializer
+                if base is not None
+                else llm.selector_serializer
+            ),
         )
 
 

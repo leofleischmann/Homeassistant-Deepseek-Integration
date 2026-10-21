@@ -8,9 +8,11 @@ Nothing to do on upgrade. Removes a warning in the Home Assistant log and keeps 
 
 ### Fixed
 - **Home Assistant warned that the `web_search` tool is provided without an integration.** Core 2026.10 added an `integration` attribute to every LLM tool, naming the integration that provides it, and logs `Detected that custom integration 'deepseek_conversation' provides the LLM tool web_search without an integration. This will stop working in Home Assistant 2027.10` for each tool that leaves it unset. Nothing was broken - the tool kept working, because core fills the domain in itself as a stopgap - but that stopgap goes away with the deprecation, at which point the tool would be refused. It now names the integration itself. Reported in #44 and #45.
+- **An agent with web search but no Home Assistant API selected rendered its tools without core's schema serializer.** Nothing was lost in practice - the web search tool's parameters are plain types that every converter renders on its own - but a converter left to itself renders a Home Assistant validator it does not recognise as untyped, so a tool added later would have quietly lost its parameter types. It falls back to core's `selector_serializer` now, as AI Task structured output already did.
 
 ### Added
 - Tests, against a real Home Assistant, that every tool this integration adds names it, and that the name is the domain core derives from the directory.
+- Tests, against a real Home Assistant, that the everyday rendering path puts a real type on every schema leaf whichever schema library core ships, and that mixing the two libraries' dialects renders exactly as deferring in the right one. The second replaces a case that had pinned one library's guess about an unrecognised validator: `probatio` leaves it untyped and `voluptuous-openapi` guesses from the return annotation, so the suite no longer treats either as the right answer.
 
 ## [1.8.5] - 2026-10-08
 
