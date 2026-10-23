@@ -53,6 +53,21 @@ def web_search_enabled(entry: ConfigEntry, options: Mapping[str, Any]) -> bool:
     return bool(options.get(CONF_WEB_SEARCH)) and bool(brave_api_key(entry))
 
 
+def _tool_result(data: JsonObjectType) -> Any:
+    """Wrap a tool payload in whatever this core expects back from a tool.
+
+    Home Assistant 2026.10 added ``llm.ToolResult`` and deprecated returning a
+    bare JSON object, which it reports and will refuse from 2027.11. Older
+    cores have no such class and take the object itself, so the payload is
+    built once and wrapped only where there is something to wrap. ``Any``
+    rather than a union because naming ``llm.ToolResult`` in the signature
+    would be a dangling reference on exactly those older cores.
+    """
+    if (result_type := getattr(llm, "ToolResult", None)) is None:
+        return data
+    return result_type(data=data)
+
+
 class WebSearchTool(llm.Tool):
     """Call Brave Search and return compact web results."""
 
@@ -85,7 +100,7 @@ class WebSearchTool(llm.Tool):
         hass: HomeAssistant,
         tool_input: ToolInput,
         llm_context: LLMContext,
-    ) -> JsonObjectType:
+    ) -> Any:
         """Execute Brave web search and return title/url/description snippets."""
         query = str(tool_input.tool_args["query"]).strip()
         if not query:
@@ -166,4 +181,4 @@ class WebSearchTool(llm.Tool):
             len(results),
             query,
         )
-        return {"query": query, "results": results}
+        return _tool_result({"query": query, "results": results})

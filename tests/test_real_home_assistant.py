@@ -103,6 +103,27 @@ requires_tool_integration = unittest.skipUnless(
 )
 
 
+#: Core 2026.10 wants a tool to answer with ``llm.ToolResult`` and deprecated
+#: the bare JSON object it took before. Both shapes are built and read through
+#: these, so the suite says what this core says rather than picking a side.
+def _tool_result(data):
+    """A tool's answer in the shape this core expects."""
+    if (result_type := getattr(llm, "ToolResult", None)) is None:
+        return data
+    return result_type(data=data)
+
+
+def _result_data(result):
+    """The payload inside a tool's answer, whichever shape it came in."""
+    return getattr(result, "data", result)
+
+
+requires_tool_result = unittest.skipUnless(
+    not HA_REASON and hasattr(llm, "ToolResult"),
+    "this core has no llm.ToolResult",
+)
+
+
 class _FakeHass:
     """Just enough Home Assistant for the LLM API registry, which is a dict."""
 
@@ -131,7 +152,7 @@ if not HA_REASON:
                 parameters = vol.Schema({vol.Optional("name"): cv.string})
 
                 async def async_call(self, hass, tool_input, llm_context):
-                    return {"called": "recorded"}
+                    return _tool_result({"called": "recorded"})
 
             return llm.APIInstance(
                 api=self,
@@ -669,6 +690,113 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
         )
 
 
+class _FakeResponse:
+    """Just enough of an httpx response for the tool to read a payload."""
+
+    status_code = 200
+    text = ""
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeClient:
+    """An httpx client that answers from memory and records the request."""
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+        self.requests: list[tuple[str, dict]] = []
+
+    async def get(self, url: str, **kwargs) -> _FakeResponse:
+        self.requests.append((url, kwargs))
+        return _FakeResponse(self._payload)
+
+
+@requires_ha
+class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
+    """A tool has to answer in the shape the running core asks for.
+
+    Core 2026.10 expects ``llm.ToolResult`` and reports a bare JSON object,
+    refusing it from 2027.11; the cores before it have no such class and take
+    the object itself. The payload inside is the same either way, so that is
+    asserted on every core and the wrapper only where there is one to assert.
+
+    The network is faked rather than skipped, because the payload is built
+    while reading Brave's answer and a wrapper around the wrong thing would
+    otherwise still look right.
+    """
+
+    BRAVE_PAYLOAD = {
+        "web": {
+            "results": [
+                {
+                    "title": "Result one",
+                    "url": "https://example.test/one",
+                    "description": "First",
+                },
+                # No title and no url: dropped, so the test also proves the
+                # payload is the tool's own and not Brave's handed through.
+                {"title": None, "url": None, "description": "dropped"},
+            ]
+        }
+    }
+
+    def setUp(self) -> None:
+        self.web_search = load("web_search")
+        self.client = _FakeClient(self.BRAVE_PAYLOAD)
+        original = self.web_search.get_async_client
+        self.web_search.get_async_client = lambda _hass: self.client
+        self.addCleanup(
+            setattr, self.web_search, "get_async_client", original
+        )
+
+    def _answer(self):
+        tool = self.web_search.WebSearchTool("brave-key")
+        return asyncio.run(
+            tool.async_call(
+                _FakeHass(),
+                llm.ToolInput(
+                    tool_name="web_search",
+                    tool_args={"query": "pytest", "count": 2},
+                    id="1",
+                ),
+                llm.LLMContext(
+                    platform="deepseek_conversation",
+                    context=None,
+                    language="en",
+                    assistant="conversation",
+                    device_id=None,
+                ),
+            )
+        )
+
+    def test_the_payload_is_the_same_on_every_core(self) -> None:
+        self.assertEqual(
+            _result_data(self._answer()),
+            {
+                "query": "pytest",
+                "results": [
+                    {
+                        "title": "Result one",
+                        "url": "https://example.test/one",
+                        "description": "First",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(len(self.client.requests), 1)
+
+    @requires_tool_result
+    def test_this_core_gets_a_tool_result_rather_than_a_bare_object(self) -> None:
+        """The deprecation itself: a bare object is what core reports on."""
+        answer = self._answer()
+        self.assertIsInstance(answer, llm.ToolResult)
+        self.assertFalse(answer.error)
+
+
 @requires_ha
 class TestChatLogTakesThePrivateAPI(unittest.TestCase):
     """The handover itself: Home Assistant has to accept an API object.
@@ -736,7 +864,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 selected = await chat_log.llm_api.async_call_tool(
                     llm.ToolInput(tool_name="recorded", tool_args={}, id="1")
                 )
-                self.assertEqual(selected, {"called": "recorded"})
+                self.assertEqual(_result_data(selected), {"called": "recorded"})
 
                 # An empty query is refused before any request is made, so this
                 # proves the dispatch without going near the network.
