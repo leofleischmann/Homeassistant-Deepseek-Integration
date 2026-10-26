@@ -72,22 +72,6 @@ def _core_converter() -> str:
     return ""
 
 
-#: Core's ``ToolInput`` grew ``external`` so a call with unreadable arguments
-#: can be reported back. Older cores have no such field and the integration
-#: falls back to dropping the call, so the tests for it skip rather than fail.
-def _tool_input_has_external() -> bool:
-    if HA_REASON:
-        return False
-    import dataclasses
-
-    return "external" in {field.name for field in dataclasses.fields(llm.ToolInput)}
-
-
-requires_external = unittest.skipUnless(
-    _tool_input_has_external(), "this core's ToolInput has no 'external' field"
-)
-
-
 #: Core's ``llm.Tool`` grew an ``integration`` attribute naming the integration
 #: that provides the tool, and reports every tool that leaves it unset. Older
 #: cores have no such notion, so the cases about it skip there instead of
@@ -487,12 +471,10 @@ class TestToolCallsAgainstCoreToolInput(unittest.TestCase):
         self.assertEqual(len(inputs), 1)
         self.assertIsInstance(inputs[0], llm.ToolInput)
         self.assertEqual(inputs[0].tool_args, {"domain": "sensor", "name": "Balkon"})
-        if _tool_input_has_external():
-            self.assertFalse(inputs[0].external)
+        self.assertFalse(inputs[0].external)
 
-    @requires_external
     def test_unreadable_arguments_are_reported_and_not_executed(self) -> None:
-        """Reporting the parse error back needs core's ``external`` field."""
+        """``external`` is what reports the parse error back to the model."""
         inputs, failures = self.stream_transform._finalize_tool_calls(
             self._assemble(
                 self._chunk(0, id="call_1", name="HassTurnOn"),
