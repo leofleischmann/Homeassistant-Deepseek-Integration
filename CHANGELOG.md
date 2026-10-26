@@ -2,19 +2,17 @@
 
 All notable changes to this integration.
 
-## [1.8.6] - 2026-10-20
+## [1.8.6] - 2026-10-26
 
-Nothing to do on upgrade. Removes a warning in the Home Assistant log and keeps web search working on future releases.
+Nothing to do on upgrade and nothing changes in use. Home Assistant 2026.10 deprecated two things the Brave web search tool did, each of which would have stopped it working on a later release.
 
 ### Fixed
-- **Home Assistant warned that the `web_search` tool is provided without an integration.** Core 2026.10 added an `integration` attribute to every LLM tool, naming the integration that provides it, and logs `Detected that custom integration 'deepseek_conversation' provides the LLM tool web_search without an integration. This will stop working in Home Assistant 2027.10` for each tool that leaves it unset. Nothing was broken - the tool kept working, because core fills the domain in itself as a stopgap - but that stopgap goes away with the deprecation, at which point the tool would be refused. It now names the integration itself. Reported in #44 and #45.
-- **An agent with web search but no Home Assistant API selected rendered its tools without core's schema serializer.** Nothing was lost in practice - the web search tool's parameters are plain types that every converter renders on its own - but a converter left to itself renders a Home Assistant validator it does not recognise as untyped, so a tool added later would have quietly lost its parameter types. It falls back to core's `selector_serializer` now, as AI Task structured output already did.
-- **The `web_search` tool answered with a bare JSON object, which Home Assistant 2026.10 deprecated.** Core added `llm.ToolResult` and logs `returns a JSON object from a tool, which is deprecated; return a ToolResult instead` for every tool that still answers the old way, refusing it from Home Assistant 2027.11. The tool wraps its answer now where the running core has the class, and keeps returning the object itself on the cores that do not - the payload the model sees is unchanged either way.
+- **The `web_search` tool did not name the integration providing it.** Core 2026.10 logs a warning for every LLM tool that leaves this unset and refuses it from 2027.10. It names itself now. Reported in #44 and #45.
+- **It answered with a bare JSON object** rather than core's new `llm.ToolResult`, deprecated in 2026.10 and refused from 2027.11. What the model is told is unchanged, and cores without the class still get the object.
+- **An agent with web search and no Home Assistant API selected rendered its tools without core's schema serializer** — harmless for the tool as it stands, but a tool added later would have quietly lost its parameter types. It falls back to core's serializer now, as AI Task structured output already did.
 
 ### Added
-- A test, against a real Home Assistant, that the web search tool answers in the shape the running core asks for, with Brave faked out so the payload itself is checked rather than only the wrapper.
-- Tests, against a real Home Assistant, that every tool this integration adds names it, and that the name is the domain core derives from the directory.
-- Tests, against a real Home Assistant, that the everyday rendering path puts a real type on every schema leaf whichever schema library core ships, and that mixing the two libraries' dialects renders exactly as deferring in the right one. The second replaces a case that had pinned one library's guess about an unrecognised validator: `probatio` leaves it untyped and `voluptuous-openapi` guesses from the return annotation, so the suite no longer treats either as the right answer.
+- Tests against a real Home Assistant for both deprecations, and for tool-schema rendering across the old and the new schema library core has shipped.
 
 ## [1.8.5] - 2026-10-08
 
