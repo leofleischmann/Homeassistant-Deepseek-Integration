@@ -294,25 +294,12 @@ class _ToolInput:
         self.external = external
 
 
-class _ToolInputWithoutExternal:
-    """Core before ``ToolInput.external`` existed."""
-
-    def __init__(
-        self, tool_name: str, tool_args: object, id: str = "generated-id"
-    ) -> None:
-        self.tool_name = tool_name
-        self.tool_args = tool_args
-        self.id = id
-
-
 class _UsingToolInput(unittest.TestCase):
-    """Point the module at a ToolInput, whichever one the test needs."""
-
-    tool_input: type = _ToolInput
+    """Point the module at the stand-in ToolInput while a test runs."""
 
     def setUp(self) -> None:
         self._original = getattr(stream_transform.llm, "ToolInput", None)
-        stream_transform.llm.ToolInput = self.tool_input
+        stream_transform.llm.ToolInput = _ToolInput
 
     def tearDown(self) -> None:
         if self._original is None:
@@ -402,29 +389,6 @@ class TestFinalizeToolCalls(_UsingToolInput):
         calls = _assemble(_ToolCallChunk(0, name="GetLiveContext", arguments="{}"))
         inputs, _failures = stream_transform._finalize_tool_calls(calls)
         self.assertEqual(inputs[0].id, "generated-id")
-
-
-class TestFinalizeWithoutExternalSupport(_UsingToolInput):
-    """A core release that cannot mark a call as not-to-be-executed."""
-
-    tool_input = _ToolInputWithoutExternal
-
-    def test_a_broken_call_is_dropped_rather_than_run_blind(self) -> None:
-        calls = _assemble(
-            _ToolCallChunk(0, id="a", name="HassTurnOn", arguments='{"name": '),
-        )
-        inputs, failures = stream_transform._finalize_tool_calls(calls)
-        self.assertEqual(inputs, [])
-        self.assertEqual(failures, [])
-
-    def test_the_healthy_calls_are_unaffected(self) -> None:
-        calls = _assemble(
-            _ToolCallChunk(0, id="a", name="HassTurnOn", arguments='{"name": "lamp"}'),
-            _ToolCallChunk(1, id="b", name="GetLiveContext", arguments='{"domain": '),
-        )
-        inputs, failures = stream_transform._finalize_tool_calls(calls)
-        self.assertEqual([call.id for call in inputs], ["a"])
-        self.assertEqual(failures, [])
 
 
 if __name__ == "__main__":

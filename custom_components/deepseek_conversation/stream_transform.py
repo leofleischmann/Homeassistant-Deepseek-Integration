@@ -173,27 +173,19 @@ def _merge_tool_call_chunk(
             call["arguments"] += function.arguments
 
 
-def _external_tool_input(*, call_id: str | None, name: str) -> llm.ToolInput | None:
+def _external_tool_input(*, call_id: str | None, name: str) -> llm.ToolInput:
     """Build a tool call Home Assistant must record but must not execute.
 
     ``external`` is what keeps a call whose arguments could not be read out of
-    ``async_call_tool``; the assistant message still needs it so the error
-    result below it has a ``tool_call_id`` to answer. Should a core release not
-    know the field, ``None`` says so and the caller drops the call instead -
-    running it with empty arguments could switch the wrong thing.
+    ``async_call_tool``, while the assistant message still carries it so the
+    error result below it has a ``tool_call_id`` to answer. The field has been
+    in core since well before the oldest release this integration supports, so
+    it is simply used.
     """
     fields: dict[str, Any] = {"tool_name": name, "tool_args": {}}
     if call_id:
         fields["id"] = call_id
-    try:
-        return llm.ToolInput(**fields, external=True)
-    except TypeError:
-        LOGGER.error(
-            "This Home Assistant version's ToolInput has no 'external' field, so "
-            "the failed tool call %s cannot be reported back to the model",
-            name,
-        )
-        return None
+    return llm.ToolInput(**fields, external=True)
 
 
 def _finalize_tool_calls(
@@ -225,8 +217,7 @@ def _finalize_tool_calls(
             tool_args = parse_tool_arguments(raw_arguments)
         except ToolArgumentsError as err:
             LOGGER.error("Failed to read tool arguments for %s: %s", name, err)
-            if (failed_call := _external_tool_input(call_id=call["id"], name=name)) is None:
-                continue
+            failed_call = _external_tool_input(call_id=call["id"], name=name)
             tool_inputs.append(failed_call)
             failed_results.append(
                 {

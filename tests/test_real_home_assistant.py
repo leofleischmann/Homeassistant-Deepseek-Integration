@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import pathlib
 from types import MappingProxyType, SimpleNamespace
 import unittest
 
@@ -71,19 +72,39 @@ def _core_converter() -> str:
     return ""
 
 
-#: Core's ``ToolInput`` grew ``external`` so a call with unreadable arguments
-#: can be reported back. Older cores have no such field and the integration
-#: falls back to dropping the call, so the tests for it skip rather than fail.
-def _tool_input_has_external() -> bool:
+#: Core's ``llm.Tool`` grew an ``integration`` attribute naming the integration
+#: that provides the tool, and reports every tool that leaves it unset. Older
+#: cores have no such notion, so the cases about it skip there instead of
+#: asserting against a core that never asks.
+def _tool_has_integration() -> bool:
     if HA_REASON:
         return False
-    import dataclasses
-
-    return "external" in {field.name for field in dataclasses.fields(llm.ToolInput)}
+    return hasattr(llm.Tool, "integration")
 
 
-requires_external = unittest.skipUnless(
-    _tool_input_has_external(), "this core's ToolInput has no 'external' field"
+requires_tool_integration = unittest.skipUnless(
+    _tool_has_integration(), "this core's llm.Tool has no 'integration' attribute"
+)
+
+
+#: Core 2026.10 wants a tool to answer with ``llm.ToolResult`` and deprecated
+#: the bare JSON object it took before. Both shapes are built and read through
+#: these, so the suite says what this core says rather than picking a side.
+def _tool_result(data):
+    """A tool's answer in the shape this core expects."""
+    if (result_type := getattr(llm, "ToolResult", None)) is None:
+        return data
+    return result_type(data=data)
+
+
+def _result_data(result):
+    """The payload inside a tool's answer, whichever shape it came in."""
+    return getattr(result, "data", result)
+
+
+requires_tool_result = unittest.skipUnless(
+    not HA_REASON and hasattr(llm, "ToolResult"),
+    "this core has no llm.ToolResult",
 )
 
 
@@ -115,7 +136,7 @@ if not HA_REASON:
                 parameters = vol.Schema({vol.Optional("name"): cv.string})
 
                 async def async_call(self, hass, tool_input, llm_context):
-                    return {"called": "recorded"}
+                    return _tool_result({"called": "recorded"})
 
             return llm.APIInstance(
                 api=self,
@@ -193,6 +214,27 @@ class TestSchemaRendering(unittest.TestCase):
         with self.assertRaises(self.openapi_schema.SchemaConversionError):
             self.openapi_schema.render_openapi_schema(_schemas()["selectors"])
 
+    def test_core_s_serializer_is_what_types_a_bare_validator(self) -> None:
+        """The everyday path has to put a real type on every leaf.
+
+        A converter may leave a validator it does not recognise untyped, and
+        the installed ones disagree about that: ``cv.string`` is a plain
+        function, which probatio renders as ``{}`` while voluptuous-openapi
+        guesses from the return annotation - and guesses ``cv.boolean`` wrong.
+        Core's serializer knows Home Assistant's own validators and is the one
+        actually in use for Assist tools and AI Task structures, so what the
+        model is told about a parameter does not ride on which library core
+        ships. That is the property worth holding, rather than any converter's
+        guess, and it is why the untyped rendering is left alone elsewhere.
+        """
+        rendered = self.openapi_schema.render_openapi_schema(
+            _schemas()["plain_strings"], custom_serializer=llm.selector_serializer
+        )
+        self.assertEqual(rendered["properties"]["name"], {"type": "string"})
+        self.assertEqual(
+            rendered["properties"]["domain"]["items"], {"type": "string"}
+        )
+
 
 @requires_ha
 class TestMixedSchemaLibraries(unittest.TestCase):
@@ -259,6 +301,15 @@ class TestMixedSchemaLibraries(unittest.TestCase):
         Core's ``MergedAPI`` asks each API's serializer in turn and returns the
         first answer, so one leaf can come back in the wrong dialect while
         everything around it is fine.
+
+        What the shim promises is that the dialect stops mattering: a mixture
+        renders exactly as a serializer that defers on every node in the right
+        dialect would. Asserting that equality rather than a literal type is
+        deliberate - what a converter makes of a node it has to render itself
+        is the converter's business and differs between libraries, so a literal
+        here would pin this test to whichever one core happened to ship. The
+        original bug fails it either way: a leaked marker is not what deferring
+        produces, and would not survive ``json.dumps``.
         """
         mine, theirs = self.converters[0], self.converters[1]
 
@@ -268,7 +319,11 @@ class TestMixedSchemaLibraries(unittest.TestCase):
         rendered = self.openapi_schema.render_openapi_schema(
             _schemas()["plain_strings"], custom_serializer=mixed_dialect
         )
-        self.assertEqual(rendered["properties"]["name"], {"type": "string"})
+        deferred = self.openapi_schema.render_openapi_schema(
+            _schemas()["plain_strings"], custom_serializer=lambda _node: None
+        )
+        self.assertEqual(rendered, deferred)
+        self.assertEqual(sorted(rendered["properties"]), ["area", "domain", "name"])
         json.dumps(rendered)
 
     def test_core_s_own_serializer_renders_through_the_shim(self) -> None:
@@ -416,12 +471,10 @@ class TestToolCallsAgainstCoreToolInput(unittest.TestCase):
         self.assertEqual(len(inputs), 1)
         self.assertIsInstance(inputs[0], llm.ToolInput)
         self.assertEqual(inputs[0].tool_args, {"domain": "sensor", "name": "Balkon"})
-        if _tool_input_has_external():
-            self.assertFalse(inputs[0].external)
+        self.assertFalse(inputs[0].external)
 
-    @requires_external
     def test_unreadable_arguments_are_reported_and_not_executed(self) -> None:
-        """Reporting the parse error back needs core's ``external`` field."""
+        """``external`` is what reports the parse error back to the model."""
         inputs, failures = self.stream_transform._finalize_tool_calls(
             self._assemble(
                 self._chunk(0, id="call_1", name="HassTurnOn"),
@@ -511,6 +564,22 @@ class TestAgentToolsAPI(unittest.TestCase):
         )
         self.assertEqual(names, ["web_search"])
 
+    @requires_tool_integration
+    def test_every_tool_this_integration_adds_names_it(self) -> None:
+        """Whatever we put in the instance is ours and has to say so (#44).
+
+        Asked of the instance rather than of the class so that a second tool
+        added later is covered without anyone remembering to extend this; no
+        Home Assistant API is selected, so every tool here is one of ours.
+        """
+        instance, _names = asyncio.run(
+            self._tools({self.const.CONF_WEB_SEARCH: True}, None)
+        )
+        self.assertEqual(
+            {tool.name: tool.integration for tool in instance.tools},
+            {"web_search": self.const.DOMAIN},
+        )
+
     def test_a_selection_that_no_longer_exists_fails_as_core_would(self) -> None:
         """Switching web search on must not change how a broken selection behaves.
 
@@ -559,6 +628,155 @@ class TestAgentToolsAPI(unittest.TestCase):
             sorted(web_search["function"]["parameters"]["properties"]),
             ["count", "query"],
         )
+
+
+@requires_ha
+class TestToolsNameTheirIntegration(unittest.TestCase):
+    """Every tool of ours says which integration provides it (#44, #45).
+
+    Home Assistant 2026.10 added ``llm.Tool.integration`` and logs a warning
+    for each tool that leaves it at the class default; from the release in
+    ``llm.TOOL_INTEGRATION_BREAKS_IN_HA_VERSION`` such a tool is refused.
+    Nothing was broken when it was reported - the warning is about the release
+    after next - which is exactly why it is worth a test: core tags the tool
+    itself as a stopgap, so once that stopgap goes, only what the tool says
+    about itself is left.
+
+    The default is read off core rather than written down here, so a release
+    that changes it is a failure and not a quietly passing test.
+    """
+
+    def setUp(self) -> None:
+        self.web_search = load("web_search")
+        self.const = load("const")
+
+    @requires_tool_integration
+    def test_web_search_does_not_leave_the_default_in_place(self) -> None:
+        """Core's own test is ``tool.integration is None``; ours must pass it."""
+        self.assertIsNone(llm.Tool.integration)
+        self.assertEqual(
+            self.web_search.WebSearchTool("brave-key").integration,
+            self.const.DOMAIN,
+        )
+
+    @requires_tool_integration
+    def test_the_domain_is_the_one_core_derives_from_the_module_path(self) -> None:
+        """Core reads it from ``custom_components/<domain>``; so must we.
+
+        A tag that disagreed with the directory would silence the warning and
+        still attribute the tool to an integration that does not exist.
+        """
+        self.assertEqual(
+            self.const.DOMAIN,
+            pathlib.Path(self.web_search.__file__).parent.name,
+        )
+
+
+class _FakeResponse:
+    """Just enough of an httpx response for the tool to read a payload."""
+
+    status_code = 200
+    text = ""
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeClient:
+    """An httpx client that answers from memory and records the request."""
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+        self.requests: list[tuple[str, dict]] = []
+
+    async def get(self, url: str, **kwargs) -> _FakeResponse:
+        self.requests.append((url, kwargs))
+        return _FakeResponse(self._payload)
+
+
+@requires_ha
+class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
+    """A tool has to answer in the shape the running core asks for.
+
+    Core 2026.10 expects ``llm.ToolResult`` and reports a bare JSON object,
+    refusing it from 2027.11; the cores before it have no such class and take
+    the object itself. The payload inside is the same either way, so that is
+    asserted on every core and the wrapper only where there is one to assert.
+
+    The network is faked rather than skipped, because the payload is built
+    while reading Brave's answer and a wrapper around the wrong thing would
+    otherwise still look right.
+    """
+
+    BRAVE_PAYLOAD = {
+        "web": {
+            "results": [
+                {
+                    "title": "Result one",
+                    "url": "https://example.test/one",
+                    "description": "First",
+                },
+                # No title and no url: dropped, so the test also proves the
+                # payload is the tool's own and not Brave's handed through.
+                {"title": None, "url": None, "description": "dropped"},
+            ]
+        }
+    }
+
+    def setUp(self) -> None:
+        self.web_search = load("web_search")
+        self.client = _FakeClient(self.BRAVE_PAYLOAD)
+        original = self.web_search.get_async_client
+        self.web_search.get_async_client = lambda _hass: self.client
+        self.addCleanup(
+            setattr, self.web_search, "get_async_client", original
+        )
+
+    def _answer(self):
+        tool = self.web_search.WebSearchTool("brave-key")
+        return asyncio.run(
+            tool.async_call(
+                _FakeHass(),
+                llm.ToolInput(
+                    tool_name="web_search",
+                    tool_args={"query": "pytest", "count": 2},
+                    id="1",
+                ),
+                llm.LLMContext(
+                    platform="deepseek_conversation",
+                    context=None,
+                    language="en",
+                    assistant="conversation",
+                    device_id=None,
+                ),
+            )
+        )
+
+    def test_the_payload_is_the_same_on_every_core(self) -> None:
+        self.assertEqual(
+            _result_data(self._answer()),
+            {
+                "query": "pytest",
+                "results": [
+                    {
+                        "title": "Result one",
+                        "url": "https://example.test/one",
+                        "description": "First",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(len(self.client.requests), 1)
+
+    @requires_tool_result
+    def test_this_core_gets_a_tool_result_rather_than_a_bare_object(self) -> None:
+        """The deprecation itself: a bare object is what core reports on."""
+        answer = self._answer()
+        self.assertIsInstance(answer, llm.ToolResult)
+        self.assertFalse(answer.error)
 
 
 @requires_ha
@@ -628,7 +846,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 selected = await chat_log.llm_api.async_call_tool(
                     llm.ToolInput(tool_name="recorded", tool_args={}, id="1")
                 )
-                self.assertEqual(selected, {"called": "recorded"})
+                self.assertEqual(_result_data(selected), {"called": "recorded"})
 
                 # An empty query is refused before any request is made, so this
                 # proves the dispatch without going near the network.

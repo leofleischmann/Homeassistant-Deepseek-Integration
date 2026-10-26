@@ -28,7 +28,19 @@ libraries exist:
 
 Converters are then simply tried in turn, core's current one first, which also
 settles the separate question of which library understands the schema object
-core handed us.
+core handed us - on a core that calls ``install_as_voluptuous`` the schema *is*
+a probatio object, so the order is not a preference but a requirement.
+
+What the libraries do with a node the serializer defers on is their own
+business, and they disagree: ``probatio`` renders a bare annotated validator
+such as ``cv.string`` as ``{}``, where ``voluptuous_openapi`` guesses a type
+from the return annotation - and guesses ``cv.boolean`` to be a string. Neither
+is wrong enough to choose between, and preferring the richer-looking answer
+would mean preferring a wrong one, so nothing here tries to. It does not come
+up in practice either: core's ``selector_serializer`` knows Home Assistant's
+validators and types them correctly whichever library renders the rest, and
+every caller passes it - ``structured_output.py`` and ``agent_tools.py`` fall
+back to it rather than leaving a converter to guess.
 """
 
 from __future__ import annotations
