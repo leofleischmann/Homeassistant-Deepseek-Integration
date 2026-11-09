@@ -2,6 +2,13 @@
 
 All notable changes to this integration.
 
+## [1.8.7] - 2026-11-09
+
+Nothing to do on upgrade and nothing changes in use: one warning Home Assistant 2026.11 logged after every restart is gone.
+
+### Fixed
+- **Home Assistant 2026.11 reported a blocking call on the first question after every restart.** The OpenAI SDK core pins there loads the part of itself that sends a chat completion only when it is first used, and that first use sat inside a reply — in the loop core keeps free of blocking work. It is loaded with the integration now; only the log line ever differed. Reported in #47.
+
 ## [1.8.6] - 2026-10-26
 
 Nothing to do on upgrade and nothing changes in use. Home Assistant 2026.10 deprecated two things the Brave web search tool did, each of which would have stopped it working on a later release.

@@ -25,6 +25,19 @@ from typing import Any
 # start does.
 import openai
 
+# The SDK resolves its resource namespaces lazily. ``client.chat`` imports
+# ``openai.resources.chat.chat`` on first use, and from openai 3.26 - the build
+# Core 2026.11 pins - that package resolves the submodule through
+# ``importlib.import_module``, a dozen modules with it. This integration first
+# uses it for the streamed completion in ``chat_session.py``, so the import
+# lands in the event loop, where Home Assistant reports a blocking call and asks
+# for a bug report - once per restart, in every user's log (#47). Importing the
+# resource here instead moves that work into the executor thread Home Assistant
+# imports the integration in; the name itself is never used. Builds that still
+# import their resources eagerly are unaffected. Core fixed its own openai and
+# litellm integrations the same way.
+from openai.resources.chat import AsyncChat  # noqa: F401
+
 from homeassistant.config_entries import ConfigEntry  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_API_KEY  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
