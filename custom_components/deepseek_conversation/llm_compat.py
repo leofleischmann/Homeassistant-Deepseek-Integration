@@ -16,7 +16,7 @@ Affects / influenced by:
   ``tool_result_data`` before sending it back to the API.
 - ``stream_transform.py`` reports unreadable tool arguments to the model with
   ``tool_result_delta``.
-- ``web_search.py`` answers with ``tool_result``.
+- ``web/search_tool.py`` answers with ``tool_result``.
 - ``tests/test_real_home_assistant.py`` pins all three against whichever core
   is installed; the stubbed suite only ever sees the pre-2026.10 shapes.
 """

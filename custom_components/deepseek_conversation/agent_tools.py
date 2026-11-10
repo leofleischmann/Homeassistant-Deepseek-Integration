@@ -1,9 +1,9 @@
 """Which tools one agent exposes, and how they reach Home Assistant.
 
 An agent's tools come from two places: the Home Assistant LLM APIs its owner
-selected, and whatever this integration adds itself - today only the Brave web
-search tool in ``web_search.py``. Bringing them together is this module's whole
-job, and it is kept apart from the tool itself so that adding a second one is a
+selected, and whatever this integration adds itself - today only web search
+from the ``web`` package. Bringing them together is this module's whole job,
+and it is kept apart from the tools themselves so that adding a second one is a
 change in one place.
 
 The result is handed to ``ChatLog.async_provide_llm_data``, which accepts an
@@ -14,6 +14,11 @@ Gemini's and OpenAI's agent settings too (#38).
 
 Nothing is composed when the agent has no tools of ours - the selection is
 passed through untouched, so the common case stays on Home Assistant's own path.
+
+Affects / influenced by:
+- ``conversation.py`` and ``ai_task.py`` call ``agent_llm_api`` once per turn.
+- ``web/selection.py`` says which web tools the agent gets (``web_tools_plan``);
+  ``web/factory.py`` builds the provider and ``web/search_tool.py`` is the tool.
 """
 
 from __future__ import annotations
@@ -30,12 +35,9 @@ from homeassistant.helpers.llm import (  # pyright: ignore[reportMissingImports]
 )
 
 from .const import DOMAIN, LOGGER
-from .web_search import (
-    brave_api_key,
-    web_search_enabled,
-    WEB_SEARCH_API_PROMPT,
-    WebSearchTool,
-)
+from .web.factory import build_search_provider
+from .web.search_tool import WEB_SEARCH_API_PROMPT, WebSearchTool
+from .web.selection import web_tools_plan
 
 
 class AgentToolsAPI(llm.API):
@@ -51,15 +53,17 @@ class AgentToolsAPI(llm.API):
         self,
         hass: HomeAssistant,
         entry: ConfigEntry,
+        options: Mapping[str, Any],
         selected: str | list[str] | llm.API | None,
     ) -> None:
-        """Bind the entry that holds the Brave key and the agent's own choice."""
+        """Bind the entry that holds the credentials and the agent's own choice."""
         super().__init__(
             hass=hass,
             id=f"{DOMAIN}_{entry.entry_id}",
             name=f"{entry.title} tools",
         )
         self._entry = entry
+        self._options = options
         self._selected = selected
 
     async def _async_selected_instance(
@@ -89,21 +93,28 @@ class AgentToolsAPI(llm.API):
         if base is not None and base.api_prompt:
             prompts.append(base.api_prompt)
 
-        # Re-checked rather than assumed. ``agent_llm_api`` is the only caller
-        # that screens on the key today, and a tool built with an empty token
-        # would fail at Brave with an opaque 401 instead of saying so here.
-        if api_key := brave_api_key(self._entry):
-            tools.append(WebSearchTool(api_key))
+        # Worked out again rather than assumed. ``agent_llm_api`` is the only
+        # caller that screens on the plan today, and a provider built without
+        # its credential would fail at the search API with an opaque 401
+        # instead of saying so here.
+        plan = web_tools_plan(self._entry.data, self._options)
+        if plan.search_provider is not None:
+            provider = build_search_provider(
+                self.hass, self._entry.data, plan.search_provider
+            )
+            tools.append(WebSearchTool(provider))
             prompts.append(WEB_SEARCH_API_PROMPT)
         else:
             LOGGER.warning(
                 "[Debug agent_tools]: web search is switched on for an agent of "
-                "%s, but the entry has no Brave key; answering without it",
+                "%s, but the entry can no longer provide it; answering without it",
                 self._entry.title,
             )
 
         LOGGER.debug(
-            "[Debug agent_tools]: agent tools=%s", [tool.name for tool in tools]
+            "[Debug agent_tools]: web_search provider=%s agent tools=%s",
+            plan.search_provider,
+            [tool.name for tool in tools],
         )
         return APIInstance(
             api=self,
@@ -132,10 +143,10 @@ def agent_llm_api(
 ) -> str | list[str] | llm.API | None:
     """What to hand ``ChatLog.async_provide_llm_data`` for this agent.
 
-    Without web search that is the agent's own selection, untouched, so the
-    common case goes through Home Assistant's own path. With it, the selection
-    is wrapped in an API this integration keeps to itself.
+    Without web tools that is the agent's own selection, untouched, so the
+    common case goes through Home Assistant's own path. With them, the
+    selection is wrapped in an API this integration keeps to itself.
     """
-    if not web_search_enabled(entry, options):
+    if not web_tools_plan(entry.data, options):
         return selected
-    return AgentToolsAPI(hass=hass, entry=entry, selected=selected)
+    return AgentToolsAPI(hass=hass, entry=entry, options=options, selected=selected)

@@ -49,6 +49,9 @@ CONF_WEB_SEARCH = "web_search"
 #: How that API's id was built, so migration can recognise an agent that had
 #: selected it and turn the selection into CONF_WEB_SEARCH.
 LEGACY_WEB_SEARCH_API_ID_PREFIX = f"{DOMAIN}_web_search_"
+#: Ids of the web search providers (web/). Stable once released: see
+#: web/selection.py for which of them an entry can offer.
+WEB_SEARCH_PROVIDER_BRAVE = "brave"
 CONF_AGENT = "agent"
 CONF_CONFIG_ENTRY = "config_entry"
 CONF_FILENAMES = "filenames"

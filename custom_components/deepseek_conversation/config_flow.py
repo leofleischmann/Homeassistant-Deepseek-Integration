@@ -69,7 +69,7 @@ from .flow_schemas import (
 )
 from .models import is_retired_chat_model
 from .options import recommended_agent_options
-from .web_search import brave_api_key
+from .web.selection import brave_api_key
 
 
 async def _async_check_credentials(
@@ -342,7 +342,7 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
 
     def _has_brave_key(self) -> bool:
         """Whether the entry can offer web search to its agents at all."""
-        return bool(brave_api_key(self._get_entry()))
+        return bool(brave_api_key(self._get_entry().data))
 
     def _default_name(self) -> str:
         return (

@@ -63,7 +63,7 @@ from .openapi_schema import CONVERTERS
 from .options import coerce_max_tokens, request_timeout_from_options
 from .request_builder import deepseek_chat_thinking_params
 from .usage_metrics import completion_usage_from_api
-from .web_search import brave_api_key, web_search_enabled
+from .web.selection import brave_api_key, web_tools_plan
 
 
 async def _timed(
@@ -316,8 +316,8 @@ async def async_run_debug_suite(
             "selected_exists": bool(sel_list and any(a.id in sel_list for a in apis)),
             # Not in registered_apis: web search is this agent's own tool now,
             # never registered, so it cannot show up in another integration.
-            "brave_key_on_entry": bool(brave_api_key(entry)),
-            "web_search_enabled": web_search_enabled(entry, opts),
+            "brave_key_on_entry": bool(brave_api_key(entry.data)),
+            "web_search_enabled": bool(web_tools_plan(entry.data, opts)),
         }
         log(
             f"LLM APIs registered={len(api_rows)} selected={sel!r} "

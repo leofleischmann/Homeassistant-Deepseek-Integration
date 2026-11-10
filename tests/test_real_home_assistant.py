@@ -151,6 +151,11 @@ def _minimal_hass():
     return HomeAssistant(tempfile.mkdtemp())
 
 
+#: The id the stand-in API below is registered under. Deliberately not
+#: "assist": older cores - 2026.1 for one - keep their own Assist API under
+#: that id, so registering a second one there fails before a single case has run.
+_SELECTED_API = "recorded_api"
+
 if not HA_REASON:
 
     class _RecordedAPI(llm.API):
@@ -548,7 +553,7 @@ class TestAgentToolsAPI(unittest.TestCase):
             device_id=None,
         )
         self.registered = _RecordedAPI(
-            hass=self.hass, id="assist", name="Assist"
+            hass=self.hass, id=_SELECTED_API, name="Recorded"
         )
         llm.async_register_api(self.hass, self.registered)
 
@@ -565,20 +570,23 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     def test_the_tool_is_never_put_in_the_shared_registry(self) -> None:
         """The bug itself: what is registered is what other integrations offer."""
+        registered = [api.id for api in llm.async_get_apis(self.hass)]
+        self.assertIn(_SELECTED_API, registered)
         self.assertEqual(
-            [api.id for api in llm.async_get_apis(self.hass)], ["assist"]
+            [api_id for api_id in registered if api_id.startswith(self.const.DOMAIN)],
+            [],
         )
 
     def test_an_agent_without_web_search_uses_home_assistant_s_own_path(self) -> None:
         """Passing the selection through unchanged keeps the common case core's."""
         selection = self.agent_tools.agent_llm_api(
-            self.hass, self._entry(), {}, ["assist"]
+            self.hass, self._entry(), {}, [_SELECTED_API]
         )
-        self.assertEqual(selection, ["assist"])
+        self.assertEqual(selection, [_SELECTED_API])
 
     def test_web_search_is_added_beside_the_selected_tools(self) -> None:
         instance, names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, ["assist"])
+            self._tools({self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API])
         )
         self.assertEqual(names, ["recorded", "web_search"])
         self.assertIn("Recorded API prompt", instance.api_prompt)
@@ -616,7 +624,7 @@ class TestAgentToolsAPI(unittest.TestCase):
         """
         with self.assertRaises(HomeAssistantError):
             asyncio.run(
-                self._tools({self.const.CONF_WEB_SEARCH: True}, ["assist", "gone"])
+                self._tools({self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API, "gone"])
             )
 
     def test_the_option_without_a_key_answers_without_the_tool(self) -> None:
@@ -625,15 +633,18 @@ class TestAgentToolsAPI(unittest.TestCase):
             self.hass,
             self._entry(brave=None),
             {self.const.CONF_WEB_SEARCH: True},
-            ["assist"],
+            [_SELECTED_API],
         )
         # No key means no web search at all, so the selection is passed through.
-        self.assertEqual(api, ["assist"])
+        self.assertEqual(api, [_SELECTED_API])
 
     def test_a_key_removed_after_the_agent_was_built_is_survivable(self) -> None:
         """``agent_llm_api`` looks once; the instance is built per turn."""
         api = self.agent_tools.AgentToolsAPI(
-            hass=self.hass, entry=self._entry(brave=None), selected=["assist"]
+            hass=self.hass,
+            entry=self._entry(brave=None),
+            options={self.const.CONF_WEB_SEARCH: True},
+            selected=[_SELECTED_API],
         )
         instance = asyncio.run(api.async_get_api_instance(self.context))
         self.assertEqual([tool.name for tool in instance.tools], ["recorded"])
@@ -641,7 +652,7 @@ class TestAgentToolsAPI(unittest.TestCase):
     def test_the_tools_render_for_the_api_like_any_other(self) -> None:
         chat_session = _load_chat_session()
         instance, _names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, ["assist"])
+            self._tools({self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API])
         )
         formatted, skipped = chat_session._format_tools_for_api(
             list(instance.tools), instance.custom_serializer
@@ -674,7 +685,7 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.web_search = load("web_search")
+        self.search_tool = load("web.search_tool")
         self.const = load("const")
 
     @requires_tool_integration
@@ -682,7 +693,7 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
         """Core's own test is ``tool.integration is None``; ours must pass it."""
         self.assertIsNone(llm.Tool.integration)
         self.assertEqual(
-            self.web_search.WebSearchTool("brave-key").integration,
+            self.search_tool.WebSearchTool(_StubProvider()).integration,
             self.const.DOMAIN,
         )
 
@@ -691,11 +702,13 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
         """Core reads it from ``custom_components/<domain>``; so must we.
 
         A tag that disagreed with the directory would silence the warning and
-        still attribute the tool to an integration that does not exist.
+        still attribute the tool to an integration that does not exist. The
+        tool lives in a subpackage, and core only ever looks at the segment
+        right after ``custom_components`` - so that is the one compared.
         """
+        parts = pathlib.Path(self.search_tool.__file__).parts
         self.assertEqual(
-            self.const.DOMAIN,
-            pathlib.Path(self.web_search.__file__).parent.name,
+            self.const.DOMAIN, parts[parts.index("custom_components") + 1]
         )
 
 
@@ -790,6 +803,16 @@ class TestToolResultsTravelInTheCoreShape(unittest.TestCase):
         self.assertNotIn("tool_result", delta)
 
 
+class _StubProvider:
+    """A search provider that needs no network, for cases about the tool itself."""
+
+    id = "stub"
+    label = "Stub Search"
+
+    async def search(self, query: str, count: int) -> list:
+        return []
+
+
 class _FakeResponse:
     """Just enough of an httpx response for the tool to read a payload."""
 
@@ -845,16 +868,18 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
     }
 
     def setUp(self) -> None:
-        self.web_search = load("web_search")
+        self.search_tool = load("web.search_tool")
+        self.brave = load("web.brave")
         self.client = _FakeClient(self.BRAVE_PAYLOAD)
-        original = self.web_search.get_async_client
-        self.web_search.get_async_client = lambda _hass: self.client
-        self.addCleanup(
-            setattr, self.web_search, "get_async_client", original
-        )
 
     def _answer(self):
-        tool = self.web_search.WebSearchTool("brave-key")
+        # The provider is handed its HTTP client, so the network is replaced
+        # by passing a different one - nothing has to be patched.
+        tool = self.search_tool.WebSearchTool(
+            self.brave.BraveSearchProvider(
+                lambda: self.client, api_key="brave-key", timeout=10.0
+            )
+        )
         return asyncio.run(
             tool.async_call(
                 _FakeHass(),
@@ -914,7 +939,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
     async def _chat_log(self, hass):
         from homeassistant.components.conversation import ChatLog
 
-        llm.async_register_api(hass, _RecordedAPI(hass=hass, id="assist", name="Assist"))
+        llm.async_register_api(hass, _RecordedAPI(hass=hass, id=_SELECTED_API, name="Recorded"))
         entry = SimpleNamespace(
             entry_id="01J",
             title="DeepSeek",
@@ -930,7 +955,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 device_id=None,
             ),
             user_llm_hass_api=self.agent_tools.agent_llm_api(
-                hass, entry, {self.const.CONF_WEB_SEARCH: True}, ["assist"]
+                hass, entry, {self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API]
             ),
             user_llm_prompt="You are a test.",
         )
