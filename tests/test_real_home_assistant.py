@@ -26,6 +26,7 @@ import json
 import pathlib
 from types import MappingProxyType, SimpleNamespace
 import unittest
+from unittest import mock
 
 from integration_modules import load
 
@@ -48,7 +49,7 @@ try:
 
     import voluptuous as vol
     from homeassistant.exceptions import HomeAssistantError
-    from homeassistant.helpers import config_validation as cv, llm, selector
+    from homeassistant.helpers import config_validation as cv, frame, llm, selector
 
     HA_REASON = ""
 except (ImportError, ValueError) as err:  # pragma: no cover - the normal case in CI
@@ -105,6 +106,32 @@ def _result_data(result):
 requires_tool_result = unittest.skipUnless(
     not HA_REASON and hasattr(llm, "ToolResult"),
     "this core has no llm.ToolResult",
+)
+
+
+def _delta_data(delta):
+    """The payload of a tool result delta, under whichever key this core reads."""
+    if "result" in delta:
+        return delta["result"].data
+    return delta["tool_result"]
+
+
+#: The same release moved a chat log's own tool results onto ``ToolResult``:
+#: ``ToolResultContent.result`` holds one, and ``tool_result`` became a property
+#: that reports every access. Asked of the class, so the cases follow core.
+def _chat_log_has_typed_results() -> bool:
+    if HA_REASON:
+        return False
+    from homeassistant.components import conversation
+
+    return "result" in getattr(
+        conversation.ToolResultContent, "__dataclass_fields__", {}
+    )
+
+
+requires_typed_chat_log = unittest.skipUnless(
+    _chat_log_has_typed_results(),
+    "this core's chat log holds tool results as bare objects",
 )
 
 
@@ -483,7 +510,7 @@ class TestToolCallsAgainstCoreToolInput(unittest.TestCase):
         )
         self.assertTrue(inputs[0].external)
         self.assertEqual(len(failures), 1)
-        self.assertEqual(failures[0]["tool_result"]["error"], "InvalidToolArguments")
+        self.assertEqual(_delta_data(failures[0])["error"], "InvalidToolArguments")
 
     def test_unreadable_arguments_are_never_executed(self) -> None:
         """True on every core: a half-readable call is not guessed at."""
@@ -670,6 +697,97 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
             self.const.DOMAIN,
             pathlib.Path(self.web_search.__file__).parent.name,
         )
+
+
+@requires_ha
+class TestToolResultsTravelInTheCoreShape(unittest.TestCase):
+    """A chat log's tool results are read and written the way this core asks.
+
+    Core 2026.10 moved them onto ``llm.ToolResult`` and reports the two old
+    spellings this integration used: reading ``ToolResultContent.tool_result``
+    on the way back to the API - every tool result goes through that - and
+    setting ``tool_result`` on the delta that answers a call with unreadable
+    arguments. Both still work until 2027.11, which is why nothing failed and
+    why it is pinned here: the report is the only symptom there will be.
+    """
+
+    def setUp(self) -> None:
+        from homeassistant.components import conversation
+
+        self.conversation = conversation
+        self.llm_compat = load("llm_compat")
+
+    def _content(self, data: dict):
+        """A tool result as this core's chat log would hold it."""
+        fields = {
+            "agent_id": "agent",
+            "tool_call_id": "call_1",
+            "tool_name": "GetLiveContext",
+        }
+        if _chat_log_has_typed_results():
+            return self.conversation.ToolResultContent(
+                **fields, result=llm.ToolResult(data=data)
+            )
+        return self.conversation.ToolResultContent(**fields, tool_result=data)
+
+    def test_the_payload_is_read_on_every_core(self) -> None:
+        self.assertEqual(
+            self.llm_compat.tool_result_data(self._content({"ok": 1})), {"ok": 1}
+        )
+
+    @requires_typed_chat_log
+    def test_reading_does_not_use_the_accessor_core_reports(self) -> None:
+        with mock.patch.object(frame, "report_usage") as reported:
+            self.llm_compat.tool_result_data(self._content({"ok": 1}))
+        reported.assert_not_called()
+
+    def test_a_result_we_write_lands_in_the_real_chat_log(self) -> None:
+        """The delta is only right if core's own stream reader takes it."""
+
+        async def check() -> None:
+            hass = _minimal_hass()
+            try:
+                chat_log = self.conversation.ChatLog(hass, "conversation-1")
+                call = llm.ToolInput(
+                    tool_name="HassTurnOn", tool_args={}, id="call_1", external=True
+                )
+                delta = self.llm_compat.tool_result_delta(
+                    tool_call_id="call_1",
+                    tool_name="HassTurnOn",
+                    data={"error": "InvalidToolArguments"},
+                    error=True,
+                )
+
+                async def stream():
+                    yield {"role": "assistant", "tool_calls": [call]}
+                    yield delta
+
+                with mock.patch.object(frame, "report_usage") as reported:
+                    added = [
+                        content
+                        async for content in chat_log.async_add_delta_content_stream(
+                            "agent", stream()
+                        )
+                    ]
+                reported.assert_not_called()
+                self.assertEqual(added[-1].role, "tool_result")
+                self.assertEqual(added[-1].tool_call_id, "call_1")
+                self.assertEqual(
+                    self.llm_compat.tool_result_data(added[-1]),
+                    {"error": "InvalidToolArguments"},
+                )
+            finally:
+                await hass.async_stop()
+
+        asyncio.run(check())
+
+    @requires_tool_result
+    def test_an_error_we_write_is_marked_as_one(self) -> None:
+        delta = self.llm_compat.tool_result_delta(
+            tool_call_id="call_1", tool_name="HassTurnOn", data={}, error=True
+        )
+        self.assertTrue(delta["result"].error)
+        self.assertNotIn("tool_result", delta)
 
 
 class _FakeResponse:

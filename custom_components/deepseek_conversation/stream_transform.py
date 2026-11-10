@@ -25,6 +25,7 @@ from homeassistant.exceptions import HomeAssistantError  # pyright: ignore[repor
 from homeassistant.helpers import llm  # pyright: ignore[reportMissingImports]
 
 from .const import LOGGER
+from .llm_compat import tool_result_delta
 from .markdown_strip import StreamingMarkdownStripper
 from .tool_arguments import ToolArgumentsError, parse_tool_arguments
 from .usage_metrics import CompletionUsage, completion_usage_from_api
@@ -219,19 +220,21 @@ def _finalize_tool_calls(
             LOGGER.error("Failed to read tool arguments for %s: %s", name, err)
             failed_call = _external_tool_input(call_id=call["id"], name=name)
             tool_inputs.append(failed_call)
+            # Built by llm_compat: which key carries the payload depends on
+            # the core, and the old one is reported from 2026.10 on.
             failed_results.append(
-                {
-                    "role": "tool_result",
-                    "tool_call_id": failed_call.id,
-                    "tool_name": name,
-                    "tool_result": {
+                tool_result_delta(
+                    tool_call_id=failed_call.id,
+                    tool_name=name,
+                    data={
                         "error": "InvalidToolArguments",
                         "error_text": (
                             f"The arguments of this call could not be read: {err}. "
                             "Send the call again with valid JSON arguments."
                         ),
                     },
-                }
+                    error=True,
+                )
             )
             continue
         fields: dict[str, Any] = {"tool_name": name, "tool_args": tool_args}

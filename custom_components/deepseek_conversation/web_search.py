@@ -8,6 +8,7 @@ Affects / influenced by:
   deliberately never registered with ``llm.async_register_api``: that registry
   is global, so registering it put a "Web Search (Brave)" entry into every
   *other* conversation integration's settings as well (#38).
+- ``llm_compat.py`` decides the shape the answer goes back in.
 """
 
 from __future__ import annotations
@@ -26,9 +27,9 @@ from homeassistant.helpers.llm import (  # pyright: ignore[reportMissingImports]
     LLMContext,
     ToolInput,
 )
-from homeassistant.util.json import JsonObjectType  # pyright: ignore[reportMissingImports]
 
 from .const import CONF_BRAVE_API_KEY, CONF_WEB_SEARCH, DOMAIN, LOGGER
+from .llm_compat import tool_result
 
 BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 DEFAULT_RESULT_COUNT = 5
@@ -51,21 +52,6 @@ def brave_api_key(entry: ConfigEntry) -> str:
 def web_search_enabled(entry: ConfigEntry, options: Mapping[str, Any]) -> bool:
     """Whether this agent asked for web search and the entry can provide it."""
     return bool(options.get(CONF_WEB_SEARCH)) and bool(brave_api_key(entry))
-
-
-def _tool_result(data: JsonObjectType) -> Any:
-    """Wrap a tool payload in whatever this core expects back from a tool.
-
-    Home Assistant 2026.10 added ``llm.ToolResult`` and deprecated returning a
-    bare JSON object, which it reports and will refuse from 2027.11. Older
-    cores have no such class and take the object itself, so the payload is
-    built once and wrapped only where there is something to wrap. ``Any``
-    rather than a union because naming ``llm.ToolResult`` in the signature
-    would be a dangling reference on exactly those older cores.
-    """
-    if (result_type := getattr(llm, "ToolResult", None)) is None:
-        return data
-    return result_type(data=data)
 
 
 class WebSearchTool(llm.Tool):
@@ -181,4 +167,4 @@ class WebSearchTool(llm.Tool):
             len(results),
             query,
         )
-        return _tool_result({"query": query, "results": results})
+        return tool_result({"query": query, "results": results})

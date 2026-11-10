@@ -25,6 +25,7 @@ from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImp
 
 from .const import LOGGER
 from .context_trim import format_tool_result_content
+from .llm_compat import tool_result_data
 from .vision import async_user_message_content, latest_user_attachments
 
 
@@ -122,8 +123,10 @@ def convert_content_to_messages(
                 tool_calls = formatted_tool_calls
         elif isinstance(content, conversation.ToolResultContent):
             role = "tool"
+            # Through llm_compat: from 2026.10 the payload sits in
+            # ``content.result`` and reading ``tool_result`` is reported.
             message_content = format_tool_result_content(
-                content.tool_result,
+                tool_result_data(content),
                 json_encoder=HAJSONEncoder,
                 options=options or {},
                 tool_name=content.tool_name,
