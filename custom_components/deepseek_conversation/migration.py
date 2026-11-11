@@ -28,6 +28,7 @@ from .const import (
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_RECOMMENDED,
+    CONF_WEB_SEARCH,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DOMAIN,
@@ -43,6 +44,7 @@ from .options import (
     ai_task_options_from,
     fold_context_switch,
     move_web_search_selection,
+    web_search_switch_to_provider,
 )
 
 
@@ -62,6 +64,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version < 4:
         _async_migrate_web_search_api_to_option(hass, entry)
         hass.config_entries.async_update_entry(entry, version=4)
+
+    if entry.version < 5:
+        _async_migrate_web_search_switch_to_provider(hass, entry)
+        hass.config_entries.async_update_entry(entry, version=5)
 
     return True
 
@@ -89,6 +95,30 @@ def _async_migrate_web_search_api_to_option(
             "Web search is now a setting of the agent %s rather than a Home "
             "Assistant API, so it is no longer offered to other integrations",
             subentry.title,
+        )
+
+
+@callback
+def _async_migrate_web_search_switch_to_provider(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Make every agent name its web search provider instead of a switch.
+
+    The switch only ever meant Brave, so an agent that had it on keeps
+    searching with Brave; nothing else about it changes. See
+    ``options.web_search_switch_to_provider``.
+    """
+    for subentry in list(entry.subentries.values()):
+        if subentry.subentry_type not in SUBENTRY_TYPES:
+            continue
+        moved = web_search_switch_to_provider(subentry.data)
+        if moved is None:
+            continue
+        hass.config_entries.async_update_subentry(entry, subentry, data=moved)
+        LOGGER.debug(
+            "[Debug migration]: web search setting of agent %s is now %r",
+            subentry.title,
+            moved.get(CONF_WEB_SEARCH),
         )
 
 

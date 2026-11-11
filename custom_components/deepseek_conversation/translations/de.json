@@ -69,11 +69,7 @@
                 "data": {
                     "api_key": "API-Schlüssel",
                     "base_url": "API-Basis-URL",
-                    "brave_api_key": "Brave-Search-API-Schlüssel (optional)",
                     "chat_model": "Modell"
-                },
-                "data_description": {
-                    "brave_api_key": "Optional. Ergänzt bei jedem Agenten dieser Integration einen Schalter Web-Suche. Nur sie können ihn nutzen."
                 },
                 "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4 Flash. Die Legacy-Namen deepseek-chat und deepseek-reasoner wurden am 24.07.2026 abgeschaltet und werden nicht mehr angenommen."
             },
@@ -97,7 +93,7 @@
                 },
                 "data_description": {
                     "api_key": "API-Schlüssel von platform.deepseek.com",
-                    "brave_api_key": "Leer lassen, um den aktuellen Brave-Schlüssel zu behalten. Neuen Schlüssel eingeben zum Ersetzen. Einzelnen Bindestrich (-) eingeben, um Web-Suche zu entfernen."
+                    "brave_api_key": "Nur für Brave Search nötig. Leer lassen, um den aktuellen Schlüssel zu behalten, einen neuen eingeben zum Ersetzen oder einen einzelnen Bindestrich (-) eingeben, um ihn zu entfernen."
                 }
             }
         },
@@ -130,7 +126,7 @@
                         "name": "Name",
                         "prompt": "Anweisungen",
                         "llm_hass_api": "Home-Assistant-API",
-                        "web_search": "Web-Suche (Brave)",
+                        "web_search": "Web-Suche",
                         "chat_model": "Modell",
                         "recommended": "Empfohlene Einstellungen"
                     },
@@ -139,7 +135,7 @@
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
                         "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
                         "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
-                        "web_search": "Erlaubt diesem Agenten, mit deinem Brave-Schlüssel im offenen Web nachzuschlagen."
+                        "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
                     }
                 },
                 "advanced": {
@@ -226,7 +222,7 @@
                         "name": "Name",
                         "prompt": "Anweisungen",
                         "llm_hass_api": "Home-Assistant-API",
-                        "web_search": "Web-Suche (Brave)",
+                        "web_search": "Web-Suche",
                         "chat_model": "Modell",
                         "recommended": "Empfohlene Einstellungen"
                     },
@@ -235,7 +231,7 @@
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
                         "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
                         "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
-                        "web_search": "Erlaubt diesem Agenten, mit deinem Brave-Schlüssel im offenen Web nachzuschlagen."
+                        "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
                     }
                 },
                 "advanced": {
@@ -310,6 +306,12 @@
                 "high": "Hoch",
                 "max": "Max",
                 "xhigh": "Sehr hoch"
+            }
+        },
+        "web_search": {
+            "options": {
+                "off": "Aus",
+                "brave": "Brave Search"
             }
         }
     },

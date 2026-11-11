@@ -541,6 +541,10 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     ENTRY_ID = "01JDEEPSEEK"
 
+    def _brave(self) -> dict:
+        """An agent's settings with Brave chosen as its web search provider."""
+        return {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE}
+
     def setUp(self) -> None:
         self.agent_tools = load("agent_tools")
         self.const = load("const")
@@ -586,7 +590,7 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     def test_web_search_is_added_beside_the_selected_tools(self) -> None:
         instance, names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API])
+            self._tools(self._brave(), [_SELECTED_API])
         )
         self.assertEqual(names, ["recorded", "web_search"])
         self.assertIn("Recorded API prompt", instance.api_prompt)
@@ -595,7 +599,7 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     def test_an_agent_with_no_home_assistant_api_gets_web_search_alone(self) -> None:
         _instance, names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, None)
+            self._tools(self._brave(), None)
         )
         self.assertEqual(names, ["web_search"])
 
@@ -608,7 +612,7 @@ class TestAgentToolsAPI(unittest.TestCase):
         Home Assistant API is selected, so every tool here is one of ours.
         """
         instance, _names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, None)
+            self._tools(self._brave(), None)
         )
         self.assertEqual(
             {tool.name: tool.integration for tool in instance.tools},
@@ -624,7 +628,7 @@ class TestAgentToolsAPI(unittest.TestCase):
         """
         with self.assertRaises(HomeAssistantError):
             asyncio.run(
-                self._tools({self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API, "gone"])
+                self._tools(self._brave(), [_SELECTED_API, "gone"])
             )
 
     def test_the_option_without_a_key_answers_without_the_tool(self) -> None:
@@ -632,7 +636,7 @@ class TestAgentToolsAPI(unittest.TestCase):
         api = self.agent_tools.agent_llm_api(
             self.hass,
             self._entry(brave=None),
-            {self.const.CONF_WEB_SEARCH: True},
+            self._brave(),
             [_SELECTED_API],
         )
         # No key means no web search at all, so the selection is passed through.
@@ -643,7 +647,7 @@ class TestAgentToolsAPI(unittest.TestCase):
         api = self.agent_tools.AgentToolsAPI(
             hass=self.hass,
             entry=self._entry(brave=None),
-            options={self.const.CONF_WEB_SEARCH: True},
+            options=self._brave(),
             selected=[_SELECTED_API],
         )
         instance = asyncio.run(api.async_get_api_instance(self.context))
@@ -652,7 +656,7 @@ class TestAgentToolsAPI(unittest.TestCase):
     def test_the_tools_render_for_the_api_like_any_other(self) -> None:
         chat_session = _load_chat_session()
         instance, _names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API])
+            self._tools(self._brave(), [_SELECTED_API])
         )
         formatted, skipped = chat_session._format_tools_for_api(
             list(instance.tools), instance.custom_serializer
@@ -932,6 +936,10 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
     against the real ``ChatLog``.
     """
 
+    def _brave(self) -> dict:
+        """An agent's settings with Brave chosen as its web search provider."""
+        return {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE}
+
     def setUp(self) -> None:
         self.agent_tools = load("agent_tools")
         self.const = load("const")
@@ -955,7 +963,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 device_id=None,
             ),
             user_llm_hass_api=self.agent_tools.agent_llm_api(
-                hass, entry, {self.const.CONF_WEB_SEARCH: True}, [_SELECTED_API]
+                hass, entry, self._brave(), [_SELECTED_API]
             ),
             user_llm_prompt="You are a test.",
         )
@@ -1009,6 +1017,110 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 await hass.async_stop()
 
         asyncio.run(check())
+
+
+@requires_ha
+class TestAgentFormWebSearchField(unittest.TestCase):
+    """The agent form offers exactly what the entry can provide, and stores an id.
+
+    Driven through the real subentry flow step rather than the helpers behind
+    it: whether the field is on the form at all, which options it lists and
+    what ends up in the subentry are all decided across ``config_flow.py``,
+    ``flow_schemas.py`` and core's selector, and only the three together say
+    what a user sees.
+    """
+
+    def setUp(self) -> None:
+        try:
+            self.config_flow = load("config_flow", api_stubs=True)
+        except ImportError as err:  # pragma: no cover
+            self.skipTest(f"config_flow needs more of core installed: {err}")
+        self.const = load("const")
+
+    def _flow(self, hass, *, entry_data: dict, options: dict):
+        """A flow adding a conversation agent to an entry holding ``entry_data``."""
+        from homeassistant.config_entries import ConfigEntryState
+
+        flow = self.config_flow.DeepSeekSubentryFlowHandler()
+        flow.hass = hass
+        flow.flow_id = "flow-1"
+        flow.handler = ("01JENTRY", self.const.SUBENTRY_TYPE_CONVERSATION)
+        flow.context = {"source": "user"}
+        flow.options = dict(options)
+        entry = SimpleNamespace(
+            entry_id="01JENTRY", data=entry_data, state=ConfigEntryState.LOADED
+        )
+        flow._get_entry = lambda: entry
+        return flow
+
+    def _run(self, *, entry_data: dict, options: dict, user_input: dict | None = None):
+        async def step():
+            hass = _minimal_hass()
+            try:
+                flow = self._flow(hass, entry_data=entry_data, options=options)
+                return flow, await flow.async_step_init(user_input)
+            finally:
+                await hass.async_stop()
+
+        return asyncio.run(step())
+
+    def _field(self, result):
+        """The web search field's selector on a shown form, or None."""
+        for marker, selector_ in result["data_schema"].schema.items():
+            if str(marker) == self.const.CONF_WEB_SEARCH:
+                return selector_
+        return None
+
+    def _answers(self, **extra) -> dict:
+        return {
+            self.const.CONF_CHAT_MODEL: self.const.RECOMMENDED_CHAT_MODEL,
+            self.const.CONF_RECOMMENDED: True,
+            **extra,
+        }
+
+    KEY = {"brave_api_key": "brave-key"}
+
+    def test_an_entry_with_nothing_to_offer_shows_no_field(self) -> None:
+        _flow, result = self._run(entry_data={}, options={})
+        self.assertEqual(result["type"], "form")
+        self.assertIsNone(self._field(result))
+
+    def test_the_field_lists_off_and_what_the_entry_offers(self) -> None:
+        _flow, result = self._run(entry_data=self.KEY, options={})
+        field = self._field(result)
+        self.assertIsNotNone(field)
+        self.assertEqual(
+            list(field.config["options"]),
+            [self.const.WEB_SEARCH_OFF, self.const.WEB_SEARCH_PROVIDER_BRAVE],
+        )
+
+    def test_a_chosen_provider_is_stored_by_its_id(self) -> None:
+        _flow, result = self._run(
+            entry_data=self.KEY,
+            options={},
+            user_input=self._answers(web_search=self.const.WEB_SEARCH_PROVIDER_BRAVE),
+        )
+        self.assertEqual(result["type"], "create_entry")
+        self.assertEqual(
+            result["data"][self.const.CONF_WEB_SEARCH],
+            self.const.WEB_SEARCH_PROVIDER_BRAVE,
+        )
+
+    def test_off_stores_nothing(self) -> None:
+        _flow, result = self._run(
+            entry_data=self.KEY,
+            options={self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE},
+            user_input=self._answers(web_search=self.const.WEB_SEARCH_OFF),
+        )
+        self.assertNotIn(self.const.CONF_WEB_SEARCH, result["data"])
+
+    def test_a_choice_whose_key_is_gone_is_cleared_on_opening_the_form(self) -> None:
+        flow, result = self._run(
+            entry_data={},
+            options={self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE},
+        )
+        self.assertIsNone(self._field(result))
+        self.assertNotIn(self.const.CONF_WEB_SEARCH, flow.options)
 
 
 @requires_ha
@@ -1068,10 +1180,12 @@ class TestWebSearchMigration(unittest.TestCase):
             ],
         )
         written = self._migrate(entry)
-        self.assertEqual(len(written), 1)
-        _subentry_id, data = written[0]
-        self.assertEqual(data, {"llm_hass_api": ["assist"], "web_search": True})
-        self.assertEqual(entry.version, 4)
+        # Two writes: the selection becomes the setting, and the setting -
+        # a switch at the time - then names its provider.
+        self.assertEqual(len(written), 2)
+        _subentry_id, data = written[-1]
+        self.assertEqual(data, {"llm_hass_api": ["assist"], "web_search": "brave"})
+        self.assertEqual(entry.version, 5)
 
     def test_an_agent_that_never_had_it_is_not_rewritten(self) -> None:
         entry = self._entry(
@@ -1086,7 +1200,7 @@ class TestWebSearchMigration(unittest.TestCase):
             ],
         )
         self.assertEqual(self._migrate(entry), [])
-        self.assertEqual(entry.version, 4)
+        self.assertEqual(entry.version, 5)
 
     def test_running_it_again_changes_nothing(self) -> None:
         """A restored backup must not re-enter a migration that already ran."""
@@ -1101,7 +1215,7 @@ class TestWebSearchMigration(unittest.TestCase):
                 }
             ],
         )
-        self.assertEqual(len(self._migrate(entry)), 1)
+        self.assertEqual(len(self._migrate(entry)), 2)
         self.assertEqual(self._migrate(entry), [])
 
     def test_every_agent_on_the_entry_is_migrated(self) -> None:
@@ -1122,7 +1236,43 @@ class TestWebSearchMigration(unittest.TestCase):
                 },
             ],
         )
-        self.assertEqual(len(self._migrate(entry)), 2)
+        self.assertEqual(len(self._migrate(entry)), 4)
+
+    def test_a_web_search_switch_names_its_provider(self) -> None:
+        """Version 4 stored a switch; it only ever meant Brave."""
+        entry = self._entry(
+            version=4,
+            subentries=[
+                {
+                    "subentry_type": "conversation",
+                    "title": "Voice",
+                    "unique_id": None,
+                    "data": {"llm_hass_api": ["assist"], "web_search": True},
+                },
+                {
+                    "subentry_type": "ai_task_data",
+                    "title": "Task",
+                    "unique_id": None,
+                    "data": {"web_search": False, "chat_model": "m"},
+                },
+                {
+                    "subentry_type": "conversation",
+                    "title": "Plain",
+                    "unique_id": None,
+                    "data": {"llm_hass_api": ["assist"]},
+                },
+            ],
+        )
+        written = [data for _subentry_id, data in self._migrate(entry)]
+        self.assertEqual(
+            written,
+            [
+                {"llm_hass_api": ["assist"], "web_search": "brave"},
+                {"chat_model": "m"},
+            ],
+        )
+        self.assertEqual(entry.version, 5)
+        self.assertEqual(self._migrate(entry), [])
 
 
 if __name__ == "__main__":

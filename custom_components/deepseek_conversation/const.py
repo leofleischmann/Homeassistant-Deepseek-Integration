@@ -42,9 +42,12 @@ CONF_INCLUDE_USER_CONTEXT = "include_user_context"
 CONF_REQUEST_TIMEOUT = "request_timeout"
 CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
-#: Per agent: may this one search the web with the entry's Brave key. Until
-#: 1.8.4 the tool was a globally registered LLM API instead, which put it in
-#: every *other* conversation integration's API picker as well (#38).
+#: Per agent: the id of the web search provider this one uses (one of the
+#: WEB_SEARCH_PROVIDER_* below); absent means no web search. Up to 1.8.7 this
+#: was a plain switch, because Brave was the only provider - see
+#: options.web_search_switch_to_provider(). Until 1.8.4 the tool was a globally
+#: registered LLM API instead, which put it in every *other* conversation
+#: integration's API picker as well (#38).
 CONF_WEB_SEARCH = "web_search"
 #: How that API's id was built, so migration can recognise an agent that had
 #: selected it and turn the selection into CONF_WEB_SEARCH.
@@ -52,6 +55,9 @@ LEGACY_WEB_SEARCH_API_ID_PREFIX = f"{DOMAIN}_web_search_"
 #: Ids of the web search providers (web/). Stable once released: see
 #: web/selection.py for which of them an entry can offer.
 WEB_SEARCH_PROVIDER_BRAVE = "brave"
+#: What the agent form shows for "no web search". Form only: a subentry stores
+#: no CONF_WEB_SEARCH at all rather than this (options.normalize_web_search_choice).
+WEB_SEARCH_OFF = "off"
 CONF_AGENT = "agent"
 CONF_CONFIG_ENTRY = "config_entry"
 CONF_FILENAMES = "filenames"

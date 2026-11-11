@@ -11,7 +11,7 @@ appear together and in what order.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import voluptuous as vol  # pyright: ignore[reportMissingImports]
@@ -25,6 +25,7 @@ from homeassistant.helpers.selector import (  # pyright: ignore[reportMissingImp
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -45,6 +46,7 @@ from .const import (
     CONF_THINKING_ENABLED,
     CONF_TOP_P,
     CONF_VISION_ENABLED,
+    CONF_WEB_SEARCH,
     CONF_BASE_URL,
     CONF_BRAVE_API_KEY,
     DEEPSEEK_API_BASE_URL,
@@ -68,6 +70,7 @@ from .const import (
     RECOMMENDED_TOP_P,
     REQUEST_TIMEOUT_LOWER_BOUND,
     REQUEST_TIMEOUT_UPPER_BOUND,
+    WEB_SEARCH_OFF,
 )
 from .options import (
     coerce_max_history_rounds,
@@ -261,6 +264,23 @@ def chat_model_selector() -> SelectSelector:
     )
 
 
+def web_search_selector(providers: Sequence[str]) -> SelectSelector:
+    """The agent form's web search field: off, or one of the entry's providers.
+
+    One field rather than a switch plus a provider list, so there is exactly
+    one stored value to read (``CONF_WEB_SEARCH``, see web/selection.py). The
+    labels come from ``selector.web_search.options`` in the translations, so a
+    provider id added to const.py needs an entry there in every language.
+    """
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[WEB_SEARCH_OFF, *providers],
+            translation_key=CONF_WEB_SEARCH,
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
 def _api_key_selector() -> TextSelector:
     return TextSelector(
         TextSelectorConfig(
@@ -280,12 +300,15 @@ def _base_url_selector() -> TextSelector:
 
 
 def get_user_step_schema() -> vol.Schema:
-    """Schema for initial config (API key, URL, model, optional Brave key)."""
+    """Schema for initial config (API key, URL, model).
+
+    The Brave key is not asked for here: it is one provider's credential, not
+    something a first setup needs, and Reconfigure takes it at any time.
+    """
     return vol.Schema(
         {
             vol.Required(CONF_API_KEY): _api_key_selector(),
             vol.Optional(CONF_BASE_URL, default=DEEPSEEK_API_BASE_URL): _base_url_selector(),
-            vol.Optional(CONF_BRAVE_API_KEY): _api_key_selector(),
             vol.Optional(
                 CONF_CHAT_MODEL, default=RECOMMENDED_CHAT_MODEL
             ): chat_model_selector(),
@@ -303,8 +326,8 @@ STEP_REAUTH_DATA_SCHEMA = vol.Schema(
 def get_reconfigure_step_schema(entry: ConfigEntry) -> vol.Schema:
     """Schema for reconfigure (DeepSeek key, base URL, optional Brave key).
 
-    Brave key: leave empty to keep the current key; enter ``-`` to remove it
-    (clears web search LLM API registration after reload).
+    Brave key: leave empty to keep the current key; enter ``-`` to remove it.
+    Agents that search with Brave are then left without web search.
     """
     return vol.Schema(
         {

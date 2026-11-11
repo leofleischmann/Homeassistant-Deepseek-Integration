@@ -69,11 +69,7 @@
                 "data": {
                     "api_key": "API 密钥",
                     "base_url": "API 基础地址",
-                    "brave_api_key": "Brave Search API 密钥（可选）",
                     "chat_model": "模型"
-                },
-                "data_description": {
-                    "brave_api_key": "可选。为本集成的每个代理添加“网页搜索”开关，仅它们可以使用。"
                 },
                 "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 和 deepseek-reasoner 已于 2026-07-24 下线，不再受支持。"
             },
@@ -97,7 +93,7 @@
                 },
                 "data_description": {
                     "api_key": "来自 platform.deepseek.com 的 API 密钥",
-                    "brave_api_key": "留空以保留当前 Brave 密钥。输入新密钥以替换。输入单个短横线 (-) 以移除网页搜索。"
+                    "brave_api_key": "仅 Brave Search 需要。留空以保留当前密钥，输入新密钥以替换，或输入单个短横线 (-) 以移除。"
                 }
             }
         },
@@ -130,7 +126,7 @@
                         "name": "名称",
                         "prompt": "指令",
                         "llm_hass_api": "Home Assistant API",
-                        "web_search": "网页搜索（Brave）",
+                        "web_search": "网页搜索",
                         "chat_model": "模型",
                         "recommended": "推荐设置"
                     },
@@ -139,7 +135,7 @@
                         "llm_hass_api": "未选择则无法控制你的家。",
                         "chat_model": "Flash 最快，Pro 最强，Vision 可接收图片。",
                         "recommended": "关闭后将打开包含其余项的第二步。",
-                        "web_search": "允许该代理使用你的 Brave 密钥在公开网络上查询。"
+                        "web_search": "允许该代理在公开网络上查询。Brave Search 使用在“重新配置”中设置的 Brave 密钥。"
                     }
                 },
                 "advanced": {
@@ -226,7 +222,7 @@
                         "name": "名称",
                         "prompt": "指令",
                         "llm_hass_api": "Home Assistant API",
-                        "web_search": "网页搜索（Brave）",
+                        "web_search": "网页搜索",
                         "chat_model": "模型",
                         "recommended": "推荐设置"
                     },
@@ -235,7 +231,7 @@
                         "llm_hass_api": "未选择则无法控制你的家。",
                         "chat_model": "Flash 最快，Pro 最强，Vision 可接收图片。",
                         "recommended": "关闭后将打开包含其余项的第二步。",
-                        "web_search": "允许该代理使用你的 Brave 密钥在公开网络上查询。"
+                        "web_search": "允许该代理在公开网络上查询。Brave Search 使用在“重新配置”中设置的 Brave 密钥。"
                     }
                 },
                 "advanced": {
@@ -310,6 +306,12 @@
                 "high": "高",
                 "max": "最大",
                 "xhigh": "极高"
+            }
+        },
+        "web_search": {
+            "options": {
+                "off": "关闭",
+                "brave": "Brave Search"
             }
         }
     },

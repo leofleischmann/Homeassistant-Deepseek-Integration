@@ -10,7 +10,7 @@ Two kinds of function live here:
 
 * ``coerce_*`` / ``*_from_options`` — turn one stored value into a usable one,
   clamped to the bounds in const.py;
-* ``recommended_agent_options`` and the three migration helpers — reshape a
+* ``recommended_agent_options`` and the four migration helpers — reshape a
   whole settings mapping when the form or the defaults changed underneath it.
 
 Pure functions over mappings, so this module can be unit-tested on its own.
@@ -33,6 +33,7 @@ from .const import (
     CONF_STRIP_MARKDOWN,
     CONF_WEB_SEARCH,
     LEGACY_WEB_SEARCH_API_ID_PREFIX,
+    WEB_SEARCH_PROVIDER_BRAVE,
     MAX_HISTORY_ROUNDS_UPPER_BOUND,
     MAX_TOKENS_UPPER_BOUND,
     MAX_TOOL_ITERATIONS_UPPER_BOUND,
@@ -230,3 +231,37 @@ def move_web_search_selection(options: Mapping[str, Any]) -> dict[str, Any] | No
         # key only when something is selected.
         moved.pop(CONF_LLM_HASS_API, None)
     return moved
+
+
+def web_search_switch_to_provider(options: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Turn the web search switch into the provider it always meant.
+
+    Web search was a plain on/off setting while Brave was the only provider.
+    An agent now names its provider instead, so a stored ``True`` becomes
+    Brave - the agent searches exactly as before - and a stored ``False`` is
+    dropped, because off is what a missing setting already means.
+
+    Returns the agent's new settings, or ``None`` when there is nothing to
+    change: no setting at all, or one that already names a provider.
+    """
+    value = options.get(CONF_WEB_SEARCH)
+    if not isinstance(value, bool):
+        return None
+    moved = dict(options)
+    if value:
+        moved[CONF_WEB_SEARCH] = WEB_SEARCH_PROVIDER_BRAVE
+    else:
+        moved.pop(CONF_WEB_SEARCH)
+    return moved
+
+
+def normalize_web_search_choice(value: Any, available: tuple[str, ...]) -> str | None:
+    """What to store for the agent form's web search field.
+
+    A provider the entry can offer is stored by its id. Everything else - the
+    form's own "off", a field the form did not show, a provider whose key has
+    since been removed - is ``None``, and the caller stores nothing at all.
+    """
+    if isinstance(value, str) and value in available:
+        return value
+    return None

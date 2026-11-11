@@ -145,10 +145,10 @@ class TestBraveProvider(unittest.TestCase):
 
 
 class TestWhichWebToolsAnAgentGets(unittest.TestCase):
-    """An agent gets what it asked for, limited to what its entry can provide."""
+    """An agent gets the provider it named, if its entry can offer that one."""
 
     KEY = {const.CONF_BRAVE_API_KEY: "brave-key"}
-    ON = {const.CONF_WEB_SEARCH: True}
+    BRAVE = {const.CONF_WEB_SEARCH: const.WEB_SEARCH_PROVIDER_BRAVE}
 
     def test_an_entry_offers_brave_once_it_holds_a_key(self) -> None:
         self.assertEqual(selection.available_search_providers({}), ())
@@ -160,19 +160,27 @@ class TestWhichWebToolsAnAgentGets(unittest.TestCase):
             (const.WEB_SEARCH_PROVIDER_BRAVE,),
         )
 
-    def test_asked_for_and_available_is_a_plan(self) -> None:
-        plan = selection.web_tools_plan(self.KEY, self.ON)
+    def test_named_and_available_is_a_plan(self) -> None:
+        plan = selection.web_tools_plan(self.KEY, self.BRAVE)
         self.assertTrue(plan)
         self.assertEqual(plan.search_provider, const.WEB_SEARCH_PROVIDER_BRAVE)
 
-    def test_not_asked_for_is_no_plan(self) -> None:
+    def test_no_choice_is_no_plan(self) -> None:
         self.assertFalse(selection.web_tools_plan(self.KEY, {}))
 
-    def test_a_setting_that_outlived_its_key_is_not_honoured(self) -> None:
-        """The key can be removed through Reconfigure while the setting stays."""
-        plan = selection.web_tools_plan({}, self.ON)
+    def test_a_choice_that_outlived_its_key_is_not_honoured(self) -> None:
+        """The key can be removed through Reconfigure while the choice stays."""
+        plan = selection.web_tools_plan({}, self.BRAVE)
         self.assertFalse(plan)
         self.assertIsNone(plan.search_provider)
+
+    def test_only_a_provider_id_counts_as_a_choice(self) -> None:
+        """No guessing: an unknown id, the form's "off" and the old switch are all nothing."""
+        for stored in ("searxng", const.WEB_SEARCH_OFF, True, "", None):
+            with self.subTest(stored=stored):
+                self.assertFalse(
+                    selection.web_tools_plan(self.KEY, {const.CONF_WEB_SEARCH: stored})
+                )
 
 
 if __name__ == "__main__":

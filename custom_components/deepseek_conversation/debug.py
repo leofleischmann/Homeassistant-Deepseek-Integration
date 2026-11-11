@@ -63,7 +63,11 @@ from .openapi_schema import CONVERTERS
 from .options import coerce_max_tokens, request_timeout_from_options
 from .request_builder import deepseek_chat_thinking_params
 from .usage_metrics import completion_usage_from_api
-from .web.selection import brave_api_key, web_tools_plan
+from .web.selection import (
+    available_search_providers,
+    brave_api_key,
+    web_tools_plan,
+)
 
 
 async def _timed(
@@ -317,12 +321,16 @@ async def async_run_debug_suite(
             # Not in registered_apis: web search is this agent's own tool now,
             # never registered, so it cannot show up in another integration.
             "brave_key_on_entry": bool(brave_api_key(entry.data)),
-            "web_search_enabled": bool(web_tools_plan(entry.data, opts)),
+            # What the entry can offer, and what this agent ends up with:
+            # None for the provider means no web search tool at all.
+            "web_search_available": list(available_search_providers(entry.data)),
+            "web_search_provider": web_tools_plan(entry.data, opts).search_provider,
         }
         log(
             f"LLM APIs registered={len(api_rows)} selected={sel!r} "
             f"exists={out['llm']['selected_exists']} "
-            f"web_search={out['llm']['web_search_enabled']}"
+            f"web_search={out['llm']['web_search_provider']} "
+            f"(available={out['llm']['web_search_available']})"
         )
     except Exception as e:
         out["llm"] = {"error": str(e)}

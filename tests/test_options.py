@@ -313,5 +313,75 @@ class TestMoveWebSearchSelection(unittest.TestCase):
         self.assertEqual(stored, {LLM_API: [self.LEGACY]})
 
 
+
+class TestWebSearchSwitchBecomesAProvider(unittest.TestCase):
+    """Web search stops being a switch and names its provider instead.
+
+    The switch only ever meant Brave, so an agent that had it on has to keep
+    searching with Brave without its owner doing anything.
+    """
+
+    def test_on_becomes_brave(self) -> None:
+        self.assertEqual(
+            options.web_search_switch_to_provider(
+                {const.CONF_WEB_SEARCH: True, const.CONF_CHAT_MODEL: "m"}
+            ),
+            {
+                const.CONF_WEB_SEARCH: const.WEB_SEARCH_PROVIDER_BRAVE,
+                const.CONF_CHAT_MODEL: "m",
+            },
+        )
+
+    def test_off_is_dropped_because_missing_already_means_off(self) -> None:
+        self.assertEqual(
+            options.web_search_switch_to_provider(
+                {const.CONF_WEB_SEARCH: False, const.CONF_CHAT_MODEL: "m"}
+            ),
+            {const.CONF_CHAT_MODEL: "m"},
+        )
+
+    def test_an_agent_without_the_switch_is_left_alone(self) -> None:
+        self.assertIsNone(options.web_search_switch_to_provider({}))
+        self.assertIsNone(
+            options.web_search_switch_to_provider({const.CONF_CHAT_MODEL: "m"})
+        )
+
+    def test_a_provider_that_is_already_named_is_left_alone(self) -> None:
+        """Which is also what makes running it twice harmless."""
+        once = options.web_search_switch_to_provider({const.CONF_WEB_SEARCH: True})
+        self.assertIsNone(options.web_search_switch_to_provider(once))
+
+    def test_the_original_settings_are_not_written_through(self) -> None:
+        stored = {const.CONF_WEB_SEARCH: True}
+        options.web_search_switch_to_provider(stored)
+        self.assertEqual(stored, {const.CONF_WEB_SEARCH: True})
+
+
+class TestWebSearchChoice(unittest.TestCase):
+    """What the agent form's web search field turns into when it is saved."""
+
+    AVAILABLE = (const.WEB_SEARCH_PROVIDER_BRAVE,)
+
+    def test_a_provider_the_entry_offers_is_stored_by_its_id(self) -> None:
+        self.assertEqual(
+            options.normalize_web_search_choice(
+                const.WEB_SEARCH_PROVIDER_BRAVE, self.AVAILABLE
+            ),
+            const.WEB_SEARCH_PROVIDER_BRAVE,
+        )
+
+    def test_everything_else_stores_nothing(self) -> None:
+        for value in (const.WEB_SEARCH_OFF, None, "", "searxng", True):
+            with self.subTest(value=value):
+                self.assertIsNone(
+                    options.normalize_web_search_choice(value, self.AVAILABLE)
+                )
+
+    def test_a_provider_the_entry_cannot_offer_stores_nothing(self) -> None:
+        self.assertIsNone(
+            options.normalize_web_search_choice(const.WEB_SEARCH_PROVIDER_BRAVE, ())
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

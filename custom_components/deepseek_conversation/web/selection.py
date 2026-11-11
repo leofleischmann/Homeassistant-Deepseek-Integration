@@ -2,8 +2,10 @@
 
 Two questions, both answered from plain mappings so the stubbed suite can ask
 them: what can this config entry offer at all, and what did this agent ask for.
-An agent only gets what both agree on - a setting that outlived the key it
-needs is simply not honoured, and the agent form clears it when next opened.
+An agent names its search provider by id (``CONF_WEB_SEARCH``) and only gets
+what both agree on - a choice that outlived the key it needs is simply not
+honoured, and the agent form clears it when next opened. There is no second
+choice to fall back on: a provider that is gone means no web search.
 
 Affects / influenced by:
 - ``agent_tools.py`` builds exactly the tools ``web_tools_plan`` names.
@@ -55,7 +57,7 @@ def web_tools_plan(
     entry_data: Mapping[str, Any], options: Mapping[str, Any]
 ) -> WebToolsPlan:
     """What this agent asked for, limited to what its entry can provide."""
-    available = available_search_providers(entry_data)
-    if options.get(CONF_WEB_SEARCH) and WEB_SEARCH_PROVIDER_BRAVE in available:
-        return WebToolsPlan(search_provider=WEB_SEARCH_PROVIDER_BRAVE)
+    choice = options.get(CONF_WEB_SEARCH)
+    if isinstance(choice, str) and choice in available_search_providers(entry_data):
+        return WebToolsPlan(search_provider=choice)
     return WebToolsPlan()
