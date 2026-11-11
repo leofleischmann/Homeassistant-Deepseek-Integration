@@ -22,10 +22,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..const import (
+    CONF_BASE_URL,
     CONF_BRAVE_API_KEY,
     CONF_WEB_SEARCH,
     WEB_SEARCH_PROVIDER_BRAVE,
+    WEB_SEARCH_PROVIDER_DEEPSEEK,
 )
+from ..models import is_official_deepseek_api_base_url
 
 
 def brave_api_key(entry_data: Mapping[str, Any]) -> str:
@@ -34,8 +37,15 @@ def brave_api_key(entry_data: Mapping[str, Any]) -> str:
 
 
 def available_search_providers(entry_data: Mapping[str, Any]) -> tuple[str, ...]:
-    """The search providers this entry can offer its agents, in form order."""
+    """The search providers this entry can offer its agents, in form order.
+
+    DeepSeek Search exists on DeepSeek's own API only: a custom gateway is not
+    known to forward ``/v1/tools/search``, and the entry's key may not be a
+    DeepSeek key at all. Brave works anywhere once the entry holds its key.
+    """
     providers: list[str] = []
+    if is_official_deepseek_api_base_url(entry_data.get(CONF_BASE_URL)):
+        providers.append(WEB_SEARCH_PROVIDER_DEEPSEEK)
     if brave_api_key(entry_data):
         providers.append(WEB_SEARCH_PROVIDER_BRAVE)
     return tuple(providers)

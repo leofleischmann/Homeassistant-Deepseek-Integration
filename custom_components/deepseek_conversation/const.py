@@ -53,7 +53,10 @@ CONF_WEB_SEARCH = "web_search"
 #: selected it and turn the selection into CONF_WEB_SEARCH.
 LEGACY_WEB_SEARCH_API_ID_PREFIX = f"{DOMAIN}_web_search_"
 #: Ids of the web search providers (web/). Stable once released: see
-#: web/selection.py for which of them an entry can offer.
+#: web/selection.py for which of them an entry can offer. A new id also needs
+#: a branch in web/factory.py and a label in every translation's
+#: selector.web_search.options.
+WEB_SEARCH_PROVIDER_DEEPSEEK = "deepseek"
 WEB_SEARCH_PROVIDER_BRAVE = "brave"
 #: What the agent form shows for "no web search". Form only: a subentry stores
 #: no CONF_WEB_SEARCH at all rather than this (options.normalize_web_search_choice).

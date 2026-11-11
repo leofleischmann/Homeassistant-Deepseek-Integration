@@ -1,11 +1,13 @@
-"""Home Assistant's tool-result types, across the cores this integration supports.
+"""Home Assistant's LLM tool types, across the cores this integration supports.
 
 The README promises Home Assistant 2026.1 and later, and how a tool result
 travels changed inside that range. Up to 2026.9 it is a bare JSON object
 everywhere: what a tool returns, what ``ToolResultContent.tool_result`` holds
 and what a ``tool_result`` delta carries. 2026.10 introduced ``llm.ToolResult``
 and moved all three onto it - the old spellings still work there, but core
-reports each use and refuses them from 2027.11.
+reports each use and refuses them from 2027.11. The same release lets a tool
+say how it behaves (``llm.ToolAnnotations``), with defaults that describe the
+least safe case.
 
 Every question of the form "which shape does this core want" is answered here,
 one small function per question, and each asks core for the feature rather than
@@ -16,7 +18,8 @@ Affects / influenced by:
   ``tool_result_data`` before sending it back to the API.
 - ``stream_transform.py`` reports unreadable tool arguments to the model with
   ``tool_result_delta``.
-- ``web/search_tool.py`` answers with ``tool_result``.
+- ``web/search_tool.py`` answers with ``tool_result`` and describes itself
+  with ``read_only_annotations``.
 - ``tests/test_real_home_assistant.py`` pins all three against whichever core
   is installed; the stubbed suite only ever sees the pre-2026.10 shapes.
 """
@@ -87,3 +90,18 @@ def tool_result_delta(
     else:
         delta["tool_result"] = data
     return delta
+
+
+def read_only_annotations() -> Any:
+    """Annotations for a tool that only reads from the outside world, or None.
+
+    Core's defaults describe the least safe case - a tool that writes, destroys
+    and is not safe to repeat - so a tool that declares nothing is taken for
+    one. ``None`` on the cores that have no such notion; the caller then sets
+    nothing.
+    """
+    if (annotations_type := getattr(llm, "ToolAnnotations", None)) is None:
+        return None
+    return annotations_type(
+        read_only=True, destructive=False, idempotent=True, open_world=True
+    )

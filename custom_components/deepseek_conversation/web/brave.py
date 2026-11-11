@@ -59,6 +59,9 @@ class BraveSearchProvider:
 
     id = WEB_SEARCH_PROVIDER_BRAVE
     label = "Brave Search"
+    #: Nothing is checked before sending; Brave answers for itself.
+    max_query_chars = None
+    query_help = ""
 
     def __init__(
         self, http: Callable[[], Any], *, api_key: str, timeout: float

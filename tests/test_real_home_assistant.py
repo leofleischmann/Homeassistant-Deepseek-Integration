@@ -631,8 +631,40 @@ class TestAgentToolsAPI(unittest.TestCase):
                 self._tools(self._brave(), [_SELECTED_API, "gone"])
             )
 
+    def test_deepseek_search_needs_no_key_of_its_own(self) -> None:
+        """On the official API the entry's own key is all there is to it."""
+        entry = SimpleNamespace(
+            entry_id=self.ENTRY_ID, title="DeepSeek", data={"api_key": "sk-deepseek"}
+        )
+        api = self.agent_tools.agent_llm_api(
+            self.hass,
+            entry,
+            {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_DEEPSEEK},
+            [_SELECTED_API],
+        )
+        instance = asyncio.run(api.async_get_api_instance(self.context))
+        self.assertEqual(
+            [tool.name for tool in instance.tools], ["recorded", "web_search"]
+        )
+        # The provider's own query rules reach the model through the tool.
+        self.assertIn("128", instance.tools[-1].description)
+
+    def test_deepseek_search_is_not_offered_behind_a_custom_base_url(self) -> None:
+        entry = SimpleNamespace(
+            entry_id=self.ENTRY_ID,
+            title="Gateway",
+            data={"api_key": "sk-other", "base_url": "https://gateway.example/v1"},
+        )
+        api = self.agent_tools.agent_llm_api(
+            self.hass,
+            entry,
+            {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_DEEPSEEK},
+            [_SELECTED_API],
+        )
+        self.assertEqual(api, [_SELECTED_API])
+
     def test_the_option_without_a_key_answers_without_the_tool(self) -> None:
-        """The key can be removed through Reconfigure while the switch stays on."""
+        """The key can be removed through Reconfigure while the choice stays."""
         api = self.agent_tools.agent_llm_api(
             self.hass,
             self._entry(brave=None),
@@ -808,13 +840,27 @@ class TestToolResultsTravelInTheCoreShape(unittest.TestCase):
 
 
 class _StubProvider:
-    """A search provider that needs no network, for cases about the tool itself."""
+    """A search provider that needs no network, for cases about the tool itself.
+
+    Answers with whatever it was given - a list of results, or an exception to
+    raise - and records what it was asked, so a case can also prove that the
+    tool never asked at all.
+    """
 
     id = "stub"
     label = "Stub Search"
 
+    def __init__(self, answer=(), *, max_query_chars=None, query_help="") -> None:
+        self._answer = answer
+        self.max_query_chars = max_query_chars
+        self.query_help = query_help
+        self.asked: list[tuple[str, int]] = []
+
     async def search(self, query: str, count: int) -> list:
-        return []
+        self.asked.append((query, count))
+        if isinstance(self._answer, Exception):
+            raise self._answer
+        return list(self._answer)
 
 
 class _FakeResponse:
@@ -911,7 +957,7 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
                     {
                         "title": "Result one",
                         "url": "https://example.test/one",
-                        "description": "First",
+                        "summary": "First",
                     }
                 ],
             },
@@ -924,6 +970,137 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
         answer = self._answer()
         self.assertIsInstance(answer, llm.ToolResult)
         self.assertFalse(answer.error)
+
+
+def _core_has_tool_annotations() -> bool:
+    return not HA_REASON and hasattr(llm, "ToolAnnotations")
+
+
+requires_tool_annotations = unittest.skipUnless(
+    _core_has_tool_annotations(), "this core's llm.Tool has no annotations"
+)
+
+
+@requires_ha
+class TestWebSearchToolContract(unittest.TestCase):
+    """What the tool promises the model, whichever provider is behind it."""
+
+    def setUp(self) -> None:
+        self.search_tool = load("web.search_tool")
+        self.web_types = load("web.types")
+
+    def _call(self, provider, **tool_args):
+        tool = self.search_tool.WebSearchTool(provider)
+        return asyncio.run(
+            tool.async_call(
+                _FakeHass(),
+                llm.ToolInput(tool_name="web_search", tool_args=tool_args, id="1"),
+                llm.LLMContext(
+                    platform="deepseek_conversation",
+                    context=None,
+                    language="en",
+                    assistant="conversation",
+                    device_id=None,
+                ),
+            )
+        )
+
+    def _result(self, **fields):
+        return self.web_types.SearchResult(
+            title="T", url="https://example.test", summary="S", **fields
+        )
+
+    def test_results_reach_the_model_without_the_ranking_signals(self) -> None:
+        provider = _StubProvider(
+            [self._result(source="Example", date="2026-06-01", score=2.4, authority=3)]
+        )
+        self.assertEqual(
+            _result_data(self._call(provider, query="  ha release  ", count=3)),
+            {
+                "query": "ha release",
+                "results": [
+                    {
+                        "title": "T",
+                        "url": "https://example.test",
+                        "source": "Example",
+                        "date": "2026-06-01",
+                        "summary": "S",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(provider.asked, [("ha release", 3)])
+
+    def test_the_count_is_kept_within_what_the_tool_offers(self) -> None:
+        for asked, sent in ((99, self.search_tool.MAX_RESULT_COUNT), (0, 1)):
+            with self.subTest(asked=asked):
+                provider = _StubProvider()
+                self._call(provider, query="q", count=asked)
+                self.assertEqual(provider.asked, [("q", sent)])
+
+    def test_an_empty_search_says_so(self) -> None:
+        """Otherwise the model answers from memory as if it had found something."""
+        data = _result_data(self._call(_StubProvider(), query="q"))
+        self.assertEqual(data["results"], [])
+        self.assertIn("No results", data["note"])
+
+    def test_a_search_with_results_carries_no_note(self) -> None:
+        data = _result_data(self._call(_StubProvider([self._result()]), query="q"))
+        self.assertNotIn("note", data)
+
+    def test_a_query_over_the_provider_s_limit_is_refused_before_it_is_sent(self) -> None:
+        provider = _StubProvider(max_query_chars=128)
+        with self.assertRaises(HomeAssistantError) as caught:
+            self._call(provider, query="x" * 129)
+        message = str(caught.exception)
+        self.assertIn("129", message)
+        self.assertIn("128", message)
+        self.assertIn("call web_search again", message)
+        self.assertEqual(provider.asked, [])
+
+    def test_a_query_at_the_limit_goes_through(self) -> None:
+        provider = _StubProvider(max_query_chars=128)
+        self._call(provider, query="x" * 128)
+        self.assertEqual(len(provider.asked), 1)
+
+    def test_a_provider_without_a_limit_is_not_checked(self) -> None:
+        provider = _StubProvider(max_query_chars=None)
+        self._call(provider, query="x" * 2000)
+        self.assertEqual(len(provider.asked), 1)
+
+    def test_a_provider_s_failure_reaches_the_model_in_its_own_words(self) -> None:
+        """Core hands the text of a ``HomeAssistantError`` back as the result."""
+        failure = self.web_types.WebToolError(
+            self.web_types.WebErrorKind.BALANCE, "no balance left. Tell the user."
+        )
+        with self.assertRaises(HomeAssistantError) as caught:
+            self._call(_StubProvider(failure), query="q")
+        self.assertEqual(str(caught.exception), "no balance left. Tell the user.")
+
+    def test_the_description_carries_the_provider_s_query_rules(self) -> None:
+        with_rules = self.search_tool.WebSearchTool(
+            _StubProvider(query_help="Query: at most 128 characters.")
+        )
+        self.assertTrue(
+            with_rules.description.endswith("Query: at most 128 characters.")
+        )
+        without = self.search_tool.WebSearchTool(_StubProvider())
+        self.assertEqual(without.description, without.description.strip())
+
+    def test_the_prompt_tells_the_model_not_to_obey_what_it_reads(self) -> None:
+        """The one guard between a web page and an agent that controls a home."""
+        prompt = self.search_tool.WEB_SEARCH_API_PROMPT
+        self.assertIn("untrusted", prompt)
+        self.assertIn("never operate the home", prompt)
+
+    @requires_tool_annotations
+    def test_the_tool_says_it_only_reads(self) -> None:
+        """Core's defaults describe a tool that writes and destroys."""
+        self.assertTrue(llm.Tool.annotations.destructive)
+        annotations = self.search_tool.WebSearchTool(_StubProvider()).annotations
+        self.assertTrue(annotations.read_only)
+        self.assertFalse(annotations.destructive)
+        self.assertTrue(annotations.open_world)
 
 
 @requires_ha
@@ -1079,20 +1256,50 @@ class TestAgentFormWebSearchField(unittest.TestCase):
         }
 
     KEY = {"brave_api_key": "brave-key"}
+    #: A custom gateway: DeepSeek Search is offered on the official API only.
+    GATEWAY = {"base_url": "https://gateway.example/v1"}
 
     def test_an_entry_with_nothing_to_offer_shows_no_field(self) -> None:
-        _flow, result = self._run(entry_data={}, options={})
+        _flow, result = self._run(entry_data=self.GATEWAY, options={})
         self.assertEqual(result["type"], "form")
         self.assertIsNone(self._field(result))
 
     def test_the_field_lists_off_and_what_the_entry_offers(self) -> None:
-        _flow, result = self._run(entry_data=self.KEY, options={})
-        field = self._field(result)
-        self.assertIsNotNone(field)
-        self.assertEqual(
-            list(field.config["options"]),
-            [self.const.WEB_SEARCH_OFF, self.const.WEB_SEARCH_PROVIDER_BRAVE],
+        deepseek = self.const.WEB_SEARCH_PROVIDER_DEEPSEEK
+        brave = self.const.WEB_SEARCH_PROVIDER_BRAVE
+        cases = (
+            ({}, [deepseek]),  # the official API, and no Brave key
+            (self.KEY, [deepseek, brave]),
+            ({**self.GATEWAY, **self.KEY}, [brave]),
         )
+        for entry_data, offered in cases:
+            with self.subTest(entry_data=entry_data):
+                _flow, result = self._run(entry_data=entry_data, options={})
+                field = self._field(result)
+                self.assertIsNotNone(field)
+                self.assertEqual(
+                    list(field.config["options"]),
+                    [self.const.WEB_SEARCH_OFF, *offered],
+                )
+
+    def test_every_option_has_a_label_in_every_language(self) -> None:
+        """An option without one is shown to the user as its raw id."""
+        translations = pathlib.Path(self.config_flow.__file__).parent / "translations"
+        for path in sorted(translations.glob("*.json")):
+            with self.subTest(language=path.stem):
+                labels = json.loads(path.read_text(encoding="utf-8"))["selector"][
+                    self.const.CONF_WEB_SEARCH
+                ]["options"]
+                self.assertEqual(
+                    sorted(labels),
+                    sorted(
+                        [
+                            self.const.WEB_SEARCH_OFF,
+                            self.const.WEB_SEARCH_PROVIDER_DEEPSEEK,
+                            self.const.WEB_SEARCH_PROVIDER_BRAVE,
+                        ]
+                    ),
+                )
 
     def test_a_chosen_provider_is_stored_by_its_id(self) -> None:
         _flow, result = self._run(
@@ -1115,11 +1322,12 @@ class TestAgentFormWebSearchField(unittest.TestCase):
         self.assertNotIn(self.const.CONF_WEB_SEARCH, result["data"])
 
     def test_a_choice_whose_key_is_gone_is_cleared_on_opening_the_form(self) -> None:
+        """Cleared, not swapped for the provider that is still there."""
         flow, result = self._run(
             entry_data={},
             options={self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE},
         )
-        self.assertIsNone(self._field(result))
+        self.assertIsNotNone(self._field(result))
         self.assertNotIn(self.const.CONF_WEB_SEARCH, flow.options)
 
 

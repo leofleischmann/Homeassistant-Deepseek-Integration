@@ -135,7 +135,7 @@
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
                         "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
                         "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
-                        "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
+                        "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. DeepSeek Search braucht keinen weiteren Schlüssel und wird pro Suche über dein DeepSeek-Guthaben abgerechnet; Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
                     }
                 },
                 "advanced": {
@@ -231,7 +231,7 @@
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
                         "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
                         "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
-                        "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
+                        "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. DeepSeek Search braucht keinen weiteren Schlüssel und wird pro Suche über dein DeepSeek-Guthaben abgerechnet; Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
                     }
                 },
                 "advanced": {
@@ -311,6 +311,7 @@
         "web_search": {
             "options": {
                 "off": "Aus",
+                "deepseek": "DeepSeek Search",
                 "brave": "Brave Search"
             }
         }

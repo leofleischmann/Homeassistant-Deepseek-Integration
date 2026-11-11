@@ -135,7 +135,7 @@
                         "llm_hass_api": "Nothing selected means no control over your home.",
                         "chat_model": "Flash is fastest, Pro strongest, Vision accepts images.",
                         "recommended": "Off opens a second step with everything else.",
-                        "web_search": "Lets this agent look things up on the public web. Brave Search uses the Brave key set under Reconfigure."
+                        "web_search": "Lets this agent look things up on the public web. DeepSeek Search needs no extra key and is billed per search on your DeepSeek balance; Brave Search uses the Brave key set under Reconfigure."
                     }
                 },
                 "advanced": {
@@ -231,7 +231,7 @@
                         "llm_hass_api": "Nothing selected means no control over your home.",
                         "chat_model": "Flash is fastest, Pro strongest, Vision accepts images.",
                         "recommended": "Off opens a second step with everything else.",
-                        "web_search": "Lets this agent look things up on the public web. Brave Search uses the Brave key set under Reconfigure."
+                        "web_search": "Lets this agent look things up on the public web. DeepSeek Search needs no extra key and is billed per search on your DeepSeek balance; Brave Search uses the Brave key set under Reconfigure."
                     }
                 },
                 "advanced": {
@@ -311,6 +311,7 @@
         "web_search": {
             "options": {
                 "off": "Off",
+                "deepseek": "DeepSeek Search",
                 "brave": "Brave Search"
             }
         }

@@ -6,8 +6,9 @@ one search API is what lets a provider be added without the tool changing, and
 lets the tool be tested against a provider that is five lines long.
 
 Affects / influenced by:
-- ``brave.py`` produces these; ``search_tool.py`` consumes them and turns a
-  ``WebToolError`` into the ``HomeAssistantError`` core reports to the model.
+- ``brave.py`` and ``deepseek.py`` produce these; ``search_tool.py`` consumes
+  them and turns a ``WebToolError`` into the ``HomeAssistantError`` core
+  reports to the model.
 - A field added to ``SearchResult`` reaches the model only through
   ``SearchResult.as_tool_dict``, so that method is the model-facing contract.
 """
@@ -30,6 +31,8 @@ class WebErrorKind(StrEnum):
     INVALID_REQUEST = "invalid_request"
     #: The provider rejected the credential.
     AUTH = "auth"
+    #: The account behind the credential has run out of balance.
+    BALANCE = "balance"
     #: The provider is throttling this account.
     RATE_LIMITED = "rate_limited"
     #: The provider could not be reached or failed on its side.
@@ -59,10 +62,29 @@ class SearchResult:
     title: str
     url: str
     summary: str
+    #: Name of the site, so a spoken answer can name its source without
+    #: reading out a URL.
+    source: str | None = None
+    #: Day of publication as ``YYYY-MM-DD``, where the provider knows it.
+    date: str | None = None
+    #: The provider's own ranking signals. They go to the debug log, where
+    #: they help judge result quality, and never to the model.
+    score: float | None = None
+    authority: int | None = None
 
     def as_tool_dict(self) -> dict[str, Any]:
-        """The result as the model sees it."""
-        return {"title": self.title, "url": self.url, "description": self.summary}
+        """The result as the model sees it.
+
+        Unknown fields are left out rather than sent as null: every key is
+        repeated for every result, and an empty one only costs tokens.
+        """
+        data: dict[str, Any] = {"title": self.title, "url": self.url}
+        if self.source:
+            data["source"] = self.source
+        if self.date:
+            data["date"] = self.date
+        data["summary"] = self.summary
+        return data
 
 
 class SearchProvider(Protocol):
@@ -70,8 +92,15 @@ class SearchProvider(Protocol):
 
     #: Stored in an agent's settings, so it must never change once released.
     id: str
-    #: Named in the tool description and in messages.
+    #: Named in messages to the model.
     label: str
+    #: Longest query the backend accepts, or ``None`` when it has no limit the
+    #: tool should enforce before sending.
+    max_query_chars: int | None
+    #: How to write a query for this backend, appended to the tool
+    #: description. May be empty, and must be static (it is part of every
+    #: request's cached prefix).
+    query_help: str
 
     async def search(self, query: str, count: int) -> list[SearchResult]:
         """Return up to ``count`` results, or raise ``WebToolError``."""

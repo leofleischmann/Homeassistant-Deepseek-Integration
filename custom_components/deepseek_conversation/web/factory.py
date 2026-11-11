@@ -9,6 +9,9 @@ Affects / influenced by:
 - ``agent_tools.py`` calls this once per conversation turn.
 - ``SEARCH_TIMEOUT`` bounds every provider, because the search runs inside the
   Assist tool loop.
+- DeepSeek Search borrows ``client.async_http_client``, the HTTP/2 client the
+  chat API runs on: the search then travels on the connection the chat round
+  that asked for it has just used, instead of opening one of its own.
 """
 
 from __future__ import annotations
@@ -16,11 +19,19 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from homeassistant.const import CONF_API_KEY  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
 from homeassistant.helpers.httpx_client import get_async_client  # pyright: ignore[reportMissingImports]
 
-from ..const import WEB_SEARCH_PROVIDER_BRAVE
+from ..client import async_http_client
+from ..const import (
+    CONF_BASE_URL,
+    DEEPSEEK_API_BASE_URL,
+    WEB_SEARCH_PROVIDER_BRAVE,
+    WEB_SEARCH_PROVIDER_DEEPSEEK,
+)
 from .brave import BraveSearchProvider
+from .deepseek import DeepSeekSearchProvider, DeepSeekWebClient
 from .selection import brave_api_key
 from .types import SearchProvider
 
@@ -37,6 +48,15 @@ def build_search_provider(
     The HTTP client is handed over as a callable, so nothing is fetched until
     a search actually runs.
     """
+    if provider_id == WEB_SEARCH_PROVIDER_DEEPSEEK:
+        return DeepSeekSearchProvider(
+            DeepSeekWebClient(
+                lambda: async_http_client(hass),
+                api_key=entry_data[CONF_API_KEY],
+                base_url=entry_data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
+                timeout=SEARCH_TIMEOUT,
+            )
+        )
     if provider_id == WEB_SEARCH_PROVIDER_BRAVE:
         return BraveSearchProvider(
             lambda: get_async_client(hass),

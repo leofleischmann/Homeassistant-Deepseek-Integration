@@ -2,7 +2,7 @@
 
 Three layers, and the imports only ever point down this list:
 
-``types.py``, ``selection.py``, ``brave.py``
+``types.py``, ``selection.py``, ``deepseek.py``, ``brave.py``
     The core. What a search result and a failed search are, which providers a
     config entry can offer, and the providers themselves. No Home Assistant,
     no SDK - the HTTP client is handed in - so the stubbed suite runs it.

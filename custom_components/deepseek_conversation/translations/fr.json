@@ -135,7 +135,7 @@
                         "llm_hass_api": "Rien de sélectionné signifie aucun contrôle de votre maison.",
                         "chat_model": "Flash est le plus rapide, Pro le plus puissant, Vision accepte les images.",
                         "recommended": "Désactivé ouvre une seconde étape avec tout le reste.",
-                        "web_search": "Permet à cet agent de consulter le web public. Brave Search utilise la clé Brave définie sous Reconfigurer."
+                        "web_search": "Permet à cet agent de consulter le web public. DeepSeek Search ne nécessite aucune clé supplémentaire et est facturé par recherche sur votre solde DeepSeek ; Brave Search utilise la clé Brave définie sous Reconfigurer."
                     }
                 },
                 "advanced": {
@@ -231,7 +231,7 @@
                         "llm_hass_api": "Rien de sélectionné signifie aucun contrôle de votre maison.",
                         "chat_model": "Flash est le plus rapide, Pro le plus puissant, Vision accepte les images.",
                         "recommended": "Désactivé ouvre une seconde étape avec tout le reste.",
-                        "web_search": "Permet à cet agent de consulter le web public. Brave Search utilise la clé Brave définie sous Reconfigurer."
+                        "web_search": "Permet à cet agent de consulter le web public. DeepSeek Search ne nécessite aucune clé supplémentaire et est facturé par recherche sur votre solde DeepSeek ; Brave Search utilise la clé Brave définie sous Reconfigurer."
                     }
                 },
                 "advanced": {
@@ -311,6 +311,7 @@
         "web_search": {
             "options": {
                 "off": "Désactivée",
+                "deepseek": "DeepSeek Search",
                 "brave": "Brave Search"
             }
         }
