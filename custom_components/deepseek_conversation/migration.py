@@ -28,21 +28,26 @@ from .const import (
     CONF_BASE_URL,
     CONF_CHAT_MODEL,
     CONF_RECOMMENDED,
+    CONF_WEB_SEARCH,
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DOMAIN,
-    LEGACY_CHAT_MODEL_RETIRED_ON,
     LOGGER,
     SUBENTRY_TYPE_AI_TASK,
     SUBENTRY_TYPE_CONVERSATION,
     SUBENTRY_TYPES,
 )
-from .models import migrate_legacy_chat_model
+from .models import (
+    is_rerouted_chat_model,
+    legacy_chat_model_retired_on,
+    migrate_legacy_chat_model,
+)
 from .options import (
     adopt_strip_markdown_default,
     ai_task_options_from,
     fold_context_switch,
     move_web_search_selection,
+    web_search_switch_to_provider,
 )
 
 
@@ -62,6 +67,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version < 4:
         _async_migrate_web_search_api_to_option(hass, entry)
         hass.config_entries.async_update_entry(entry, version=4)
+
+    if entry.version < 5:
+        _async_migrate_web_search_switch_to_provider(hass, entry)
+        hass.config_entries.async_update_entry(entry, version=5)
 
     return True
 
@@ -89,6 +98,30 @@ def _async_migrate_web_search_api_to_option(
             "Web search is now a setting of the agent %s rather than a Home "
             "Assistant API, so it is no longer offered to other integrations",
             subentry.title,
+        )
+
+
+@callback
+def _async_migrate_web_search_switch_to_provider(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Make every agent name its web search provider instead of a switch.
+
+    The switch only ever meant Brave, so an agent that had it on keeps
+    searching with Brave; nothing else about it changes. See
+    ``options.web_search_switch_to_provider``.
+    """
+    for subentry in list(entry.subentries.values()):
+        if subentry.subentry_type not in SUBENTRY_TYPES:
+            continue
+        moved = web_search_switch_to_provider(subentry.data)
+        if moved is None:
+            continue
+        hass.config_entries.async_update_subentry(entry, subentry, data=moved)
+        LOGGER.debug(
+            "[Debug migration]: web search setting of agent %s is now %r",
+            subentry.title,
+            moved.get(CONF_WEB_SEARCH),
         )
 
 
@@ -178,12 +211,17 @@ def legacy_model_issue_id(entry: ConfigEntry) -> str:
 
 @callback
 def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Move agents off a retired model id, and say so in Repairs.
+    """Move agents off a retired model id, and say so in Repairs where it matters.
 
     ``deepseek-chat`` / ``deepseek-reasoner`` are no longer served by the
     official API, so an agent still pointing at one fails every single request
     with no hint about why. Rewriting the setting keeps the agent working; the
     repair issue is what tells the user their model choice changed.
+
+    The V4 Flash ids are moved too, but quietly: DeepSeek already answers them
+    with V4.1 Flash, the model they move to, so nothing the agent does changes
+    and a notice would only be one more thing to dismiss. 1.8.x also stored
+    ``deepseek-v4-flash`` in every new agent, so it would reach nearly everyone.
 
     Runs on every setup rather than as a versioned migration: an agent can
     arrive on a retired id long after migration ran - from a restored backup, or
@@ -197,13 +235,15 @@ def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -
     or until the entry is removed (``async_remove_entry``).
     """
     base_url = entry.data.get(CONF_BASE_URL)
-    moved: list[str] = []
-    old_model = new_model = ""
+    #: Agents whose model no longer answered, and the ids they were on.
+    stranded: list[str] = []
+    stranded_models: dict[str, str] = {}
+    new_model = ""
 
     for subentry in list(entry.subentries.values()):
         if subentry.subentry_type not in SUBENTRY_TYPES:
             continue
-        current = subentry.data.get(CONF_CHAT_MODEL)
+        current = str(subentry.data.get(CONF_CHAT_MODEL) or "")
         replacement = migrate_legacy_chat_model(current, base_url=base_url)
         if replacement is None:
             continue
@@ -212,18 +252,33 @@ def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -
             subentry,
             data={**subentry.data, CONF_CHAT_MODEL: replacement},
         )
-        moved.append(subentry.title)
-        old_model, new_model = str(current), replacement
+        new_model = replacement
+        retired_on = legacy_chat_model_retired_on(current)
+        if is_rerouted_chat_model(current):
+            LOGGER.info(
+                "Agent %s was set to %s, which DeepSeek retired on %s and "
+                "already answers with %s; it is set to %s now",
+                subentry.title,
+                current,
+                retired_on,
+                replacement,
+                replacement,
+            )
+            continue
+        stranded.append(subentry.title)
+        stranded_models[current] = retired_on
 
-    if not moved:
+    if not stranded:
         return
 
+    old_models = ", ".join(sorted(stranded_models))
+    retired_on = ", ".join(sorted(set(stranded_models.values())))
     LOGGER.warning(
-        "Agent(s) %s are set to %s, which the DeepSeek API stopped serving on "
-        "%s; switching them to %s",
-        ", ".join(moved),
-        old_model,
-        LEGACY_CHAT_MODEL_RETIRED_ON,
+        "Agent(s) %s are set to %s, which DeepSeek stopped serving on %s; "
+        "switching them to %s",
+        ", ".join(stranded),
+        old_models,
+        retired_on,
         new_model,
     )
     ir.async_create_issue(
@@ -234,10 +289,10 @@ def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -
         severity=ir.IssueSeverity.WARNING,
         translation_key="legacy_chat_model",
         translation_placeholders={
-            "entry_title": ", ".join(moved),
-            "old_model": old_model,
+            "entry_title": ", ".join(stranded),
+            "old_model": old_models,
             "new_model": new_model,
-            "retired_on": LEGACY_CHAT_MODEL_RETIRED_ON,
+            "retired_on": retired_on,
         },
         learn_more_url="https://api-docs.deepseek.com/quick_start/pricing",
     )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from homeassistant.components import assist_pipeline, conversation  # pyright: ignore[reportMissingImports]
+from homeassistant.components import conversation  # pyright: ignore[reportMissingImports]
 from homeassistant.config_entries import ConfigSubentry  # pyright: ignore[reportMissingImports]
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL  # pyright: ignore[reportMissingImports]
 from homeassistant.core import HomeAssistant  # pyright: ignore[reportMissingImports]
@@ -112,14 +112,6 @@ class DeepSeekConversationEntity(
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # async_migrate_engine may not be available in all Home Assistant versions
-        if hasattr(assist_pipeline, 'async_migrate_engine'):
-            try:
-                assist_pipeline.async_migrate_engine(
-                    self.hass, "conversation", self.entry.entry_id, self.entity_id
-                )
-            except Exception as e:
-                LOGGER.warning("Failed to migrate assist pipeline engine: %s", e)
         conversation.async_set_agent(self.hass, self.entry, self)
 
     async def async_will_remove_from_hass(self) -> None:

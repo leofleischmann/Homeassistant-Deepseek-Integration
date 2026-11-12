@@ -14,6 +14,7 @@ from .const import (
     DEEPSEEK_API_BASE_URL,
     LEGACY_CHAT_MODELS,
     RECOMMENDED_CHAT_MODEL,
+    REROUTED_CHAT_MODELS,
 )
 
 
@@ -43,16 +44,31 @@ def is_official_deepseek_api_base_url(base_url: str | None) -> bool:
 def migrate_legacy_chat_model(model: str | None, *, base_url: str | None) -> str | None:
     """Return the replacement for a retired model id, or ``None`` to keep it.
 
-    ``deepseek-chat`` and ``deepseek-reasoner`` stopped being served by the
-    official API on LEGACY_CHAT_MODEL_RETIRED_ON, so an entry left on one of
-    them fails every request. A custom gateway may still route those ids
-    somewhere, so entries pointing at one are left untouched.
+    Every id in LEGACY_CHAT_MODELS is retired on the official API: the old
+    ``deepseek-chat`` / ``deepseek-reasoner`` fail every request, and the V4
+    Flash ids only answer for as long as DeepSeek keeps routing them to V4.1
+    Flash. A custom gateway may still route those ids somewhere, so entries
+    pointing at one are left untouched.
     """
     if not is_official_deepseek_api_base_url(base_url):
         return None
     if normalize_model_id(model) not in LEGACY_CHAT_MODELS:
         return None
     return RECOMMENDED_CHAT_MODEL
+
+
+def legacy_chat_model_retired_on(model: str | None) -> str:
+    """The day DeepSeek retired ``model``, or ``""`` for an id still served."""
+    return LEGACY_CHAT_MODELS.get(normalize_model_id(model), "")
+
+
+def is_rerouted_chat_model(model: str | None) -> bool:
+    """Whether DeepSeek still answers ``model`` with the model it moves to.
+
+    Moving an agent off such an id changes nothing about its answers, so the
+    user need not be told; see migration.async_migrate_legacy_model_option.
+    """
+    return normalize_model_id(model) in REROUTED_CHAT_MODELS
 
 
 def is_retired_chat_model(model: str | None, *, base_url: str | None) -> bool:

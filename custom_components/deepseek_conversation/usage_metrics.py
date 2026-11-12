@@ -1,8 +1,12 @@
-"""Token usage tracking for DeepSeek API completions.
+"""Usage tracking: tokens per API completion, and web searches.
 
 Updated by chat_session.py (Assist stream), services.py (generate_content), and
 sensor.py (RestoreSensor entities). Manual reset via button.py -> reset_all().
 Stream usage requires stream_options in build_chat_completion_args().
+
+Web searches are counted apart from tokens because they are billed apart from
+them: agent_tools.py hands ``record_web_search`` to the web search tool
+(web/search_tool.py), which calls it for every search that found something.
 """
 
 from __future__ import annotations
@@ -156,6 +160,7 @@ class UsageTracker:
         self._reasoning: DeepSeekUsageCounterSensor | None = None
         self._cache_hit: DeepSeekUsageCounterSensor | None = None
         self._api_requests: DeepSeekUsageCounterSensor | None = None
+        self._web_searches: DeepSeekUsageCounterSensor | None = None
         self._last: DeepSeekLastRequestSensor | None = None
         self._last_prompt: DeepSeekSnapshotSensor | None = None
         self._last_completion: DeepSeekSnapshotSensor | None = None
@@ -169,6 +174,7 @@ class UsageTracker:
         reasoning: DeepSeekUsageCounterSensor,
         cache_hit: DeepSeekUsageCounterSensor,
         api_requests: DeepSeekUsageCounterSensor,
+        web_searches: DeepSeekUsageCounterSensor,
         last_request: DeepSeekLastRequestSensor,
         last_request_prompt: DeepSeekSnapshotSensor,
         last_request_completion: DeepSeekSnapshotSensor,
@@ -180,6 +186,7 @@ class UsageTracker:
         self._reasoning = reasoning
         self._cache_hit = cache_hit
         self._api_requests = api_requests
+        self._web_searches = web_searches
         self._last = last_request
         self._last_prompt = last_request_prompt
         self._last_completion = last_request_completion
@@ -196,6 +203,7 @@ class UsageTracker:
             self._reasoning,
             self._cache_hit,
             self._api_requests,
+            self._web_searches,
         ):
             if sensor is not None:
                 sensor.reset_to_zero()
@@ -246,6 +254,23 @@ class UsageTracker:
             source,
             self.request_count,
         )
+
+    def record_web_search(self, provider: str) -> None:
+        """Count one web search that returned results.
+
+        Only those, because that is the unit DeepSeek bills: a search that
+        fails or finds nothing costs nothing. The counter is therefore what to
+        multiply by the per-search price. Not part of ``request_count`` - that
+        one counts chat completions.
+        """
+        if self._web_searches is None:
+            LOGGER.debug(
+                "[Debug usage_metrics]: web search (%s) counted before sensors bound",
+                provider,
+            )
+            return
+        self._web_searches.increment(1)
+        LOGGER.debug("[Debug usage_metrics]: +1 web search (provider=%s)", provider)
 
     def usage_as_dict(self, usage: CompletionUsage) -> dict[str, int | float]:
         """Serialize usage for service responses."""

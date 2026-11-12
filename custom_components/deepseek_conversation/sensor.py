@@ -1,4 +1,4 @@
-"""Token usage sensors for DeepSeek Conversation.
+"""Usage sensors for DeepSeek Conversation: tokens, API requests, web searches.
 
 Entity IDs use English suggested_object_id (language-neutral); display names
 come from translations (entity.sensor.* in translations/*.json).
@@ -195,6 +195,15 @@ async def async_setup_entry(
         unit="requests",
         icon="mdi:api",
     )
+    # Counted by usage_metrics.UsageTracker.record_web_search: searches that
+    # returned results, which is what DeepSeek Search bills per request.
+    web_searches = DeepSeekUsageCounterSensor(
+        entry,
+        "web_search_requests",
+        "web_search_requests",
+        unit="requests",
+        icon="mdi:web",
+    )
     last_request = DeepSeekLastRequestSensor(entry)
     last_request_prompt = DeepSeekSnapshotSensor(
         entry, "last_request_prompt_tokens", "last_request_prompt_tokens"
@@ -210,6 +219,7 @@ async def async_setup_entry(
         reasoning=reasoning,
         cache_hit=cache_hit,
         api_requests=api_requests,
+        web_searches=web_searches,
         last_request=last_request,
         last_request_prompt=last_request_prompt,
         last_request_completion=last_request_completion,
@@ -223,6 +233,7 @@ async def async_setup_entry(
             reasoning,
             cache_hit,
             api_requests,
+            web_searches,
             last_request,
             last_request_prompt,
             last_request_completion,

@@ -2,6 +2,25 @@
 
 All notable changes to this integration.
 
+## [1.9.0] - 2026-11-12
+
+Nothing to do on upgrade: agents on a retired model move to DeepSeek V4.1 Flash by themselves.
+
+### Changed
+- **New default model `deepseek-flash` (V4.1 Flash), which also reads images.** DeepSeek retired V4 Flash and V4 Flash Vision Exp on 2026-09-10. The picker now offers `deepseek-flash` and `deepseek-v4-pro` (text only). Agents on an old id are switched on startup, quietly, since DeepSeek already answered those ids with V4.1 Flash. Custom base URLs keep their model.
+- **Reasoning effort is low, high or max**, the levels the API actually uses. `medium` and `xhigh` always ran as `high` and are kept that way.
+- **Web search is picked per agent**: Off, DeepSeek Search or Brave Search. Existing agents stay on Brave; the Brave key moved from first setup to **Reconfigure**.
+
+### Added
+- **DeepSeek Search** as a web search provider on the entry's own key, billed per successful search. Requested in #49.
+- **Web searches** sensor counting the searches DeepSeek bills.
+- Search results fit the agent's tool-result size limit: long summaries are shortened evenly, so every result reaches the model instead of the last ones being cut off.
+- Sample automation `deepseek_web_search_demo.yaml`.
+
+### Fixed
+- With thinking on, the reasoning of every earlier turn is sent back, as DeepSeek requires once tools are in play; only tool-calling turns carried it before.
+- Chat log tool results use Home Assistant 2026.10's `llm.ToolResult`, so core no longer reports the old form.
+
 ## [1.8.7] - 2026-11-09
 
 Nothing to do on upgrade and nothing changes in use: one warning Home Assistant 2026.11 logged after every restart is gone.

@@ -1,0 +1,77 @@
+# Web search demo: an AI Task that answers from live web results, as typed fields.
+# Trigger: Developer tools → Events → deepseek_web_search_demo
+#
+# Requires: Web search set on the AI Task agent (integration card → the AI Task
+# entity's row → Web search). DeepSeek Search needs no extra key on the official
+# API; Brave Search needs a Brave key under Reconfigure. Without either, the task
+# has no web_search tool and reports found: false instead of answering from memory.
+#
+# Resolves the first ai_task.* entity for deepseek_conversation automatically.
+# Results: persistent notification + logbook. Each search that found something
+# adds one to the "Web searches" sensor.
+
+alias: DeepSeek web search demo
+description: Demonstrates ai_task.generate_data with web search and structured output.
+mode: single
+
+triggers:
+  - trigger: event
+    event_type: deepseek_web_search_demo
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set ns = namespace(ok=false) %}
+      {% for e in integration_entities('deepseek_conversation') %}
+        {% if e.startswith('ai_task.') %}{% set ns.ok = true %}{% endif %}
+      {% endfor %}
+      {{ ns.ok }}
+
+actions:
+  - variables:
+      deepseek_ai_task_entity: >-
+        {% for e in integration_entities('deepseek_conversation') %}
+        {%- if e.startswith('ai_task.') %}{{ e }}{% break %}{% endif %}
+        {% endfor %}
+  - action: ai_task.generate_data
+    data:
+      task_name: demo_web_search
+      instructions: >-
+        Use the web_search tool to find the latest stable Home Assistant Core
+        release. Return only these fields at the top level of the JSON object:
+        found (true or false), version (text), released (text, the release
+        date) and source (text, the site you took it from). If you have no
+        web_search tool, set found to false and leave the other fields empty.
+        Do not answer from memory.
+      entity_id: "{{ deepseek_ai_task_entity }}"
+      structure:
+        found:
+          selector:
+            boolean:
+        version:
+          selector:
+            text:
+        released:
+          selector:
+            text:
+        source:
+          selector:
+            text:
+    response_variable: search_result
+  - action: persistent_notification.create
+    data:
+      title: DeepSeek web search demo
+      message: >-
+        {% if search_result.data.found %}
+        Latest Home Assistant: {{ search_result.data.version }}
+        ({{ search_result.data.released }}), according to
+        {{ search_result.data.source }}.
+        {% else %}
+        Nothing found. Either {{ deepseek_ai_task_entity }} has no web search
+        (set Web search to DeepSeek Search or Brave Search on that AI Task
+        agent and trigger the event again), or the search came back empty.
+        {% endif %}
+  - action: logbook.log
+    data:
+      name: DeepSeek web search
+      message: "result={{ search_result.data }}"

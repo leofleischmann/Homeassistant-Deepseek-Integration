@@ -167,6 +167,20 @@ class TestReasoningEffort(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(options.normalized_reasoning_effort(value), value)
 
+    def test_the_api_offers_exactly_three_levels(self) -> None:
+        self.assertEqual(const.REASONING_EFFORT_VALUES, {"low", "high", "max"})
+
+    def test_aliases_become_the_level_the_api_maps_them_to(self) -> None:
+        """Older versions offered medium and xhigh; both always ran as high."""
+        for value, expected in (
+            ("minimal", "low"),
+            ("medium", "high"),
+            ("xhigh", "high"),
+            ("ultra", "max"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(options.normalized_reasoning_effort(value), expected)
+
     def test_anything_else_becomes_the_recommended_effort(self) -> None:
         for value in (None, "", "LOW", "extreme", 3, ["high"]):
             with self.subTest(value=value):
@@ -198,7 +212,7 @@ class TestAgentOptionReshaping(unittest.TestCase):
 
     def test_an_ai_task_drops_the_assist_only_settings(self) -> None:
         stored = {
-            const.CONF_CHAT_MODEL: "deepseek-v4-flash",
+            const.CONF_CHAT_MODEL: "deepseek-flash",
             const.CONF_MAX_TOKENS: 900,
             const.CONF_STRIP_MARKDOWN: True,
             const.CONF_INCLUDE_USER_CONTEXT: True,
@@ -207,7 +221,7 @@ class TestAgentOptionReshaping(unittest.TestCase):
         self.assertEqual(
             options.ai_task_options_from(stored),
             {
-                const.CONF_CHAT_MODEL: "deepseek-v4-flash",
+                const.CONF_CHAT_MODEL: "deepseek-flash",
                 const.CONF_MAX_TOKENS: 900,
             },
         )
@@ -311,6 +325,76 @@ class TestMoveWebSearchSelection(unittest.TestCase):
         stored = {LLM_API: [self.LEGACY]}
         options.move_web_search_selection(stored)
         self.assertEqual(stored, {LLM_API: [self.LEGACY]})
+
+
+
+class TestWebSearchSwitchBecomesAProvider(unittest.TestCase):
+    """Web search stops being a switch and names its provider instead.
+
+    The switch only ever meant Brave, so an agent that had it on has to keep
+    searching with Brave without its owner doing anything.
+    """
+
+    def test_on_becomes_brave(self) -> None:
+        self.assertEqual(
+            options.web_search_switch_to_provider(
+                {const.CONF_WEB_SEARCH: True, const.CONF_CHAT_MODEL: "m"}
+            ),
+            {
+                const.CONF_WEB_SEARCH: const.WEB_SEARCH_PROVIDER_BRAVE,
+                const.CONF_CHAT_MODEL: "m",
+            },
+        )
+
+    def test_off_is_dropped_because_missing_already_means_off(self) -> None:
+        self.assertEqual(
+            options.web_search_switch_to_provider(
+                {const.CONF_WEB_SEARCH: False, const.CONF_CHAT_MODEL: "m"}
+            ),
+            {const.CONF_CHAT_MODEL: "m"},
+        )
+
+    def test_an_agent_without_the_switch_is_left_alone(self) -> None:
+        self.assertIsNone(options.web_search_switch_to_provider({}))
+        self.assertIsNone(
+            options.web_search_switch_to_provider({const.CONF_CHAT_MODEL: "m"})
+        )
+
+    def test_a_provider_that_is_already_named_is_left_alone(self) -> None:
+        """Which is also what makes running it twice harmless."""
+        once = options.web_search_switch_to_provider({const.CONF_WEB_SEARCH: True})
+        self.assertIsNone(options.web_search_switch_to_provider(once))
+
+    def test_the_original_settings_are_not_written_through(self) -> None:
+        stored = {const.CONF_WEB_SEARCH: True}
+        options.web_search_switch_to_provider(stored)
+        self.assertEqual(stored, {const.CONF_WEB_SEARCH: True})
+
+
+class TestWebSearchChoice(unittest.TestCase):
+    """What the agent form's web search field turns into when it is saved."""
+
+    AVAILABLE = (const.WEB_SEARCH_PROVIDER_BRAVE,)
+
+    def test_a_provider_the_entry_offers_is_stored_by_its_id(self) -> None:
+        self.assertEqual(
+            options.normalize_web_search_choice(
+                const.WEB_SEARCH_PROVIDER_BRAVE, self.AVAILABLE
+            ),
+            const.WEB_SEARCH_PROVIDER_BRAVE,
+        )
+
+    def test_everything_else_stores_nothing(self) -> None:
+        for value in (const.WEB_SEARCH_OFF, None, "", "searxng", True):
+            with self.subTest(value=value):
+                self.assertIsNone(
+                    options.normalize_web_search_choice(value, self.AVAILABLE)
+                )
+
+    def test_a_provider_the_entry_cannot_offer_stores_nothing(self) -> None:
+        self.assertIsNone(
+            options.normalize_web_search_choice(const.WEB_SEARCH_PROVIDER_BRAVE, ())
+        )
 
 
 if __name__ == "__main__":

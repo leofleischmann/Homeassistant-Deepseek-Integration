@@ -44,6 +44,7 @@ from .const import (
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
     CONF_PROMPT,
+    CONF_REASONING_EFFORT,
     CONF_RECOMMENDED,
     CONF_WEB_SEARCH,
     DEEPSEEK_API_BASE_URL,
@@ -55,6 +56,7 @@ from .const import (
     RECOMMENDED_CONVERSATION_OPTIONS,
     SUBENTRY_TYPE_AI_TASK,
     SUBENTRY_TYPE_CONVERSATION,
+    WEB_SEARCH_OFF,
 )
 from .flow_schemas import (
     advanced_field,
@@ -66,10 +68,15 @@ from .flow_schemas import (
     normalize_llm_hass_api,
     SECTION_CONVERSATION,
     STEP_REAUTH_DATA_SCHEMA,
+    web_search_selector,
 )
 from .models import is_retired_chat_model
-from .options import recommended_agent_options
-from .web_search import brave_api_key
+from .options import (
+    normalize_web_search_choice,
+    normalized_reasoning_effort,
+    recommended_agent_options,
+)
+from .web.selection import available_search_providers
 
 
 async def _async_check_credentials(
@@ -128,7 +135,7 @@ async def async_validate_reconfigure_input(
 class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for DeepSeek Conversation."""
 
-    VERSION = 4
+    VERSION = 5
 
     def _async_update_entry_and_abort(
         self, entry: ConfigEntry, **kwargs: Any
@@ -182,12 +189,6 @@ class DeepSeekConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_API_KEY: user_input[CONF_API_KEY],
             CONF_BASE_URL: user_input.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL),
         }
-        brave_key = (user_input.get(CONF_BRAVE_API_KEY) or "").strip()
-        if brave_key:
-            entry_data[CONF_BRAVE_API_KEY] = brave_key
-            LOGGER.debug(
-                "[Debug config_flow]: Brave Search key set on initial setup"
-            )
         # The model picked here seeds both agents; each can be changed
         # afterwards, and more agents added, without touching the key.
         conversation_options = {**RECOMMENDED_CONVERSATION_OPTIONS}
@@ -340,9 +341,9 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
     def _base_url(self) -> str:
         return self._get_entry().data.get(CONF_BASE_URL, DEEPSEEK_API_BASE_URL)
 
-    def _has_brave_key(self) -> bool:
-        """Whether the entry can offer web search to its agents at all."""
-        return bool(brave_api_key(self._get_entry()))
+    def _search_providers(self) -> tuple[str, ...]:
+        """The web search providers the entry can offer its agents, if any."""
+        return available_search_providers(self._get_entry().data)
 
     def _default_name(self) -> str:
         return (
@@ -386,9 +387,11 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
             options[CONF_LLM_HASS_API] = [
                 api for api in selected if api in available_apis
             ]
-        # Same for web search once the Brave key is gone: the field is not on
-        # the form any more, so nothing would clear a stored True.
-        if not self._has_brave_key():
+        # Same for a web search provider the entry can no longer offer - its
+        # key was removed, say. The form would not list it, so nothing else
+        # would ever clear the stored choice.
+        search_providers = self._search_providers()
+        if options.get(CONF_WEB_SEARCH) not in search_providers:
             options.pop(CONF_WEB_SEARCH, None)
 
         if user_input is not None:
@@ -406,9 +409,15 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
                     options.pop(CONF_LLM_HASS_API, None)
                 else:
                     options[CONF_LLM_HASS_API] = normalized
-                if not options.get(CONF_WEB_SEARCH):
-                    # Off is the default, so storing it says nothing extra.
+                web_search = normalize_web_search_choice(
+                    options.get(CONF_WEB_SEARCH), search_providers
+                )
+                if web_search is None:
+                    # Off is what a missing setting means, so the form's own
+                    # "off" value is never stored.
                     options.pop(CONF_WEB_SEARCH, None)
+                else:
+                    options[CONF_WEB_SEARCH] = web_search
 
                 if options.get(CONF_RECOMMENDED):
                     return self._async_save()
@@ -458,9 +467,19 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
         }
 
     def _advanced_suggested(self) -> dict[str, dict[str, Any]]:
-        """Suggested values, nested the way a sectioned form expects them."""
+        """Suggested values, nested the way a sectioned form expects them.
+
+        A reasoning effort saved by an older version (``medium``, ``xhigh``) is
+        not an option of today's select; it is shown as the level the API maps
+        it to, or the form would refuse to save it unchanged.
+        """
+        suggested = dict(self.options)
+        if CONF_REASONING_EFFORT in suggested:
+            suggested[CONF_REASONING_EFFORT] = normalized_reasoning_effort(
+                suggested[CONF_REASONING_EFFORT]
+            )
         return {
-            name: {key: self.options[key] for key in keys if key in self.options}
+            name: {key: suggested[key] for key in keys if key in suggested}
             for name, keys, _collapsed in self._sections()
         }
 
@@ -503,14 +522,12 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
         )
         # Asked here rather than in the advanced step, because that step only
         # opens once the recommended settings are switched off - and web search
-        # is a choice about this agent, not an expert setting.
-        if self._has_brave_key():
+        # is a choice about this agent, not an expert setting. Left out
+        # entirely while the entry has no provider to offer.
+        if search_providers := self._search_providers():
             schema[
-                vol.Optional(
-                    CONF_WEB_SEARCH,
-                    default=bool(self.options.get(CONF_WEB_SEARCH)),
-                )
-            ] = BooleanSelector()
+                vol.Optional(CONF_WEB_SEARCH, default=WEB_SEARCH_OFF)
+            ] = web_search_selector(search_providers)
 
         schema.update(
             {

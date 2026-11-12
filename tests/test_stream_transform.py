@@ -202,6 +202,18 @@ class _ToolCallFunction:
         self.arguments = arguments
 
 
+def _delta_data(delta: dict) -> dict:
+    """The payload of a tool result delta, under whichever key carries it.
+
+    This suite also runs with a real Home Assistant installed (hatest.bat), and
+    from 2026.10 the delta holds an ``llm.ToolResult`` under ``result`` rather
+    than the bare object under ``tool_result`` - see ``llm_compat.py``.
+    """
+    if "result" in delta:
+        return delta["result"].data
+    return delta["tool_result"]
+
+
 def _assemble(*chunks: _ToolCallChunk) -> dict[int, dict[str, object]]:
     """Run the chunks through the merge step the stream performs per delta."""
     calls: dict[int, dict[str, object]] = {}
@@ -355,7 +367,7 @@ class TestFinalizeToolCalls(_UsingToolInput):
         self.assertEqual(failures[0]["role"], "tool_result")
         self.assertEqual(failures[0]["tool_call_id"], inputs[0].id)
         self.assertEqual(failures[0]["tool_name"], "GetLiveContext")
-        self.assertEqual(failures[0]["tool_result"]["error"], "InvalidToolArguments")
+        self.assertEqual(_delta_data(failures[0])["error"], "InvalidToolArguments")
 
     def test_a_call_with_unreadable_arguments_is_never_executed(self) -> None:
         """external is what stops core from calling it with empty arguments."""

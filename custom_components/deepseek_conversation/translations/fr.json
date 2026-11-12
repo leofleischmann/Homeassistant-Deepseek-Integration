@@ -23,6 +23,9 @@
             "api_requests": {
                 "name": "Requêtes API"
             },
+            "web_search_requests": {
+                "name": "Recherches web"
+            },
             "last_request_prompt_tokens": {
                 "name": "Dernière requête (jetons prompt)"
             },
@@ -69,13 +72,9 @@
                 "data": {
                     "api_key": "Clé API",
                     "base_url": "URL de base de l’API",
-                    "brave_api_key": "Clé API Brave Search (optionnel)",
                     "chat_model": "Modèle"
                 },
-                "data_description": {
-                    "brave_api_key": "Optionnel. Ajoute une option Recherche web à chaque agent de cette intégration. Eux seuls peuvent l'utiliser."
-                },
-                "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4 Flash. Les anciens noms deepseek-chat et deepseek-reasoner ont été retirés le 2026-07-24 et ne sont plus acceptés."
+                "description": "Connexion à l’API DeepSeek. Le modèle par défaut est DeepSeek V4.1 Flash. Les noms de modèles retirés (deepseek-chat, deepseek-reasoner, deepseek-v4-flash, deepseek-v4-flash-vision-exp) ne sont plus acceptés."
             },
             "reauth_confirm": {
                 "title": "Réauthentifier DeepSeek",
@@ -97,7 +96,7 @@
                 },
                 "data_description": {
                     "api_key": "Clé API depuis platform.deepseek.com",
-                    "brave_api_key": "Laissez vide pour conserver la clé Brave actuelle. Saisissez une nouvelle clé pour la remplacer. Saisissez un tiret (-) pour retirer la recherche web."
+                    "brave_api_key": "Nécessaire uniquement pour Brave Search. Laissez vide pour conserver la clé actuelle, saisissez-en une nouvelle pour la remplacer ou saisissez un tiret (-) pour la supprimer."
                 }
             }
         },
@@ -107,7 +106,7 @@
             "api_error": "Erreur d’API",
             "unknown": "Erreur inconnue",
             "url_required": "L’URL de base est obligatoire",
-            "model_retired": "Ce modèle a été retiré par DeepSeek le 24/07/2026. Choisissez DeepSeek V4 Flash ou V4 Pro."
+            "model_retired": "Ce modèle a été retiré par DeepSeek. Choisissez DeepSeek V4.1 Flash ou V4 Pro."
         },
         "abort": {
             "already_configured": "Déjà configuré",
@@ -130,16 +129,16 @@
                         "name": "Nom",
                         "prompt": "Instructions",
                         "llm_hass_api": "API Home Assistant",
-                        "web_search": "Recherche web (Brave)",
+                        "web_search": "Recherche web",
                         "chat_model": "Modèle",
                         "recommended": "Paramètres recommandés"
                     },
                     "data_description": {
                         "prompt": "Un modèle. Les variables disponibles sont dans le README.",
                         "llm_hass_api": "Rien de sélectionné signifie aucun contrôle de votre maison.",
-                        "chat_model": "Flash est le plus rapide, Pro le plus puissant, Vision accepte les images.",
+                        "chat_model": "Flash est le plus rapide et accepte les images, Pro est le plus puissant.",
                         "recommended": "Désactivé ouvre une seconde étape avec tout le reste.",
-                        "web_search": "Permet à cet agent de consulter le web public avec votre clé Brave."
+                        "web_search": "Permet à cet agent de consulter le web public. DeepSeek Search ne nécessite aucune clé supplémentaire et est facturé par recherche sur votre solde DeepSeek ; Brave Search utilise la clé Brave définie sous Reconfigurer."
                     }
                 },
                 "advanced": {
@@ -209,7 +208,7 @@
                 "reconfigure_successful": "Agent mis à jour."
             },
             "error": {
-                "model_retired": "Ce modèle a été retiré par DeepSeek le 24/07/2026. Choisissez DeepSeek V4 Flash ou V4 Pro."
+                "model_retired": "Ce modèle a été retiré par DeepSeek. Choisissez DeepSeek V4.1 Flash ou V4 Pro."
             }
         },
         "ai_task_data": {
@@ -226,16 +225,16 @@
                         "name": "Nom",
                         "prompt": "Instructions",
                         "llm_hass_api": "API Home Assistant",
-                        "web_search": "Recherche web (Brave)",
+                        "web_search": "Recherche web",
                         "chat_model": "Modèle",
                         "recommended": "Paramètres recommandés"
                     },
                     "data_description": {
                         "prompt": "Un modèle. Les variables disponibles sont dans le README.",
                         "llm_hass_api": "Rien de sélectionné signifie aucun contrôle de votre maison.",
-                        "chat_model": "Flash est le plus rapide, Pro le plus puissant, Vision accepte les images.",
+                        "chat_model": "Flash est le plus rapide et accepte les images, Pro est le plus puissant.",
                         "recommended": "Désactivé ouvre une seconde étape avec tout le reste.",
-                        "web_search": "Permet à cet agent de consulter le web public avec votre clé Brave."
+                        "web_search": "Permet à cet agent de consulter le web public. DeepSeek Search ne nécessite aucune clé supplémentaire et est facturé par recherche sur votre solde DeepSeek ; Brave Search utilise la clé Brave définie sous Reconfigurer."
                     }
                 },
                 "advanced": {
@@ -291,25 +290,29 @@
                 "reconfigure_successful": "Agent mis à jour."
             },
             "error": {
-                "model_retired": "Ce modèle a été retiré par DeepSeek le 24/07/2026. Choisissez DeepSeek V4 Flash ou V4 Pro."
+                "model_retired": "Ce modèle a été retiré par DeepSeek. Choisissez DeepSeek V4.1 Flash ou V4 Pro."
             }
         }
     },
     "selector": {
         "chat_model": {
             "options": {
-                "deepseek-v4-flash": "DeepSeek V4 Flash (rapide, par défaut)",
-                "deepseek-v4-pro": "DeepSeek V4 Pro (le plus puissant)",
-                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision (expérimental, entrée image)"
+                "deepseek-flash": "DeepSeek V4.1 Flash (rapide, entrée image, par défaut)",
+                "deepseek-v4-pro": "DeepSeek V4 Pro (le plus puissant, texte uniquement)"
             }
         },
         "reasoning_effort": {
             "options": {
                 "low": "Faible",
-                "medium": "Moyen",
                 "high": "Élevé",
-                "max": "Max",
-                "xhigh": "Très élevé"
+                "max": "Max"
+            }
+        },
+        "web_search": {
+            "options": {
+                "off": "Désactivée",
+                "deepseek": "DeepSeek Search",
+                "brave": "Brave Search"
             }
         }
     },
@@ -377,8 +380,8 @@
     },
     "issues": {
         "legacy_chat_model": {
-            "title": "Le modèle DeepSeek {old_model} a été retiré",
-            "description": "DeepSeek ne sert plus {old_model} depuis le {retired_on}, « {entry_title} » ne pouvait donc plus répondre. Le modèle a été remplacé par {new_model}. Choisissez-en un autre via Configurer si besoin, puis fermez ce signalement."
+            "title": "DeepSeek a retiré {old_model}",
+            "description": "DeepSeek a retiré {old_model} le {retired_on}. « {entry_title} » est passé à {new_model} pour continuer à répondre. Choisissez-en un autre via Configurer si besoin, puis fermez ce signalement."
         }
     }
 }

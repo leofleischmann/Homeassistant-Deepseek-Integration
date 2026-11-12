@@ -77,6 +77,38 @@ class TestLegacyModelMigration(unittest.TestCase):
                 self.assertIsNone(migrate(model, base_url=None))
                 self.assertFalse(models.is_retired_chat_model(model, base_url=None))
 
+    def test_the_v4_flash_ids_are_retired(self) -> None:
+        """DeepSeek only routes them to V4.1 Flash for now."""
+        for legacy in ("deepseek-v4-flash", "deepseek-v4-flash-vision-exp"):
+            with self.subTest(model=legacy):
+                self.assertEqual(migrate(legacy, base_url=None), "deepseek-flash")
+                self.assertEqual(
+                    models.legacy_chat_model_retired_on(legacy), "2026-09-10"
+                )
+
+    def test_each_retired_id_knows_its_own_date(self) -> None:
+        self.assertEqual(
+            models.legacy_chat_model_retired_on(" DeepSeek-Reasoner "), "2026-07-24"
+        )
+        self.assertEqual(models.legacy_chat_model_retired_on("deepseek-flash"), "")
+
+    def test_the_offered_models_are_the_current_ones(self) -> None:
+        self.assertEqual(
+            [model for model, _label in const.CHAT_MODEL_OPTIONS],
+            ["deepseek-flash", "deepseek-v4-pro"],
+        )
+        self.assertEqual(const.RECOMMENDED_CHAT_MODEL, "deepseek-flash")
+
+    def test_only_the_v4_flash_ids_are_still_answered(self) -> None:
+        """Moving off those changes nothing, so it needs no repair issue."""
+        rerouted = {
+            model for model in const.LEGACY_CHAT_MODELS
+            if models.is_rerouted_chat_model(model)
+        }
+        self.assertEqual(rerouted, {"deepseek-v4-flash", "deepseek-v4-flash-vision-exp"})
+        self.assertTrue(models.is_rerouted_chat_model("  DeepSeek-V4-Flash "))
+        self.assertFalse(models.is_rerouted_chat_model("deepseek-flash"))
+
     def test_a_gateway_may_still_route_a_retired_id(self) -> None:
         self.assertIsNone(
             migrate("deepseek-chat", base_url="https://openrouter.ai/api/v1")
@@ -96,7 +128,7 @@ class TestThinkingApiApplies(unittest.TestCase):
     """extra_body.thinking is DeepSeek-only; a proxy must not be sent it."""
 
     def test_deepseek_ids_and_the_unset_default(self) -> None:
-        for model in ("", "deepseek-v4-flash", "  DeepSeek-V4-Pro  "):
+        for model in ("", "deepseek-flash", "  DeepSeek-V4-Pro  "):
             with self.subTest(model=model):
                 self.assertTrue(models.model_uses_deepseek_thinking_api(model))
 

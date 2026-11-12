@@ -13,7 +13,9 @@ unit-tested on their own.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
+from types import MappingProxyType
 from typing import Any
 
 from homeassistant.const import CONF_LLM_HASS_API  # pyright: ignore[reportMissingImports]
@@ -42,13 +44,25 @@ CONF_INCLUDE_USER_CONTEXT = "include_user_context"
 CONF_REQUEST_TIMEOUT = "request_timeout"
 CONF_BASE_URL = "base_url"
 CONF_BRAVE_API_KEY = "brave_api_key"
-#: Per agent: may this one search the web with the entry's Brave key. Until
-#: 1.8.4 the tool was a globally registered LLM API instead, which put it in
-#: every *other* conversation integration's API picker as well (#38).
+#: Per agent: the id of the web search provider this one uses (one of the
+#: WEB_SEARCH_PROVIDER_* below); absent means no web search. Up to 1.8.7 this
+#: was a plain switch, because Brave was the only provider - see
+#: options.web_search_switch_to_provider(). Until 1.8.4 the tool was a globally
+#: registered LLM API instead, which put it in every *other* conversation
+#: integration's API picker as well (#38).
 CONF_WEB_SEARCH = "web_search"
 #: How that API's id was built, so migration can recognise an agent that had
 #: selected it and turn the selection into CONF_WEB_SEARCH.
 LEGACY_WEB_SEARCH_API_ID_PREFIX = f"{DOMAIN}_web_search_"
+#: Ids of the web search providers (web/). Stable once released: see
+#: web/selection.py for which of them an entry can offer. A new id also needs
+#: a branch in web/factory.py and a label in every translation's
+#: selector.web_search.options.
+WEB_SEARCH_PROVIDER_DEEPSEEK = "deepseek"
+WEB_SEARCH_PROVIDER_BRAVE = "brave"
+#: What the agent form shows for "no web search". Form only: a subentry stores
+#: no CONF_WEB_SEARCH at all rather than this (options.normalize_web_search_choice).
+WEB_SEARCH_OFF = "off"
 CONF_AGENT = "agent"
 CONF_CONFIG_ENTRY = "config_entry"
 CONF_FILENAMES = "filenames"
@@ -76,24 +90,37 @@ Answer truthfully. Reply in plain text unless the user asks for another format (
 When tools are available to read or change the home, use them when the user's request needs current state or actions.
 Keep answers concise for short questions; add detail only when asked or when it clearly helps."""
 
-RECOMMENDED_CHAT_MODEL = "deepseek-v4-flash"
+RECOMMENDED_CHAT_MODEL = "deepseek-flash"
 
 #: The only official model that accepts image input; see vision.py.
-VISION_CHAT_MODEL = "deepseek-v4-flash-vision-exp"
+VISION_CHAT_MODEL = "deepseek-flash"
 
 CHAT_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("deepseek-v4-flash", "DeepSeek V4 Flash (fast, default)"),
-    ("deepseek-v4-pro", "DeepSeek V4 Pro (most capable)"),
-    (VISION_CHAT_MODEL, "DeepSeek V4 Flash Vision (experimental, image input)"),
+    ("deepseek-flash", "DeepSeek V4.1 Flash (fast, image input, default)"),
+    ("deepseek-v4-pro", "DeepSeek V4 Pro (most capable, text only)"),
 )
 
 #: Model ids that accept OpenAI-style ``image_url`` content parts.
 VISION_CHAT_MODELS: frozenset[str] = frozenset({VISION_CHAT_MODEL})
 
-#: Retired: the official API stopped serving these on LEGACY_CHAT_MODEL_RETIRED_ON.
-#: Entries still configured with one are migrated by models.migrate_legacy_chat_model().
-LEGACY_CHAT_MODELS: frozenset[str] = frozenset({"deepseek-chat", "deepseek-reasoner"})
-LEGACY_CHAT_MODEL_RETIRED_ON = "2026-07-24"
+#: Retired model ids and the day DeepSeek retired each one. ``deepseek-chat``
+#: and ``deepseek-reasoner`` are no longer served at all; the two V4 Flash ids
+#: are only routed to V4.1 Flash "temporarily". Agents still configured with
+#: one are moved by models.migrate_legacy_chat_model().
+LEGACY_CHAT_MODELS: Mapping[str, str] = MappingProxyType(
+    {
+        "deepseek-chat": "2026-07-24",
+        "deepseek-reasoner": "2026-07-24",
+        "deepseek-v4-flash": "2026-09-10",
+        "deepseek-v4-flash-vision-exp": "2026-09-10",
+    }
+)
+#: The retired ids DeepSeek still answers, with the very model they are moved
+#: to. Moving an agent off one changes nothing it does, so it happens quietly;
+#: only a move off an id that no longer answers is worth a repair issue.
+REROUTED_CHAT_MODELS: frozenset[str] = frozenset(
+    {"deepseek-v4-flash", "deepseek-v4-flash-vision-exp"}
+)
 
 RECOMMENDED_MAX_TOKENS = 1500
 RECOMMENDED_MAX_TOOL_ITERATIONS = 10
@@ -118,17 +145,22 @@ MAX_TOOL_RESULT_CHARS_UPPER_BOUND = 100_000
 MIN_TOOL_RESULT_CHARS = 500
 MAX_HISTORY_ROUNDS_UPPER_BOUND = 200
 
+#: The three levels the API actually distinguishes.
 REASONING_EFFORT_SELECT: tuple[tuple[str, str], ...] = (
     ("low", "Low"),
-    ("medium", "Medium"),
     ("high", "High"),
     ("max", "Max"),
-    ("xhigh", "xHigh"),
 )
 REASONING_EFFORT_VALUES: frozenset[str] = frozenset(v for v, _ in REASONING_EFFORT_SELECT)
+#: Levels the API accepts but maps onto one of the three above. Older versions
+#: offered ``medium`` and ``xhigh``; an agent saved with one keeps the effort it
+#: actually got.
+REASONING_EFFORT_ALIASES: Mapping[str, str] = MappingProxyType(
+    {"minimal": "low", "medium": "high", "xhigh": "high", "ultra": "max"}
+)
 RECOMMENDED_REASONING_EFFORT = "high"
 
-#: Ceiling for the reply length option. V4 models take a 1M token context but
+#: Ceiling for the reply length option. Both models take a 1M token context but
 #: generate at most 384K, so anything above this could only ever be rejected.
 MAX_TOKENS_UPPER_BOUND = 384_000
 DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1"

@@ -26,6 +26,7 @@ import json
 import pathlib
 from types import MappingProxyType, SimpleNamespace
 import unittest
+from unittest import mock
 
 from integration_modules import load
 
@@ -48,7 +49,7 @@ try:
 
     import voluptuous as vol
     from homeassistant.exceptions import HomeAssistantError
-    from homeassistant.helpers import config_validation as cv, llm, selector
+    from homeassistant.helpers import config_validation as cv, frame, llm, selector
 
     HA_REASON = ""
 except (ImportError, ValueError) as err:  # pragma: no cover - the normal case in CI
@@ -108,6 +109,32 @@ requires_tool_result = unittest.skipUnless(
 )
 
 
+def _delta_data(delta):
+    """The payload of a tool result delta, under whichever key this core reads."""
+    if "result" in delta:
+        return delta["result"].data
+    return delta["tool_result"]
+
+
+#: The same release moved a chat log's own tool results onto ``ToolResult``:
+#: ``ToolResultContent.result`` holds one, and ``tool_result`` became a property
+#: that reports every access. Asked of the class, so the cases follow core.
+def _chat_log_has_typed_results() -> bool:
+    if HA_REASON:
+        return False
+    from homeassistant.components import conversation
+
+    return "result" in getattr(
+        conversation.ToolResultContent, "__dataclass_fields__", {}
+    )
+
+
+requires_typed_chat_log = unittest.skipUnless(
+    _chat_log_has_typed_results(),
+    "this core's chat log holds tool results as bare objects",
+)
+
+
 class _FakeHass:
     """Just enough Home Assistant for the LLM API registry, which is a dict."""
 
@@ -123,6 +150,11 @@ def _minimal_hass():
 
     return HomeAssistant(tempfile.mkdtemp())
 
+
+#: The id the stand-in API below is registered under. Deliberately not
+#: "assist": older cores - 2026.1 for one - keep their own Assist API under
+#: that id, so registering a second one there fails before a single case has run.
+_SELECTED_API = "recorded_api"
 
 if not HA_REASON:
 
@@ -483,7 +515,7 @@ class TestToolCallsAgainstCoreToolInput(unittest.TestCase):
         )
         self.assertTrue(inputs[0].external)
         self.assertEqual(len(failures), 1)
-        self.assertEqual(failures[0]["tool_result"]["error"], "InvalidToolArguments")
+        self.assertEqual(_delta_data(failures[0])["error"], "InvalidToolArguments")
 
     def test_unreadable_arguments_are_never_executed(self) -> None:
         """True on every core: a half-readable call is not guessed at."""
@@ -509,6 +541,10 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     ENTRY_ID = "01JDEEPSEEK"
 
+    def _brave(self) -> dict:
+        """An agent's settings with Brave chosen as its web search provider."""
+        return {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE}
+
     def setUp(self) -> None:
         self.agent_tools = load("agent_tools")
         self.const = load("const")
@@ -521,13 +557,18 @@ class TestAgentToolsAPI(unittest.TestCase):
             device_id=None,
         )
         self.registered = _RecordedAPI(
-            hass=self.hass, id="assist", name="Assist"
+            hass=self.hass, id=_SELECTED_API, name="Recorded"
         )
         llm.async_register_api(self.hass, self.registered)
 
     def _entry(self, *, brave: str | None = "brave-key"):
         data = {self.const.CONF_BRAVE_API_KEY: brave} if brave else {}
-        return SimpleNamespace(entry_id=self.ENTRY_ID, title="DeepSeek", data=data)
+        return SimpleNamespace(
+            entry_id=self.ENTRY_ID,
+            title="DeepSeek",
+            data=data,
+            runtime_data=_runtime_data(),
+        )
 
     async def _tools(self, options, selected):
         api = self.agent_tools.agent_llm_api(
@@ -538,20 +579,23 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     def test_the_tool_is_never_put_in_the_shared_registry(self) -> None:
         """The bug itself: what is registered is what other integrations offer."""
+        registered = [api.id for api in llm.async_get_apis(self.hass)]
+        self.assertIn(_SELECTED_API, registered)
         self.assertEqual(
-            [api.id for api in llm.async_get_apis(self.hass)], ["assist"]
+            [api_id for api_id in registered if api_id.startswith(self.const.DOMAIN)],
+            [],
         )
 
     def test_an_agent_without_web_search_uses_home_assistant_s_own_path(self) -> None:
         """Passing the selection through unchanged keeps the common case core's."""
         selection = self.agent_tools.agent_llm_api(
-            self.hass, self._entry(), {}, ["assist"]
+            self.hass, self._entry(), {}, [_SELECTED_API]
         )
-        self.assertEqual(selection, ["assist"])
+        self.assertEqual(selection, [_SELECTED_API])
 
     def test_web_search_is_added_beside_the_selected_tools(self) -> None:
         instance, names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, ["assist"])
+            self._tools(self._brave(), [_SELECTED_API])
         )
         self.assertEqual(names, ["recorded", "web_search"])
         self.assertIn("Recorded API prompt", instance.api_prompt)
@@ -560,7 +604,7 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     def test_an_agent_with_no_home_assistant_api_gets_web_search_alone(self) -> None:
         _instance, names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, None)
+            self._tools(self._brave(), None)
         )
         self.assertEqual(names, ["web_search"])
 
@@ -573,7 +617,7 @@ class TestAgentToolsAPI(unittest.TestCase):
         Home Assistant API is selected, so every tool here is one of ours.
         """
         instance, _names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, None)
+            self._tools(self._brave(), None)
         )
         self.assertEqual(
             {tool.name: tool.integration for tool in instance.tools},
@@ -589,24 +633,75 @@ class TestAgentToolsAPI(unittest.TestCase):
         """
         with self.assertRaises(HomeAssistantError):
             asyncio.run(
-                self._tools({self.const.CONF_WEB_SEARCH: True}, ["assist", "gone"])
+                self._tools(self._brave(), [_SELECTED_API, "gone"])
             )
 
+    def test_deepseek_search_needs_no_key_of_its_own(self) -> None:
+        """On the official API the entry's own key is all there is to it."""
+        entry = SimpleNamespace(
+            entry_id=self.ENTRY_ID,
+            title="DeepSeek",
+            data={"api_key": "sk-deepseek"},
+            runtime_data=_runtime_data(),
+        )
+        api = self.agent_tools.agent_llm_api(
+            self.hass,
+            entry,
+            {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_DEEPSEEK},
+            [_SELECTED_API],
+        )
+        instance = asyncio.run(api.async_get_api_instance(self.context))
+        self.assertEqual(
+            [tool.name for tool in instance.tools], ["recorded", "web_search"]
+        )
+        # The provider's own query rules reach the model through the tool.
+        self.assertIn("128", instance.tools[-1].description)
+
+    def test_a_search_is_counted_on_the_entry_s_usage_tracker(self) -> None:
+        """Usage is per API key, so every agent of the entry counts in one place."""
+        entry = self._entry()
+        api = self.agent_tools.agent_llm_api(
+            self.hass, entry, self._brave(), [_SELECTED_API]
+        )
+        instance = asyncio.run(api.async_get_api_instance(self.context))
+        web_search = instance.tools[-1]
+        # Called directly: what a provider answers is covered where the tool
+        # is, and this case is only about where the count ends up.
+        web_search._on_results("brave")
+        self.assertEqual(entry.runtime_data.usage.searches, ["brave"])
+
+    def test_deepseek_search_is_not_offered_behind_a_custom_base_url(self) -> None:
+        entry = SimpleNamespace(
+            entry_id=self.ENTRY_ID,
+            title="Gateway",
+            data={"api_key": "sk-other", "base_url": "https://gateway.example/v1"},
+        )
+        api = self.agent_tools.agent_llm_api(
+            self.hass,
+            entry,
+            {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_DEEPSEEK},
+            [_SELECTED_API],
+        )
+        self.assertEqual(api, [_SELECTED_API])
+
     def test_the_option_without_a_key_answers_without_the_tool(self) -> None:
-        """The key can be removed through Reconfigure while the switch stays on."""
+        """The key can be removed through Reconfigure while the choice stays."""
         api = self.agent_tools.agent_llm_api(
             self.hass,
             self._entry(brave=None),
-            {self.const.CONF_WEB_SEARCH: True},
-            ["assist"],
+            self._brave(),
+            [_SELECTED_API],
         )
         # No key means no web search at all, so the selection is passed through.
-        self.assertEqual(api, ["assist"])
+        self.assertEqual(api, [_SELECTED_API])
 
     def test_a_key_removed_after_the_agent_was_built_is_survivable(self) -> None:
         """``agent_llm_api`` looks once; the instance is built per turn."""
         api = self.agent_tools.AgentToolsAPI(
-            hass=self.hass, entry=self._entry(brave=None), selected=["assist"]
+            hass=self.hass,
+            entry=self._entry(brave=None),
+            options=self._brave(),
+            selected=[_SELECTED_API],
         )
         instance = asyncio.run(api.async_get_api_instance(self.context))
         self.assertEqual([tool.name for tool in instance.tools], ["recorded"])
@@ -614,7 +709,7 @@ class TestAgentToolsAPI(unittest.TestCase):
     def test_the_tools_render_for_the_api_like_any_other(self) -> None:
         chat_session = _load_chat_session()
         instance, _names = asyncio.run(
-            self._tools({self.const.CONF_WEB_SEARCH: True}, ["assist"])
+            self._tools(self._brave(), [_SELECTED_API])
         )
         formatted, skipped = chat_session._format_tools_for_api(
             list(instance.tools), instance.custom_serializer
@@ -647,7 +742,7 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.web_search = load("web_search")
+        self.search_tool = load("web.search_tool")
         self.const = load("const")
 
     @requires_tool_integration
@@ -655,7 +750,9 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
         """Core's own test is ``tool.integration is None``; ours must pass it."""
         self.assertIsNone(llm.Tool.integration)
         self.assertEqual(
-            self.web_search.WebSearchTool("brave-key").integration,
+            self.search_tool.WebSearchTool(
+                _StubProvider(), lambda _provider: None
+            ).integration,
             self.const.DOMAIN,
         )
 
@@ -664,12 +761,219 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
         """Core reads it from ``custom_components/<domain>``; so must we.
 
         A tag that disagreed with the directory would silence the warning and
-        still attribute the tool to an integration that does not exist.
+        still attribute the tool to an integration that does not exist. The
+        tool lives in a subpackage, and core only ever looks at the segment
+        right after ``custom_components`` - so that is the one compared.
         """
+        parts = pathlib.Path(self.search_tool.__file__).parts
         self.assertEqual(
-            self.const.DOMAIN,
-            pathlib.Path(self.web_search.__file__).parent.name,
+            self.const.DOMAIN, parts[parts.index("custom_components") + 1]
         )
+
+
+@requires_ha
+class TestToolResultsTravelInTheCoreShape(unittest.TestCase):
+    """A chat log's tool results are read and written the way this core asks.
+
+    Core 2026.10 moved them onto ``llm.ToolResult`` and reports the two old
+    spellings this integration used: reading ``ToolResultContent.tool_result``
+    on the way back to the API - every tool result goes through that - and
+    setting ``tool_result`` on the delta that answers a call with unreadable
+    arguments. Both still work until 2027.11, which is why nothing failed and
+    why it is pinned here: the report is the only symptom there will be.
+    """
+
+    def setUp(self) -> None:
+        from homeassistant.components import conversation
+
+        self.conversation = conversation
+        self.llm_compat = load("llm_compat")
+
+    def _content(self, data: dict):
+        """A tool result as this core's chat log would hold it."""
+        fields = {
+            "agent_id": "agent",
+            "tool_call_id": "call_1",
+            "tool_name": "GetLiveContext",
+        }
+        if _chat_log_has_typed_results():
+            return self.conversation.ToolResultContent(
+                **fields, result=llm.ToolResult(data=data)
+            )
+        return self.conversation.ToolResultContent(**fields, tool_result=data)
+
+    def test_the_payload_is_read_on_every_core(self) -> None:
+        self.assertEqual(
+            self.llm_compat.tool_result_data(self._content({"ok": 1})), {"ok": 1}
+        )
+
+    @requires_typed_chat_log
+    def test_reading_does_not_use_the_accessor_core_reports(self) -> None:
+        with mock.patch.object(frame, "report_usage") as reported:
+            self.llm_compat.tool_result_data(self._content({"ok": 1}))
+        reported.assert_not_called()
+
+    def test_a_result_we_write_lands_in_the_real_chat_log(self) -> None:
+        """The delta is only right if core's own stream reader takes it."""
+
+        async def check() -> None:
+            hass = _minimal_hass()
+            try:
+                chat_log = self.conversation.ChatLog(hass, "conversation-1")
+                call = llm.ToolInput(
+                    tool_name="HassTurnOn", tool_args={}, id="call_1", external=True
+                )
+                delta = self.llm_compat.tool_result_delta(
+                    tool_call_id="call_1",
+                    tool_name="HassTurnOn",
+                    data={"error": "InvalidToolArguments"},
+                    error=True,
+                )
+
+                async def stream():
+                    yield {"role": "assistant", "tool_calls": [call]}
+                    yield delta
+
+                with mock.patch.object(frame, "report_usage") as reported:
+                    added = [
+                        content
+                        async for content in chat_log.async_add_delta_content_stream(
+                            "agent", stream()
+                        )
+                    ]
+                reported.assert_not_called()
+                self.assertEqual(added[-1].role, "tool_result")
+                self.assertEqual(added[-1].tool_call_id, "call_1")
+                self.assertEqual(
+                    self.llm_compat.tool_result_data(added[-1]),
+                    {"error": "InvalidToolArguments"},
+                )
+            finally:
+                await hass.async_stop()
+
+        asyncio.run(check())
+
+    @requires_tool_result
+    def test_an_error_we_write_is_marked_as_one(self) -> None:
+        delta = self.llm_compat.tool_result_delta(
+            tool_call_id="call_1", tool_name="HassTurnOn", data={}, error=True
+        )
+        self.assertTrue(delta["result"].error)
+        self.assertNotIn("tool_result", delta)
+
+
+@requires_ha
+class TestReasoningIsReplayed(unittest.TestCase):
+    """What a chat log's reasoning turns into on the way back to the API.
+
+    With ``tools`` in the request, DeepSeek wants the reasoning of *every*
+    earlier assistant turn back - not only of those that called a tool - and
+    answers 400 without it. Without tools it ignores it, so sending it always
+    while thinking is on is the one rule that is right for both.
+    """
+
+    def setUp(self) -> None:
+        from homeassistant.components import conversation
+
+        self.conversation = conversation
+        self.chat_messages = load("chat_messages")
+
+    def _log(self) -> list:
+        conversation = self.conversation
+        return [
+            conversation.UserContent(content="Is the hall light on?"),
+            conversation.AssistantContent(
+                agent_id="agent",
+                content="Let me check.",
+                thinking_content="I should look at the light.",
+                tool_calls=[
+                    llm.ToolInput(
+                        tool_name="GetLiveContext", tool_args={}, id="call_1"
+                    )
+                ],
+            ),
+            conversation.ToolResultContent(
+                agent_id="agent",
+                tool_call_id="call_1",
+                tool_name="GetLiveContext",
+                **(
+                    {"result": llm.ToolResult(data={"hall": "on"})}
+                    if _chat_log_has_typed_results()
+                    else {"tool_result": {"hall": "on"}}
+                ),
+            ),
+            conversation.AssistantContent(
+                agent_id="agent",
+                content="Yes, it is on.",
+                thinking_content="The context says on.",
+            ),
+            conversation.UserContent(content="Thanks"),
+        ]
+
+    def _assistant_reasoning(self, *, model: str, thinking_enabled: bool) -> list:
+        messages = self.chat_messages.convert_content_to_messages(
+            self._log(), model=model, thinking_enabled=thinking_enabled
+        )
+        return [
+            message.get("reasoning_content")
+            for message in messages
+            if message["role"] == "assistant"
+        ]
+
+    def test_every_assistant_turn_carries_its_reasoning(self) -> None:
+        self.assertEqual(
+            self._assistant_reasoning(model="deepseek-flash", thinking_enabled=True),
+            ["I should look at the light.", "The context says on."],
+        )
+
+    def test_none_is_sent_while_thinking_is_off(self) -> None:
+        self.assertEqual(
+            self._assistant_reasoning(model="deepseek-flash", thinking_enabled=False),
+            [None, None],
+        )
+
+    def test_a_gateways_reasoner_never_gets_it(self) -> None:
+        """deepseek-reasoner rejected reasoning in the messages array."""
+        self.assertEqual(
+            self._assistant_reasoning(model="deepseek-reasoner", thinking_enabled=True),
+            [None, None],
+        )
+
+
+def _runtime_data() -> SimpleNamespace:
+    """An entry's runtime data, as far as the web tools read it.
+
+    ``usage.searches`` collects the provider id of every search that was
+    counted, in place of the sensor the real tracker would increment.
+    """
+    searches: list[str] = []
+    return SimpleNamespace(
+        usage=SimpleNamespace(searches=searches, record_web_search=searches.append)
+    )
+
+
+class _StubProvider:
+    """A search provider that needs no network, for cases about the tool itself.
+
+    Answers with whatever it was given - a list of results, or an exception to
+    raise - and records what it was asked, so a case can also prove that the
+    tool never asked at all.
+    """
+
+    id = "stub"
+    label = "Stub Search"
+
+    def __init__(self, answer=(), *, max_query_chars=None, query_help="") -> None:
+        self._answer = answer
+        self.max_query_chars = max_query_chars
+        self.query_help = query_help
+        self.asked: list[tuple[str, int]] = []
+
+    async def search(self, query: str, count: int) -> list:
+        self.asked.append((query, count))
+        if isinstance(self._answer, Exception):
+            raise self._answer
+        return list(self._answer)
 
 
 class _FakeResponse:
@@ -727,16 +1031,19 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
     }
 
     def setUp(self) -> None:
-        self.web_search = load("web_search")
+        self.search_tool = load("web.search_tool")
+        self.brave = load("web.brave")
         self.client = _FakeClient(self.BRAVE_PAYLOAD)
-        original = self.web_search.get_async_client
-        self.web_search.get_async_client = lambda _hass: self.client
-        self.addCleanup(
-            setattr, self.web_search, "get_async_client", original
-        )
 
     def _answer(self):
-        tool = self.web_search.WebSearchTool("brave-key")
+        # The provider is handed its HTTP client, so the network is replaced
+        # by passing a different one - nothing has to be patched.
+        tool = self.search_tool.WebSearchTool(
+            self.brave.BraveSearchProvider(
+                lambda: self.client, api_key="brave-key", timeout=10.0
+            ),
+            lambda _provider: None,
+        )
         return asyncio.run(
             tool.async_call(
                 _FakeHass(),
@@ -764,7 +1071,7 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
                     {
                         "title": "Result one",
                         "url": "https://example.test/one",
-                        "description": "First",
+                        "summary": "First",
                     }
                 ],
             },
@@ -779,6 +1086,188 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
         self.assertFalse(answer.error)
 
 
+def _core_has_tool_annotations() -> bool:
+    return not HA_REASON and hasattr(llm, "ToolAnnotations")
+
+
+requires_tool_annotations = unittest.skipUnless(
+    _core_has_tool_annotations(), "this core's llm.Tool has no annotations"
+)
+
+
+@requires_ha
+class TestWebSearchToolContract(unittest.TestCase):
+    """What the tool promises the model, whichever provider is behind it."""
+
+    def setUp(self) -> None:
+        self.search_tool = load("web.search_tool")
+        self.web_types = load("web.types")
+        #: Provider ids the tool reported as searches that found something.
+        self.counted: list[str] = []
+
+    def _call(self, provider, max_result_chars=0, **tool_args):
+        tool = self.search_tool.WebSearchTool(
+            provider, self.counted.append, max_result_chars=max_result_chars
+        )
+        return asyncio.run(
+            tool.async_call(
+                _FakeHass(),
+                llm.ToolInput(tool_name="web_search", tool_args=tool_args, id="1"),
+                llm.LLMContext(
+                    platform="deepseek_conversation",
+                    context=None,
+                    language="en",
+                    assistant="conversation",
+                    device_id=None,
+                ),
+            )
+        )
+
+    def _result(self, **fields):
+        return self.web_types.SearchResult(
+            title="T", url="https://example.test", summary="S", **fields
+        )
+
+    def test_an_answer_over_the_agents_limit_survives_the_general_cut(self) -> None:
+        """Fitted by the tool, so context_trim never has to cut results off."""
+        context_trim = load("context_trim")
+        const = load("const")
+        long = " ".join(f"Line {i} of a long summary." for i in range(200))
+        provider = _StubProvider(
+            [
+                self.web_types.SearchResult(title="T", url="https://e.test", summary=long)
+                for _ in range(8)
+            ]
+        )
+        data = _result_data(
+            self._call(provider, max_result_chars=12_000, query="news", count=8)
+        )
+        sent = context_trim.format_tool_result_content(
+            data,
+            json_encoder=json.JSONEncoder,
+            options={const.CONF_MAX_TOOL_RESULT_CHARS: 12_000},
+            tool_name="web_search",
+        )
+        self.assertNotIn("truncated by DeepSeek integration", sent)
+        self.assertEqual(len(json.loads(sent)["results"]), 8)
+
+    def test_results_reach_the_model_without_the_ranking_signals(self) -> None:
+        provider = _StubProvider(
+            [self._result(source="Example", date="2026-06-01", score=2.4, authority=3)]
+        )
+        self.assertEqual(
+            _result_data(self._call(provider, query="  ha release  ", count=3)),
+            {
+                "query": "ha release",
+                "results": [
+                    {
+                        "title": "T",
+                        "url": "https://example.test",
+                        "source": "Example",
+                        "date": "2026-06-01",
+                        "summary": "S",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(provider.asked, [("ha release", 3)])
+
+    def test_the_count_is_kept_within_what_the_tool_offers(self) -> None:
+        for asked, sent in ((99, self.search_tool.MAX_RESULT_COUNT), (0, 1)):
+            with self.subTest(asked=asked):
+                provider = _StubProvider()
+                self._call(provider, query="q", count=asked)
+                self.assertEqual(provider.asked, [("q", sent)])
+
+    def test_an_empty_search_says_so(self) -> None:
+        """Otherwise the model answers from memory as if it had found something."""
+        data = _result_data(self._call(_StubProvider(), query="q"))
+        self.assertEqual(data["results"], [])
+        self.assertIn("No results", data["note"])
+
+    def test_a_search_with_results_carries_no_note(self) -> None:
+        data = _result_data(self._call(_StubProvider([self._result()]), query="q"))
+        self.assertNotIn("note", data)
+
+    def test_a_query_over_the_provider_s_limit_is_refused_before_it_is_sent(self) -> None:
+        provider = _StubProvider(max_query_chars=128)
+        with self.assertRaises(HomeAssistantError) as caught:
+            self._call(provider, query="x" * 129)
+        message = str(caught.exception)
+        self.assertIn("129", message)
+        self.assertIn("128", message)
+        self.assertIn("call web_search again", message)
+        self.assertEqual(provider.asked, [])
+
+    def test_a_query_at_the_limit_goes_through(self) -> None:
+        provider = _StubProvider(max_query_chars=128)
+        self._call(provider, query="x" * 128)
+        self.assertEqual(len(provider.asked), 1)
+
+    def test_a_provider_without_a_limit_is_not_checked(self) -> None:
+        provider = _StubProvider(max_query_chars=None)
+        self._call(provider, query="x" * 2000)
+        self.assertEqual(len(provider.asked), 1)
+
+    def test_a_provider_s_failure_reaches_the_model_in_its_own_words(self) -> None:
+        """Core hands the text of a ``HomeAssistantError`` back as the result."""
+        failure = self.web_types.WebToolError(
+            self.web_types.WebErrorKind.BALANCE, "no balance left. Tell the user."
+        )
+        with self.assertRaises(HomeAssistantError) as caught:
+            self._call(_StubProvider(failure), query="q")
+        self.assertEqual(str(caught.exception), "no balance left. Tell the user.")
+
+    def test_a_search_that_found_something_is_counted_once(self) -> None:
+        """That is the unit DeepSeek bills, so it is the unit the sensor counts."""
+        self._call(_StubProvider([self._result(), self._result()]), query="q")
+        self.assertEqual(self.counted, ["stub"])
+
+    def test_a_search_that_found_nothing_is_not_counted(self) -> None:
+        self._call(_StubProvider(), query="q")
+        self.assertEqual(self.counted, [])
+
+    def test_a_search_that_failed_or_was_refused_is_not_counted(self) -> None:
+        failure = self.web_types.WebToolError(
+            self.web_types.WebErrorKind.UNAVAILABLE, "down"
+        )
+        for provider, query in (
+            (_StubProvider(failure), "q"),
+            (_StubProvider(max_query_chars=3), "too long"),
+        ):
+            with self.subTest(query=query), self.assertRaises(HomeAssistantError):
+                self._call(provider, query=query)
+        self.assertEqual(self.counted, [])
+
+    def test_the_description_carries_the_provider_s_query_rules(self) -> None:
+        with_rules = self.search_tool.WebSearchTool(
+            _StubProvider(query_help="Query: at most 128 characters."),
+            self.counted.append,
+        )
+        self.assertTrue(
+            with_rules.description.endswith("Query: at most 128 characters.")
+        )
+        without = self.search_tool.WebSearchTool(_StubProvider(), self.counted.append)
+        self.assertEqual(without.description, without.description.strip())
+
+    def test_the_prompt_tells_the_model_not_to_obey_what_it_reads(self) -> None:
+        """The one guard between a web page and an agent that controls a home."""
+        prompt = self.search_tool.WEB_SEARCH_API_PROMPT
+        self.assertIn("untrusted", prompt)
+        self.assertIn("never operate the home", prompt)
+
+    @requires_tool_annotations
+    def test_the_tool_says_it_only_reads(self) -> None:
+        """Core's defaults describe a tool that writes and destroys."""
+        self.assertTrue(llm.Tool.annotations.destructive)
+        annotations = self.search_tool.WebSearchTool(
+            _StubProvider(), self.counted.append
+        ).annotations
+        self.assertTrue(annotations.read_only)
+        self.assertFalse(annotations.destructive)
+        self.assertTrue(annotations.open_world)
+
+
 @requires_ha
 class TestChatLogTakesThePrivateAPI(unittest.TestCase):
     """The handover itself: Home Assistant has to accept an API object.
@@ -789,6 +1278,10 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
     against the real ``ChatLog``.
     """
 
+    def _brave(self) -> dict:
+        """An agent's settings with Brave chosen as its web search provider."""
+        return {self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE}
+
     def setUp(self) -> None:
         self.agent_tools = load("agent_tools")
         self.const = load("const")
@@ -796,11 +1289,12 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
     async def _chat_log(self, hass):
         from homeassistant.components.conversation import ChatLog
 
-        llm.async_register_api(hass, _RecordedAPI(hass=hass, id="assist", name="Assist"))
+        llm.async_register_api(hass, _RecordedAPI(hass=hass, id=_SELECTED_API, name="Recorded"))
         entry = SimpleNamespace(
             entry_id="01J",
             title="DeepSeek",
             data={self.const.CONF_BRAVE_API_KEY: "brave-key"},
+            runtime_data=_runtime_data(),
         )
         chat_log = ChatLog(hass, "conversation-1")
         await chat_log.async_provide_llm_data(
@@ -812,7 +1306,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 device_id=None,
             ),
             user_llm_hass_api=self.agent_tools.agent_llm_api(
-                hass, entry, {self.const.CONF_WEB_SEARCH: True}, ["assist"]
+                hass, entry, self._brave(), [_SELECTED_API]
             ),
             user_llm_prompt="You are a test.",
         )
@@ -866,6 +1360,185 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 await hass.async_stop()
 
         asyncio.run(check())
+
+
+@requires_ha
+class TestUsageSensors(unittest.TestCase):
+    """The sensor platform and the tracker have to agree on every counter.
+
+    The tracker names its sensors as keyword arguments and the platform builds
+    them, so a counter added to one and not the other is a ``TypeError`` at
+    setup - which would take every usage sensor with it, not just the new one.
+    """
+
+    def setUp(self) -> None:
+        try:
+            self.sensor = load("sensor", api_stubs=True)
+        except ImportError as err:  # pragma: no cover
+            self.skipTest(f"the sensor platform needs more of core installed: {err}")
+        self.tracker = load("usage_metrics").UsageTracker()
+        entry = SimpleNamespace(
+            entry_id="01J",
+            title="DeepSeek",
+            runtime_data=SimpleNamespace(usage=self.tracker),
+        )
+        added: list = []
+        asyncio.run(self.sensor.async_setup_entry(None, entry, added.extend))
+        self.by_key = {entity.translation_key: entity for entity in added}
+
+    def test_a_counted_web_search_shows_on_its_sensor(self) -> None:
+        self.tracker.record_web_search("deepseek")
+        self.tracker.record_web_search("deepseek")
+        self.assertEqual(self.by_key["web_search_requests"].native_value, 2)
+        self.assertEqual(self.by_key["api_requests"].native_value or 0, 0)
+
+    def test_reset_brings_it_back_to_zero(self) -> None:
+        self.tracker.record_web_search("deepseek")
+        self.tracker.reset_all()
+        self.assertEqual(self.by_key["web_search_requests"].native_value, 0)
+
+    def test_every_sensor_has_a_name_in_every_language(self) -> None:
+        """A sensor without one shows up under its device's name alone."""
+        translations = pathlib.Path(self.sensor.__file__).parent / "translations"
+        for path in sorted(translations.glob("*.json")):
+            with self.subTest(language=path.stem):
+                names = json.loads(path.read_text(encoding="utf-8"))["entity"]["sensor"]
+                self.assertEqual(sorted(names), sorted(self.by_key))
+
+
+@requires_ha
+class TestAgentFormWebSearchField(unittest.TestCase):
+    """The agent form offers exactly what the entry can provide, and stores an id.
+
+    Driven through the real subentry flow step rather than the helpers behind
+    it: whether the field is on the form at all, which options it lists and
+    what ends up in the subentry are all decided across ``config_flow.py``,
+    ``flow_schemas.py`` and core's selector, and only the three together say
+    what a user sees.
+    """
+
+    def setUp(self) -> None:
+        try:
+            self.config_flow = load("config_flow", api_stubs=True)
+        except ImportError as err:  # pragma: no cover
+            self.skipTest(f"config_flow needs more of core installed: {err}")
+        self.const = load("const")
+
+    def _flow(self, hass, *, entry_data: dict, options: dict):
+        """A flow adding a conversation agent to an entry holding ``entry_data``."""
+        from homeassistant.config_entries import ConfigEntryState
+
+        flow = self.config_flow.DeepSeekSubentryFlowHandler()
+        flow.hass = hass
+        flow.flow_id = "flow-1"
+        flow.handler = ("01JENTRY", self.const.SUBENTRY_TYPE_CONVERSATION)
+        flow.context = {"source": "user"}
+        flow.options = dict(options)
+        entry = SimpleNamespace(
+            entry_id="01JENTRY", data=entry_data, state=ConfigEntryState.LOADED
+        )
+        flow._get_entry = lambda: entry
+        return flow
+
+    def _run(self, *, entry_data: dict, options: dict, user_input: dict | None = None):
+        async def step():
+            hass = _minimal_hass()
+            try:
+                flow = self._flow(hass, entry_data=entry_data, options=options)
+                return flow, await flow.async_step_init(user_input)
+            finally:
+                await hass.async_stop()
+
+        return asyncio.run(step())
+
+    def _field(self, result):
+        """The web search field's selector on a shown form, or None."""
+        for marker, selector_ in result["data_schema"].schema.items():
+            if str(marker) == self.const.CONF_WEB_SEARCH:
+                return selector_
+        return None
+
+    def _answers(self, **extra) -> dict:
+        return {
+            self.const.CONF_CHAT_MODEL: self.const.RECOMMENDED_CHAT_MODEL,
+            self.const.CONF_RECOMMENDED: True,
+            **extra,
+        }
+
+    KEY = {"brave_api_key": "brave-key"}
+    #: A custom gateway: DeepSeek Search is offered on the official API only.
+    GATEWAY = {"base_url": "https://gateway.example/v1"}
+
+    def test_an_entry_with_nothing_to_offer_shows_no_field(self) -> None:
+        _flow, result = self._run(entry_data=self.GATEWAY, options={})
+        self.assertEqual(result["type"], "form")
+        self.assertIsNone(self._field(result))
+
+    def test_the_field_lists_off_and_what_the_entry_offers(self) -> None:
+        deepseek = self.const.WEB_SEARCH_PROVIDER_DEEPSEEK
+        brave = self.const.WEB_SEARCH_PROVIDER_BRAVE
+        cases = (
+            ({}, [deepseek]),  # the official API, and no Brave key
+            (self.KEY, [deepseek, brave]),
+            ({**self.GATEWAY, **self.KEY}, [brave]),
+        )
+        for entry_data, offered in cases:
+            with self.subTest(entry_data=entry_data):
+                _flow, result = self._run(entry_data=entry_data, options={})
+                field = self._field(result)
+                self.assertIsNotNone(field)
+                self.assertEqual(
+                    list(field.config["options"]),
+                    [self.const.WEB_SEARCH_OFF, *offered],
+                )
+
+    def test_every_option_has_a_label_in_every_language(self) -> None:
+        """An option without one is shown to the user as its raw id."""
+        translations = pathlib.Path(self.config_flow.__file__).parent / "translations"
+        for path in sorted(translations.glob("*.json")):
+            with self.subTest(language=path.stem):
+                labels = json.loads(path.read_text(encoding="utf-8"))["selector"][
+                    self.const.CONF_WEB_SEARCH
+                ]["options"]
+                self.assertEqual(
+                    sorted(labels),
+                    sorted(
+                        [
+                            self.const.WEB_SEARCH_OFF,
+                            self.const.WEB_SEARCH_PROVIDER_DEEPSEEK,
+                            self.const.WEB_SEARCH_PROVIDER_BRAVE,
+                        ]
+                    ),
+                )
+
+    def test_a_chosen_provider_is_stored_by_its_id(self) -> None:
+        _flow, result = self._run(
+            entry_data=self.KEY,
+            options={},
+            user_input=self._answers(web_search=self.const.WEB_SEARCH_PROVIDER_BRAVE),
+        )
+        self.assertEqual(result["type"], "create_entry")
+        self.assertEqual(
+            result["data"][self.const.CONF_WEB_SEARCH],
+            self.const.WEB_SEARCH_PROVIDER_BRAVE,
+        )
+
+    def test_off_stores_nothing(self) -> None:
+        _flow, result = self._run(
+            entry_data=self.KEY,
+            options={self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE},
+            user_input=self._answers(web_search=self.const.WEB_SEARCH_OFF),
+        )
+        self.assertNotIn(self.const.CONF_WEB_SEARCH, result["data"])
+
+    def test_a_choice_whose_key_is_gone_is_cleared_on_opening_the_form(self) -> None:
+        """Cleared, not swapped for the provider that is still there."""
+        flow, result = self._run(
+            entry_data={},
+            options={self.const.CONF_WEB_SEARCH: self.const.WEB_SEARCH_PROVIDER_BRAVE},
+        )
+        self.assertIsNotNone(self._field(result))
+        self.assertNotIn(self.const.CONF_WEB_SEARCH, flow.options)
 
 
 @requires_ha
@@ -925,10 +1598,12 @@ class TestWebSearchMigration(unittest.TestCase):
             ],
         )
         written = self._migrate(entry)
-        self.assertEqual(len(written), 1)
-        _subentry_id, data = written[0]
-        self.assertEqual(data, {"llm_hass_api": ["assist"], "web_search": True})
-        self.assertEqual(entry.version, 4)
+        # Two writes: the selection becomes the setting, and the setting -
+        # a switch at the time - then names its provider.
+        self.assertEqual(len(written), 2)
+        _subentry_id, data = written[-1]
+        self.assertEqual(data, {"llm_hass_api": ["assist"], "web_search": "brave"})
+        self.assertEqual(entry.version, 5)
 
     def test_an_agent_that_never_had_it_is_not_rewritten(self) -> None:
         entry = self._entry(
@@ -943,7 +1618,7 @@ class TestWebSearchMigration(unittest.TestCase):
             ],
         )
         self.assertEqual(self._migrate(entry), [])
-        self.assertEqual(entry.version, 4)
+        self.assertEqual(entry.version, 5)
 
     def test_running_it_again_changes_nothing(self) -> None:
         """A restored backup must not re-enter a migration that already ran."""
@@ -958,7 +1633,7 @@ class TestWebSearchMigration(unittest.TestCase):
                 }
             ],
         )
-        self.assertEqual(len(self._migrate(entry)), 1)
+        self.assertEqual(len(self._migrate(entry)), 2)
         self.assertEqual(self._migrate(entry), [])
 
     def test_every_agent_on_the_entry_is_migrated(self) -> None:
@@ -979,7 +1654,162 @@ class TestWebSearchMigration(unittest.TestCase):
                 },
             ],
         )
-        self.assertEqual(len(self._migrate(entry)), 2)
+        self.assertEqual(len(self._migrate(entry)), 4)
+
+    def test_a_web_search_switch_names_its_provider(self) -> None:
+        """Version 4 stored a switch; it only ever meant Brave."""
+        entry = self._entry(
+            version=4,
+            subentries=[
+                {
+                    "subentry_type": "conversation",
+                    "title": "Voice",
+                    "unique_id": None,
+                    "data": {"llm_hass_api": ["assist"], "web_search": True},
+                },
+                {
+                    "subentry_type": "ai_task_data",
+                    "title": "Task",
+                    "unique_id": None,
+                    "data": {"web_search": False, "chat_model": "m"},
+                },
+                {
+                    "subentry_type": "conversation",
+                    "title": "Plain",
+                    "unique_id": None,
+                    "data": {"llm_hass_api": ["assist"]},
+                },
+            ],
+        )
+        written = [data for _subentry_id, data in self._migrate(entry)]
+        self.assertEqual(
+            written,
+            [
+                {"llm_hass_api": ["assist"], "web_search": "brave"},
+                {"chat_model": "m"},
+            ],
+        )
+        self.assertEqual(entry.version, 5)
+        self.assertEqual(self._migrate(entry), [])
+
+
+@requires_ha
+class TestUpgradeFromV18(unittest.TestCase):
+    """What an entry saved by 1.8.x looks like after the first start on 1.9.
+
+    1.8.x stored ``deepseek-v4-flash`` in every new agent, so this is the path
+    nearly every user takes.
+    """
+
+    def setUp(self) -> None:
+        self.migration = load("migration", api_stubs=True)
+
+    def _entry(self, models: dict[str, str], *, base_url: str | None = None):
+        from homeassistant.config_entries import ConfigEntry
+
+        return ConfigEntry(
+            version=4,
+            minor_version=1,
+            domain="deepseek_conversation",
+            title="DeepSeek",
+            data={"base_url": base_url} if base_url else {},
+            options={},
+            source="user",
+            unique_id=None,
+            discovery_keys=MappingProxyType({}),
+            subentries_data=[
+                {
+                    "subentry_type": "conversation",
+                    "title": title,
+                    "unique_id": None,
+                    "data": {"chat_model": model, "web_search": True},
+                }
+                for title, model in models.items()
+            ],
+        )
+
+    def _start(self, entry):
+        """Run both migrations; return each agent's model and the issues raised."""
+
+        class _ConfigEntries:
+            @staticmethod
+            def async_update_subentry(_entry, subentry, *, data):
+                object.__setattr__(subentry, "data", MappingProxyType(dict(data)))
+
+            @staticmethod
+            def async_update_entry(target, **changes):
+                for key, value in changes.items():
+                    object.__setattr__(target, key, value)
+
+        hass = SimpleNamespace(config_entries=_ConfigEntries())
+        asyncio.run(self.migration.async_migrate_entry(hass, entry))
+        with mock.patch.object(self.migration.ir, "async_create_issue") as issue:
+            self.migration.async_migrate_legacy_model_option(hass, entry)
+        agents = {
+            sub.title: (sub.data.get("chat_model"), sub.data.get("web_search"))
+            for sub in entry.subentries.values()
+        }
+        return agents, [call.kwargs["translation_placeholders"] for call in issue.call_args_list]
+
+    def test_the_v4_flash_ids_move_quietly(self) -> None:
+        """DeepSeek already answered them with V4.1 Flash: nothing to dismiss."""
+        agents, issues = self._start(
+            self._entry(
+                {
+                    "Voice": "deepseek-v4-flash",
+                    "Vision": "deepseek-v4-flash-vision-exp",
+                    "Pro": "deepseek-v4-pro",
+                }
+            )
+        )
+        self.assertEqual(
+            agents,
+            {
+                "Voice": ("deepseek-flash", "brave"),
+                "Vision": ("deepseek-flash", "brave"),
+                "Pro": ("deepseek-v4-pro", "brave"),
+            },
+        )
+        self.assertEqual(issues, [])
+
+    def test_a_dead_id_is_reported_with_every_id_it_replaced(self) -> None:
+        agents, issues = self._start(
+            self._entry(
+                {
+                    "Chat": "deepseek-chat",
+                    "Reasoner": "deepseek-reasoner",
+                    "Voice": "deepseek-v4-flash",
+                }
+            )
+        )
+        self.assertEqual({model for model, _ in agents.values()}, {"deepseek-flash"})
+        self.assertEqual(
+            issues,
+            [
+                {
+                    "entry_title": "Chat, Reasoner",
+                    "old_model": "deepseek-chat, deepseek-reasoner",
+                    "new_model": "deepseek-flash",
+                    "retired_on": "2026-07-24",
+                }
+            ],
+        )
+
+    def test_a_gateway_keeps_its_ids(self) -> None:
+        agents, issues = self._start(
+            self._entry(
+                {"Voice": "deepseek-v4-flash"}, base_url="https://openrouter.ai/api/v1"
+            )
+        )
+        self.assertEqual(agents, {"Voice": ("deepseek-v4-flash", "brave")})
+        self.assertEqual(issues, [])
+
+    def test_a_second_start_changes_nothing(self) -> None:
+        entry = self._entry({"Chat": "deepseek-chat", "Voice": "deepseek-v4-flash"})
+        self._start(entry)
+        agents, issues = self._start(entry)
+        self.assertEqual(issues, [])
+        self.assertEqual({model for model, _ in agents.values()}, {"deepseek-flash"})
 
 
 if __name__ == "__main__":
