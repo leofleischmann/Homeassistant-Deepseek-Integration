@@ -115,6 +115,12 @@ LEGACY_CHAT_MODELS: Mapping[str, str] = MappingProxyType(
         "deepseek-v4-flash-vision-exp": "2026-09-10",
     }
 )
+#: The retired ids DeepSeek still answers, with the very model they are moved
+#: to. Moving an agent off one changes nothing it does, so it happens quietly;
+#: only a move off an id that no longer answers is worth a repair issue.
+REROUTED_CHAT_MODELS: frozenset[str] = frozenset(
+    {"deepseek-v4-flash", "deepseek-v4-flash-vision-exp"}
+)
 
 RECOMMENDED_MAX_TOKENS = 1500
 RECOMMENDED_MAX_TOOL_ITERATIONS = 10

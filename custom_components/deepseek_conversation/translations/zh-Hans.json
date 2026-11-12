@@ -380,7 +380,7 @@
     },
     "issues": {
         "legacy_chat_model": {
-            "title": "DeepSeek 模型 {old_model} 已下线",
+            "title": "DeepSeek 已下线 {old_model}",
             "description": "DeepSeek 已于 {retired_on} 下线 {old_model}。“{entry_title}”已切换为 {new_model}，以便继续回复。如需其他模型，请在“配置”中选择，然后关闭此提示。"
         }
     }

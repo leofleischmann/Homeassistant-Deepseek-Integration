@@ -380,7 +380,7 @@
     },
     "issues": {
         "legacy_chat_model": {
-            "title": "DeepSeek model {old_model} was retired",
+            "title": "DeepSeek retired {old_model}",
             "description": "DeepSeek retired {old_model} on {retired_on}. “{entry_title}” has been switched to {new_model} so it keeps answering. Pick a different model under Configure if you want one, then dismiss this issue."
         }
     }

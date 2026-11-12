@@ -380,7 +380,7 @@
     },
     "issues": {
         "legacy_chat_model": {
-            "title": "Le modèle DeepSeek {old_model} a été retiré",
+            "title": "DeepSeek a retiré {old_model}",
             "description": "DeepSeek a retiré {old_model} le {retired_on}. « {entry_title} » est passé à {new_model} pour continuer à répondre. Choisissez-en un autre via Configurer si besoin, puis fermez ce signalement."
         }
     }

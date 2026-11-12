@@ -14,6 +14,7 @@ from .const import (
     DEEPSEEK_API_BASE_URL,
     LEGACY_CHAT_MODELS,
     RECOMMENDED_CHAT_MODEL,
+    REROUTED_CHAT_MODELS,
 )
 
 
@@ -59,6 +60,15 @@ def migrate_legacy_chat_model(model: str | None, *, base_url: str | None) -> str
 def legacy_chat_model_retired_on(model: str | None) -> str:
     """The day DeepSeek retired ``model``, or ``""`` for an id still served."""
     return LEGACY_CHAT_MODELS.get(normalize_model_id(model), "")
+
+
+def is_rerouted_chat_model(model: str | None) -> bool:
+    """Whether DeepSeek still answers ``model`` with the model it moves to.
+
+    Moving an agent off such an id changes nothing about its answers, so the
+    user need not be told; see migration.async_migrate_legacy_model_option.
+    """
+    return normalize_model_id(model) in REROUTED_CHAT_MODELS
 
 
 def is_retired_chat_model(model: str | None, *, base_url: str | None) -> bool:

@@ -99,6 +99,16 @@ class TestLegacyModelMigration(unittest.TestCase):
         )
         self.assertEqual(const.RECOMMENDED_CHAT_MODEL, "deepseek-flash")
 
+    def test_only_the_v4_flash_ids_are_still_answered(self) -> None:
+        """Moving off those changes nothing, so it needs no repair issue."""
+        rerouted = {
+            model for model in const.LEGACY_CHAT_MODELS
+            if models.is_rerouted_chat_model(model)
+        }
+        self.assertEqual(rerouted, {"deepseek-v4-flash", "deepseek-v4-flash-vision-exp"})
+        self.assertTrue(models.is_rerouted_chat_model("  DeepSeek-V4-Flash "))
+        self.assertFalse(models.is_rerouted_chat_model("deepseek-flash"))
+
     def test_a_gateway_may_still_route_a_retired_id(self) -> None:
         self.assertIsNone(
             migrate("deepseek-chat", base_url="https://openrouter.ai/api/v1")

@@ -193,6 +193,33 @@ def _async_resolve_target(
     return entry, options
 
 
+#: Retired ids generate_content has already warned about since Home Assistant
+#: started. An automation that names one runs on every trigger, and the same
+#: warning each time would bury everything else in the log.
+_REPORTED_RETIRED_MODELS: set[str] = set()
+
+
+def _log_retired_model_call(model: str, replacement: str) -> None:
+    """Say once per retired id that a call named it, then keep quiet."""
+    key = model.strip().lower()
+    if key in _REPORTED_RETIRED_MODELS:
+        LOGGER.debug(
+            "[Debug generate_content]: %s is retired; using %s", model, replacement
+        )
+        return
+    _REPORTED_RETIRED_MODELS.add(key)
+    LOGGER.warning(
+        "generate_content was called with %s, which DeepSeek retired on %s; "
+        "using %s instead. Set chat_model to %s in the automation or script "
+        "that calls it (or leave it out to use the agent's model). This is "
+        "logged once per start",
+        model,
+        legacy_chat_model_retired_on(model),
+        replacement,
+        replacement,
+    )
+
+
 async def send_prompt(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse:
     """Send a prompt to DeepSeek and return the response."""
     entry, agent_options = _async_resolve_target(hass, call)
@@ -207,13 +234,7 @@ async def send_prompt(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse
     model = resolve_generate_content_model(agent_options, call.data)
     replacement = migrate_legacy_chat_model(model, base_url=base_url)
     if replacement is not None:
-        LOGGER.warning(
-            "generate_content was called with %s, which DeepSeek retired on "
-            "%s; using %s for this call",
-            model,
-            legacy_chat_model_retired_on(model),
-            replacement,
-        )
+        _log_retired_model_call(model, replacement)
         model = replacement
 
     messages: list[dict[str, object]] = []

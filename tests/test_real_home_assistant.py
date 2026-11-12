@@ -1668,5 +1668,124 @@ class TestWebSearchMigration(unittest.TestCase):
         self.assertEqual(self._migrate(entry), [])
 
 
+@requires_ha
+class TestUpgradeFromV18(unittest.TestCase):
+    """What an entry saved by 1.8.x looks like after the first start on 1.9.
+
+    1.8.x stored ``deepseek-v4-flash`` in every new agent, so this is the path
+    nearly every user takes.
+    """
+
+    def setUp(self) -> None:
+        self.migration = load("migration", api_stubs=True)
+
+    def _entry(self, models: dict[str, str], *, base_url: str | None = None):
+        from homeassistant.config_entries import ConfigEntry
+
+        return ConfigEntry(
+            version=4,
+            minor_version=1,
+            domain="deepseek_conversation",
+            title="DeepSeek",
+            data={"base_url": base_url} if base_url else {},
+            options={},
+            source="user",
+            unique_id=None,
+            discovery_keys=MappingProxyType({}),
+            subentries_data=[
+                {
+                    "subentry_type": "conversation",
+                    "title": title,
+                    "unique_id": None,
+                    "data": {"chat_model": model, "web_search": True},
+                }
+                for title, model in models.items()
+            ],
+        )
+
+    def _start(self, entry):
+        """Run both migrations; return each agent's model and the issues raised."""
+
+        class _ConfigEntries:
+            @staticmethod
+            def async_update_subentry(_entry, subentry, *, data):
+                object.__setattr__(subentry, "data", MappingProxyType(dict(data)))
+
+            @staticmethod
+            def async_update_entry(target, **changes):
+                for key, value in changes.items():
+                    object.__setattr__(target, key, value)
+
+        hass = SimpleNamespace(config_entries=_ConfigEntries())
+        asyncio.run(self.migration.async_migrate_entry(hass, entry))
+        with mock.patch.object(self.migration.ir, "async_create_issue") as issue:
+            self.migration.async_migrate_legacy_model_option(hass, entry)
+        agents = {
+            sub.title: (sub.data.get("chat_model"), sub.data.get("web_search"))
+            for sub in entry.subentries.values()
+        }
+        return agents, [call.kwargs["translation_placeholders"] for call in issue.call_args_list]
+
+    def test_the_v4_flash_ids_move_quietly(self) -> None:
+        """DeepSeek already answered them with V4.1 Flash: nothing to dismiss."""
+        agents, issues = self._start(
+            self._entry(
+                {
+                    "Voice": "deepseek-v4-flash",
+                    "Vision": "deepseek-v4-flash-vision-exp",
+                    "Pro": "deepseek-v4-pro",
+                }
+            )
+        )
+        self.assertEqual(
+            agents,
+            {
+                "Voice": ("deepseek-flash", "brave"),
+                "Vision": ("deepseek-flash", "brave"),
+                "Pro": ("deepseek-v4-pro", "brave"),
+            },
+        )
+        self.assertEqual(issues, [])
+
+    def test_a_dead_id_is_reported_with_every_id_it_replaced(self) -> None:
+        agents, issues = self._start(
+            self._entry(
+                {
+                    "Chat": "deepseek-chat",
+                    "Reasoner": "deepseek-reasoner",
+                    "Voice": "deepseek-v4-flash",
+                }
+            )
+        )
+        self.assertEqual({model for model, _ in agents.values()}, {"deepseek-flash"})
+        self.assertEqual(
+            issues,
+            [
+                {
+                    "entry_title": "Chat, Reasoner",
+                    "old_model": "deepseek-chat, deepseek-reasoner",
+                    "new_model": "deepseek-flash",
+                    "retired_on": "2026-07-24",
+                }
+            ],
+        )
+
+    def test_a_gateway_keeps_its_ids(self) -> None:
+        agents, issues = self._start(
+            self._entry(
+                {"Voice": "deepseek-v4-flash"}, base_url="https://openrouter.ai/api/v1"
+            )
+        )
+        self.assertEqual(agents, {"Voice": ("deepseek-v4-flash", "brave")})
+        self.assertEqual(issues, [])
+
+    def test_a_second_start_changes_nothing(self) -> None:
+        entry = self._entry({"Chat": "deepseek-chat", "Voice": "deepseek-v4-flash"})
+        self._start(entry)
+        agents, issues = self._start(entry)
+        self.assertEqual(issues, [])
+        self.assertEqual({model for model, _ in agents.values()}, {"deepseek-flash"})
+
+
 if __name__ == "__main__":
     unittest.main()

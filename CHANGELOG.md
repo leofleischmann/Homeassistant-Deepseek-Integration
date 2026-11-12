@@ -4,10 +4,10 @@ All notable changes to this integration.
 
 ## [1.9.0] - 2026-11-12
 
-Nothing to do on upgrade: agents on a retired model move to DeepSeek V4.1 Flash by themselves, and **Settings → Repairs** says which ones.
+Nothing to do on upgrade: agents on a retired model move to DeepSeek V4.1 Flash by themselves.
 
 ### Changed
-- **New default model `deepseek-flash` (V4.1 Flash), which also reads images.** DeepSeek retired V4 Flash and V4 Flash Vision Exp on 2026-09-10. The picker now offers `deepseek-flash` and `deepseek-v4-pro` (text only); agents on an old id are switched on startup. Custom base URLs keep their model.
+- **New default model `deepseek-flash` (V4.1 Flash), which also reads images.** DeepSeek retired V4 Flash and V4 Flash Vision Exp on 2026-09-10. The picker now offers `deepseek-flash` and `deepseek-v4-pro` (text only). Agents on an old id are switched on startup, quietly, since DeepSeek already answered those ids with V4.1 Flash. Custom base URLs keep their model.
 - **Reasoning effort is low, high or max**, the levels the API actually uses. `medium` and `xhigh` always ran as `high` and are kept that way.
 - **Web search is picked per agent**: Off, DeepSeek Search or Brave Search. Existing agents stay on Brave; the Brave key moved from first setup to **Reconfigure**.
 

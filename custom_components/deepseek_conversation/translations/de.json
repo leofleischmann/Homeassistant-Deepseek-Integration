@@ -380,7 +380,7 @@
     },
     "issues": {
         "legacy_chat_model": {
-            "title": "DeepSeek-Modell {old_model} wurde abgeschaltet",
+            "title": "DeepSeek hat {old_model} abgeschaltet",
             "description": "DeepSeek hat {old_model} am {retired_on} abgeschaltet. „{entry_title}“ wurde auf {new_model} umgestellt, damit es weiter antwortet. Unter Konfigurieren kannst du ein anderes Modell wählen; danach kannst du diese Meldung schließen."
         }
     }
