@@ -3,7 +3,6 @@
   "name": "DeepSeek Conversation",
   "after_dependencies": [
     "ai_task",
-    "assist_pipeline",
     "intent"
   ],
   "codeowners": [
