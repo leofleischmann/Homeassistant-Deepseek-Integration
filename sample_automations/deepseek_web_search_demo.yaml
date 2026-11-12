@@ -2,8 +2,9 @@
 # Trigger: Developer tools → Events → deepseek_web_search_demo
 #
 # Requires: Web search set on the AI Task agent (integration card → the AI Task
-# entity's row → Web search). Without it the task has no web_search tool and
-# reports found: false instead of answering from memory.
+# entity's row → Web search). DeepSeek Search needs no extra key on the official
+# API; Brave Search needs a Brave key under Reconfigure. Without either, the task
+# has no web_search tool and reports found: false instead of answering from memory.
 #
 # Resolves the first ai_task.* entity for deepseek_conversation automatically.
 # Results: persistent notification + logbook. Each search that found something
@@ -66,8 +67,9 @@ actions:
         ({{ search_result.data.released }}), according to
         {{ search_result.data.source }}.
         {% else %}
-        No web search tool on {{ deepseek_ai_task_entity }}. Set Web search on
-        that AI Task agent and trigger the event again.
+        Nothing found. Either {{ deepseek_ai_task_entity }} has no web search
+        (set Web search to DeepSeek Search or Brave Search on that AI Task
+        agent and trigger the event again), or the search came back empty.
         {% endif %}
   - action: logbook.log
     data:

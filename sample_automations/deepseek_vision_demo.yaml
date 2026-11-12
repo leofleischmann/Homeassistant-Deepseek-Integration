@@ -2,9 +2,10 @@
 #
 # Two prerequisites, both one-off:
 #
-#   1. A model that accepts images, and "Allow images" enabled. On the official
-#      API the only such model is deepseek-flash, which the call
-#      below sets per request, so the entry's own model stays untouched.
+#   1. "Allow images" enabled on the agent (it is by default). On the official
+#      API only deepseek-flash, the default model, accepts images; the call
+#      below sets it per request, so the demo also works for an agent on
+#      deepseek-v4-pro without changing that agent's model.
 #
 #   2. An image Home Assistant is allowed to read. It only reads from allowed
 #      folders, and custom_components is not one of them — so either:
