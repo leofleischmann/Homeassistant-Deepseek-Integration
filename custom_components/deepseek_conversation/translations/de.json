@@ -23,6 +23,9 @@
             "api_requests": {
                 "name": "API-Anfragen"
             },
+            "web_search_requests": {
+                "name": "Web-Suchen"
+            },
             "last_request_prompt_tokens": {
                 "name": "Letzte Anfrage Prompt-Token"
             },

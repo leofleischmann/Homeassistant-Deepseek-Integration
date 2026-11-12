@@ -23,6 +23,9 @@
             "api_requests": {
                 "name": "API 请求次数"
             },
+            "web_search_requests": {
+                "name": "网页搜索次数"
+            },
             "last_request_prompt_tokens": {
                 "name": "上次请求提示词令牌"
             },

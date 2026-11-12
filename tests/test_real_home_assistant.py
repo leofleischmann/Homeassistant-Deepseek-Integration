@@ -563,7 +563,12 @@ class TestAgentToolsAPI(unittest.TestCase):
 
     def _entry(self, *, brave: str | None = "brave-key"):
         data = {self.const.CONF_BRAVE_API_KEY: brave} if brave else {}
-        return SimpleNamespace(entry_id=self.ENTRY_ID, title="DeepSeek", data=data)
+        return SimpleNamespace(
+            entry_id=self.ENTRY_ID,
+            title="DeepSeek",
+            data=data,
+            runtime_data=_runtime_data(),
+        )
 
     async def _tools(self, options, selected):
         api = self.agent_tools.agent_llm_api(
@@ -634,7 +639,10 @@ class TestAgentToolsAPI(unittest.TestCase):
     def test_deepseek_search_needs_no_key_of_its_own(self) -> None:
         """On the official API the entry's own key is all there is to it."""
         entry = SimpleNamespace(
-            entry_id=self.ENTRY_ID, title="DeepSeek", data={"api_key": "sk-deepseek"}
+            entry_id=self.ENTRY_ID,
+            title="DeepSeek",
+            data={"api_key": "sk-deepseek"},
+            runtime_data=_runtime_data(),
         )
         api = self.agent_tools.agent_llm_api(
             self.hass,
@@ -648,6 +656,19 @@ class TestAgentToolsAPI(unittest.TestCase):
         )
         # The provider's own query rules reach the model through the tool.
         self.assertIn("128", instance.tools[-1].description)
+
+    def test_a_search_is_counted_on_the_entry_s_usage_tracker(self) -> None:
+        """Usage is per API key, so every agent of the entry counts in one place."""
+        entry = self._entry()
+        api = self.agent_tools.agent_llm_api(
+            self.hass, entry, self._brave(), [_SELECTED_API]
+        )
+        instance = asyncio.run(api.async_get_api_instance(self.context))
+        web_search = instance.tools[-1]
+        # Called directly: what a provider answers is covered where the tool
+        # is, and this case is only about where the count ends up.
+        web_search._on_results("brave")
+        self.assertEqual(entry.runtime_data.usage.searches, ["brave"])
 
     def test_deepseek_search_is_not_offered_behind_a_custom_base_url(self) -> None:
         entry = SimpleNamespace(
@@ -729,7 +750,9 @@ class TestToolsNameTheirIntegration(unittest.TestCase):
         """Core's own test is ``tool.integration is None``; ours must pass it."""
         self.assertIsNone(llm.Tool.integration)
         self.assertEqual(
-            self.search_tool.WebSearchTool(_StubProvider()).integration,
+            self.search_tool.WebSearchTool(
+                _StubProvider(), lambda _provider: None
+            ).integration,
             self.const.DOMAIN,
         )
 
@@ -839,6 +862,18 @@ class TestToolResultsTravelInTheCoreShape(unittest.TestCase):
         self.assertNotIn("tool_result", delta)
 
 
+def _runtime_data() -> SimpleNamespace:
+    """An entry's runtime data, as far as the web tools read it.
+
+    ``usage.searches`` collects the provider id of every search that was
+    counted, in place of the sensor the real tracker would increment.
+    """
+    searches: list[str] = []
+    return SimpleNamespace(
+        usage=SimpleNamespace(searches=searches, record_web_search=searches.append)
+    )
+
+
 class _StubProvider:
     """A search provider that needs no network, for cases about the tool itself.
 
@@ -928,7 +963,8 @@ class TestWebSearchAnswersInTheCoreShape(unittest.TestCase):
         tool = self.search_tool.WebSearchTool(
             self.brave.BraveSearchProvider(
                 lambda: self.client, api_key="brave-key", timeout=10.0
-            )
+            ),
+            lambda _provider: None,
         )
         return asyncio.run(
             tool.async_call(
@@ -988,9 +1024,11 @@ class TestWebSearchToolContract(unittest.TestCase):
     def setUp(self) -> None:
         self.search_tool = load("web.search_tool")
         self.web_types = load("web.types")
+        #: Provider ids the tool reported as searches that found something.
+        self.counted: list[str] = []
 
     def _call(self, provider, **tool_args):
-        tool = self.search_tool.WebSearchTool(provider)
+        tool = self.search_tool.WebSearchTool(provider, self.counted.append)
         return asyncio.run(
             tool.async_call(
                 _FakeHass(),
@@ -1077,14 +1115,36 @@ class TestWebSearchToolContract(unittest.TestCase):
             self._call(_StubProvider(failure), query="q")
         self.assertEqual(str(caught.exception), "no balance left. Tell the user.")
 
+    def test_a_search_that_found_something_is_counted_once(self) -> None:
+        """That is the unit DeepSeek bills, so it is the unit the sensor counts."""
+        self._call(_StubProvider([self._result(), self._result()]), query="q")
+        self.assertEqual(self.counted, ["stub"])
+
+    def test_a_search_that_found_nothing_is_not_counted(self) -> None:
+        self._call(_StubProvider(), query="q")
+        self.assertEqual(self.counted, [])
+
+    def test_a_search_that_failed_or_was_refused_is_not_counted(self) -> None:
+        failure = self.web_types.WebToolError(
+            self.web_types.WebErrorKind.UNAVAILABLE, "down"
+        )
+        for provider, query in (
+            (_StubProvider(failure), "q"),
+            (_StubProvider(max_query_chars=3), "too long"),
+        ):
+            with self.subTest(query=query), self.assertRaises(HomeAssistantError):
+                self._call(provider, query=query)
+        self.assertEqual(self.counted, [])
+
     def test_the_description_carries_the_provider_s_query_rules(self) -> None:
         with_rules = self.search_tool.WebSearchTool(
-            _StubProvider(query_help="Query: at most 128 characters.")
+            _StubProvider(query_help="Query: at most 128 characters."),
+            self.counted.append,
         )
         self.assertTrue(
             with_rules.description.endswith("Query: at most 128 characters.")
         )
-        without = self.search_tool.WebSearchTool(_StubProvider())
+        without = self.search_tool.WebSearchTool(_StubProvider(), self.counted.append)
         self.assertEqual(without.description, without.description.strip())
 
     def test_the_prompt_tells_the_model_not_to_obey_what_it_reads(self) -> None:
@@ -1097,7 +1157,9 @@ class TestWebSearchToolContract(unittest.TestCase):
     def test_the_tool_says_it_only_reads(self) -> None:
         """Core's defaults describe a tool that writes and destroys."""
         self.assertTrue(llm.Tool.annotations.destructive)
-        annotations = self.search_tool.WebSearchTool(_StubProvider()).annotations
+        annotations = self.search_tool.WebSearchTool(
+            _StubProvider(), self.counted.append
+        ).annotations
         self.assertTrue(annotations.read_only)
         self.assertFalse(annotations.destructive)
         self.assertTrue(annotations.open_world)
@@ -1129,6 +1191,7 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
             entry_id="01J",
             title="DeepSeek",
             data={self.const.CONF_BRAVE_API_KEY: "brave-key"},
+            runtime_data=_runtime_data(),
         )
         chat_log = ChatLog(hass, "conversation-1")
         await chat_log.async_provide_llm_data(
@@ -1194,6 +1257,50 @@ class TestChatLogTakesThePrivateAPI(unittest.TestCase):
                 await hass.async_stop()
 
         asyncio.run(check())
+
+
+@requires_ha
+class TestUsageSensors(unittest.TestCase):
+    """The sensor platform and the tracker have to agree on every counter.
+
+    The tracker names its sensors as keyword arguments and the platform builds
+    them, so a counter added to one and not the other is a ``TypeError`` at
+    setup - which would take every usage sensor with it, not just the new one.
+    """
+
+    def setUp(self) -> None:
+        try:
+            self.sensor = load("sensor", api_stubs=True)
+        except ImportError as err:  # pragma: no cover
+            self.skipTest(f"the sensor platform needs more of core installed: {err}")
+        self.tracker = load("usage_metrics").UsageTracker()
+        entry = SimpleNamespace(
+            entry_id="01J",
+            title="DeepSeek",
+            runtime_data=SimpleNamespace(usage=self.tracker),
+        )
+        added: list = []
+        asyncio.run(self.sensor.async_setup_entry(None, entry, added.extend))
+        self.by_key = {entity.translation_key: entity for entity in added}
+
+    def test_a_counted_web_search_shows_on_its_sensor(self) -> None:
+        self.tracker.record_web_search("deepseek")
+        self.tracker.record_web_search("deepseek")
+        self.assertEqual(self.by_key["web_search_requests"].native_value, 2)
+        self.assertEqual(self.by_key["api_requests"].native_value or 0, 0)
+
+    def test_reset_brings_it_back_to_zero(self) -> None:
+        self.tracker.record_web_search("deepseek")
+        self.tracker.reset_all()
+        self.assertEqual(self.by_key["web_search_requests"].native_value, 0)
+
+    def test_every_sensor_has_a_name_in_every_language(self) -> None:
+        """A sensor without one shows up under its device's name alone."""
+        translations = pathlib.Path(self.sensor.__file__).parent / "translations"
+        for path in sorted(translations.glob("*.json")):
+            with self.subTest(language=path.stem):
+                names = json.loads(path.read_text(encoding="utf-8"))["entity"]["sensor"]
+                self.assertEqual(sorted(names), sorted(self.by_key))
 
 
 @requires_ha

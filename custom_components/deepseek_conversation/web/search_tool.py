@@ -18,10 +18,13 @@ Affects / influenced by:
   here, so every message says what the model should do next.
 - The description and ``WEB_SEARCH_API_PROMPT`` are sent with every request.
   Both are static, which is what keeps them inside DeepSeek's prefix cache.
+- ``on_results`` is how a search reaches the usage sensor: ``agent_tools.py``
+  passes ``UsageTracker.record_web_search`` (usage_metrics.py).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import time
 from typing import Any
 
@@ -85,9 +88,16 @@ class WebSearchTool(llm.Tool):
     #: that stopgap being removed. Harmless on cores that have no such attribute.
     integration = DOMAIN
 
-    def __init__(self, provider: SearchProvider) -> None:
-        """Bind the provider this agent searches with."""
+    def __init__(
+        self, provider: SearchProvider, on_results: Callable[[str], None]
+    ) -> None:
+        """Bind the provider this agent searches with.
+
+        ``on_results`` is called with the provider's id for every search that
+        found something - the searches a provider bills for.
+        """
         self._provider = provider
+        self._on_results = on_results
         self.description = f"{_DESCRIPTION} {provider.query_help}".strip()
         if (annotations := read_only_annotations()) is not None:
             self.annotations = annotations
@@ -157,7 +167,9 @@ class WebSearchTool(llm.Tool):
             "query": query,
             "results": [result.as_tool_dict() for result in results],
         }
-        if not results:
+        if results:
+            self._on_results(provider.id)
+        else:
             # Said outright, so the model reports an empty search instead of
             # answering from memory as if it had found something.
             payload["note"] = _NO_RESULTS_NOTE

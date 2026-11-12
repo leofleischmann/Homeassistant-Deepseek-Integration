@@ -23,6 +23,9 @@
             "api_requests": {
                 "name": "API requests"
             },
+            "web_search_requests": {
+                "name": "Web searches"
+            },
             "last_request_prompt_tokens": {
                 "name": "Last request prompt tokens"
             },

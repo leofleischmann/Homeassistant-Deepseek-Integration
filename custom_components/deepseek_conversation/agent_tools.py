@@ -19,6 +19,8 @@ Affects / influenced by:
 - ``conversation.py`` and ``ai_task.py`` call ``agent_llm_api`` once per turn.
 - ``web/selection.py`` says which web tools the agent gets (``web_tools_plan``);
   ``web/factory.py`` builds the provider and ``web/search_tool.py`` is the tool.
+- Searches are counted on the entry's ``UsageTracker`` (usage_metrics.py), the
+  same one the token sensors read.
 """
 
 from __future__ import annotations
@@ -102,7 +104,12 @@ class AgentToolsAPI(llm.API):
             provider = build_search_provider(
                 self.hass, self._entry.data, plan.search_provider
             )
-            tools.append(WebSearchTool(provider))
+            tools.append(
+                WebSearchTool(
+                    provider,
+                    on_results=self._entry.runtime_data.usage.record_web_search,
+                )
+            )
             prompts.append(WEB_SEARCH_API_PROMPT)
         else:
             LOGGER.warning(
