@@ -10,6 +10,7 @@ and is covered in ``test_real_home_assistant.py``.
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 
 from integration_modules import load
@@ -175,6 +176,79 @@ class TestSearchResultAsTheModelSeesIt(unittest.TestCase):
         )
         self.assertNotIn("score", result.as_tool_dict())
         self.assertNotIn("authority", result.as_tool_dict())
+
+
+def _result(summary: str, n: int = 0):
+    return web_types.SearchResult(
+        title=f"Title {n}", url=f"https://e.test/{n}", summary=summary, source="Example"
+    )
+
+
+def _size(payload: dict) -> int:
+    """What the tool-result limit counts: json.dumps with its defaults."""
+    return len(json.dumps(payload))
+
+
+class TestToolPayloadFitsTheLimit(unittest.TestCase):
+    """A search answer shares the agent's limit out instead of losing its end.
+
+    The live case behind it: DeepSeek sent summaries of up to 3,700 characters
+    where its docs say 600 to 800, so eight results came to 28,000 characters
+    and the general 12,000 cut dropped three of them.
+    """
+
+    def _long(self, n: int) -> str:
+        return " ".join(f"Sentence {n}.{i} says something." for i in range(150))
+
+    def test_no_limit_changes_nothing(self) -> None:
+        results = [_result(self._long(n), n) for n in range(8)]
+        payload = web_types.tool_payload("q", results, max_chars=0)
+        self.assertEqual(
+            [item["summary"] for item in payload["results"]],
+            [result.summary for result in results],
+        )
+
+    def test_an_answer_within_the_limit_stays_whole(self) -> None:
+        results = [_result("short", n) for n in range(3)]
+        payload = web_types.tool_payload("q", results, max_chars=12_000)
+        self.assertEqual([item["summary"] for item in payload["results"]], ["short"] * 3)
+
+    def test_every_result_arrives_and_the_whole_fits(self) -> None:
+        results = [_result(self._long(n), n) for n in range(8)]
+        payload = web_types.tool_payload("q", results, max_chars=12_000)
+        self.assertEqual(len(payload["results"]), 8)
+        self.assertLessEqual(_size(payload), 12_000)
+        for item in payload["results"]:
+            self.assertTrue(item["summary"].endswith("…"))
+            self.assertGreater(len(item["summary"]), 1_000)
+
+    def test_short_summaries_keep_everything_and_leave_room_for_the_rest(self) -> None:
+        results = [_result("brief", 0), _result(self._long(1), 1), _result(self._long(2), 2)]
+        payload = web_types.tool_payload("q", results, max_chars=4_000)
+        self.assertEqual(payload["results"][0]["summary"], "brief")
+        self.assertLessEqual(_size(payload), 4_000)
+        # The two long ones split what the short one left, near evenly.
+        long_ones = [len(item["summary"]) for item in payload["results"][1:]]
+        self.assertLess(abs(long_ones[0] - long_ones[1]), 60)
+
+    def test_cuts_land_on_a_sentence_end(self) -> None:
+        payload = web_types.tool_payload("q", [_result(self._long(0))], max_chars=1_000)
+        self.assertTrue(payload["results"][0]["summary"].endswith("something.…"))
+
+    def test_escaped_characters_are_counted_as_sent(self) -> None:
+        """An umlaut is six characters once serialized; the limit counts those."""
+        results = [_result("Größenänderung über Nacht. " * 200, n) for n in range(4)]
+        payload = web_types.tool_payload("q", results, max_chars=5_000)
+        self.assertLessEqual(_size(payload), 5_000)
+        self.assertEqual(len(payload["results"]), 4)
+
+    def test_a_limit_too_small_for_the_titles_is_left_to_the_general_cut(self) -> None:
+        results = [_result(self._long(n), n) for n in range(10)]
+        payload = web_types.tool_payload("q", results, max_chars=500)
+        self.assertEqual(
+            [item["summary"] for item in payload["results"]],
+            [result.summary for result in results],
+        )
 
 
 class TestDeepSeekEndpoint(unittest.TestCase):

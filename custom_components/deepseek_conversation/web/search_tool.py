@@ -40,7 +40,7 @@ from homeassistant.helpers.llm import (  # pyright: ignore[reportMissingImports]
 
 from ..const import DOMAIN, LOGGER
 from ..llm_compat import read_only_annotations, tool_result
-from .types import SearchProvider, WebToolError
+from .types import SearchProvider, WebToolError, tool_payload
 
 DEFAULT_RESULT_COUNT = 5
 MAX_RESULT_COUNT = 10
@@ -89,15 +89,22 @@ class WebSearchTool(llm.Tool):
     integration = DOMAIN
 
     def __init__(
-        self, provider: SearchProvider, on_results: Callable[[str], None]
+        self,
+        provider: SearchProvider,
+        on_results: Callable[[str], None],
+        *,
+        max_result_chars: int = 0,
     ) -> None:
         """Bind the provider this agent searches with.
 
         ``on_results`` is called with the provider's id for every search that
         found something - the searches a provider bills for.
+        ``max_result_chars`` is the agent's tool-result limit (0: none); the
+        answer is fitted to it so no result is lost (``types.tool_payload``).
         """
         self._provider = provider
         self._on_results = on_results
+        self._max_result_chars = max_result_chars
         self.description = f"{_DESCRIPTION} {provider.query_help}".strip()
         if (annotations := read_only_annotations()) is not None:
             self.annotations = annotations
@@ -163,10 +170,18 @@ class WebSearchTool(llm.Tool):
                 result.url,
             )
 
-        payload: dict[str, Any] = {
-            "query": query,
-            "results": [result.as_tool_dict() for result in results],
-        }
+        payload = tool_payload(query, results, max_chars=self._max_result_chars)
+        shortened = sum(
+            item["summary"] != result.summary
+            for item, result in zip(payload["results"], results, strict=True)
+        )
+        if shortened:
+            LOGGER.debug(
+                "[Debug web_search]: shortened %d of %d summaries to fit %d chars",
+                shortened,
+                len(results),
+                self._max_result_chars,
+            )
         if results:
             self._on_results(provider.id)
         else:

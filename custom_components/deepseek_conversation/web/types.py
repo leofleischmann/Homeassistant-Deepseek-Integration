@@ -15,8 +15,10 @@ Affects / influenced by:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+import json
 from typing import Any, Protocol
 
 
@@ -85,6 +87,85 @@ class SearchResult:
             data["date"] = self.date
         data["summary"] = self.summary
         return data
+
+
+_ELLIPSIS = "…"
+
+
+def _encoded_len(text: str) -> int:
+    """Length of ``text`` once ``json.dumps`` has escaped it, quotes excluded.
+
+    That is the length the tool-result limit counts: the answer is serialized
+    with the default ``ensure_ascii``, so an umlaut costs six characters.
+    """
+    return len(json.dumps(text)) - 2
+
+
+def _shorten(text: str, budget: int) -> str:
+    """Cut ``text`` to at most ``budget`` encoded characters.
+
+    At the end of a sentence when one is near, else at a word, and marked with
+    an ellipsis so the model can tell the summary goes on.
+    """
+    if _encoded_len(text) <= budget:
+        return text
+    room = budget - _encoded_len(_ELLIPSIS)
+    if room <= 0:
+        return ""
+    used = end = 0
+    for index, char in enumerate(text):
+        used += _encoded_len(char)
+        if used > room:
+            break
+        end = index + 1
+    head = text[:end]
+    sentence_end = max(head.rfind(mark) for mark in (". ", "! ", "? ", "。"))
+    if sentence_end >= len(head) * 0.6:
+        head = head[: sentence_end + 1]
+    elif (word_end := head.rfind(" ")) >= len(head) * 0.6:
+        head = head[:word_end]
+    return head.rstrip() + _ELLIPSIS
+
+
+def tool_payload(
+    query: str, results: Sequence[SearchResult], *, max_chars: int = 0
+) -> dict[str, Any]:
+    """The answer the model reads, sized to fit ``max_chars`` (0: no limit).
+
+    ``max_chars`` is the agent's tool-result limit. context_trim.py applies it
+    to every tool's serialized answer afterwards and simply cuts the end off,
+    which for a search means the last results vanish and one stops mid-word -
+    while the provider billed for all of them. Fitting here first shares the
+    room out instead: summaries shorter than an even share stay whole, the
+    longer ones split what is left, and every result arrives.
+
+    When even the titles and URLs do not fit, nothing is shortened here and
+    the general cut takes over.
+    """
+    items = [result.as_tool_dict() for result in results]
+    payload: dict[str, Any] = {"query": query, "results": items}
+    if max_chars <= 0 or not items:
+        return payload
+    size = len(json.dumps(payload))
+    if size <= max_chars:
+        return payload
+
+    lengths = [_encoded_len(item["summary"]) for item in items]
+    room = max_chars - (size - sum(lengths))
+    if room <= 0:
+        return payload
+
+    shares: dict[int, int] = {}
+    left = room
+    by_length = sorted(range(len(items)), key=lengths.__getitem__)
+    for position, index in enumerate(by_length):
+        share = left // (len(by_length) - position)
+        shares[index] = min(lengths[index], share)
+        left -= shares[index]
+    for index, item in enumerate(items):
+        if shares[index] < lengths[index]:
+            item["summary"] = _shorten(item["summary"], shares[index])
+    return payload
 
 
 class SearchProvider(Protocol):

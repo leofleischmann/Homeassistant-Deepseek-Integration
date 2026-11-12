@@ -1105,8 +1105,10 @@ class TestWebSearchToolContract(unittest.TestCase):
         #: Provider ids the tool reported as searches that found something.
         self.counted: list[str] = []
 
-    def _call(self, provider, **tool_args):
-        tool = self.search_tool.WebSearchTool(provider, self.counted.append)
+    def _call(self, provider, max_result_chars=0, **tool_args):
+        tool = self.search_tool.WebSearchTool(
+            provider, self.counted.append, max_result_chars=max_result_chars
+        )
         return asyncio.run(
             tool.async_call(
                 _FakeHass(),
@@ -1125,6 +1127,29 @@ class TestWebSearchToolContract(unittest.TestCase):
         return self.web_types.SearchResult(
             title="T", url="https://example.test", summary="S", **fields
         )
+
+    def test_an_answer_over_the_agents_limit_survives_the_general_cut(self) -> None:
+        """Fitted by the tool, so context_trim never has to cut results off."""
+        context_trim = load("context_trim")
+        const = load("const")
+        long = " ".join(f"Line {i} of a long summary." for i in range(200))
+        provider = _StubProvider(
+            [
+                self.web_types.SearchResult(title="T", url="https://e.test", summary=long)
+                for _ in range(8)
+            ]
+        )
+        data = _result_data(
+            self._call(provider, max_result_chars=12_000, query="news", count=8)
+        )
+        sent = context_trim.format_tool_result_content(
+            data,
+            json_encoder=json.JSONEncoder,
+            options={const.CONF_MAX_TOOL_RESULT_CHARS: 12_000},
+            tool_name="web_search",
+        )
+        self.assertNotIn("truncated by DeepSeek integration", sent)
+        self.assertEqual(len(json.loads(sent)["results"]), 8)
 
     def test_results_reach_the_model_without_the_ranking_signals(self) -> None:
         provider = _StubProvider(

@@ -37,6 +37,7 @@ from homeassistant.helpers.llm import (  # pyright: ignore[reportMissingImports]
 )
 
 from .const import DOMAIN, LOGGER
+from .options import max_tool_result_chars_from_options
 from .web.factory import build_search_provider
 from .web.search_tool import WEB_SEARCH_API_PROMPT, WebSearchTool
 from .web.selection import web_tools_plan
@@ -108,6 +109,9 @@ class AgentToolsAPI(llm.API):
                 WebSearchTool(
                     provider,
                     on_results=self._entry.runtime_data.usage.record_web_search,
+                    max_result_chars=max_tool_result_chars_from_options(
+                        self._options
+                    ),
                 )
             )
             prompts.append(WEB_SEARCH_API_PROMPT)

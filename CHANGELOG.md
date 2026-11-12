@@ -14,6 +14,7 @@ Nothing to do on upgrade: agents on a retired model move to DeepSeek V4.1 Flash 
 ### Added
 - **DeepSeek Search** as a web search provider on the entry's own key, billed per successful search. Requested in #49.
 - **Web searches** sensor counting the searches DeepSeek bills.
+- Search results fit the agent's tool-result size limit: long summaries are shortened evenly, so every result reaches the model instead of the last ones being cut off.
 - Sample automation `deepseek_web_search_demo.yaml`.
 
 ### Fixed
