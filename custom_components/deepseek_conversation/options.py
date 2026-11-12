@@ -47,6 +47,7 @@ from .const import (
     RECOMMENDED_MAX_TOOL_RESULT_CHARS,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_REQUEST_TIMEOUT,
+    REASONING_EFFORT_ALIASES,
     REASONING_EFFORT_VALUES,
     REQUEST_TIMEOUT_LOWER_BOUND,
     REQUEST_TIMEOUT_UPPER_BOUND,
@@ -149,8 +150,16 @@ def max_history_rounds_from_options(options: Mapping[str, Any]) -> int:
 
 
 def normalized_reasoning_effort(value: Any) -> str:
-    """Return a valid reasoning_effort string for the DeepSeek API."""
-    if isinstance(value, str) and value in REASONING_EFFORT_VALUES:
+    """Return one of the efforts the DeepSeek API distinguishes.
+
+    A level the API only maps onto another one (``medium``, ``xhigh``, which
+    older versions offered) becomes the level it was mapped to, so an agent
+    saved with one keeps thinking exactly as long as before.
+    """
+    if not isinstance(value, str):
+        return RECOMMENDED_REASONING_EFFORT
+    value = REASONING_EFFORT_ALIASES.get(value, value)
+    if value in REASONING_EFFORT_VALUES:
         return value
     return RECOMMENDED_REASONING_EFFORT
 

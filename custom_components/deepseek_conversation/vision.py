@@ -5,8 +5,8 @@ services.py (generate_content filenames). Images are sent as OpenAI-style
 ``image_url`` content parts with a base64 ``data:`` URL.
 
 Whether that is accepted depends on the **model**, not on the endpoint: the
-official API serves ``deepseek-v4-flash-vision-exp`` for image input and rejects
-``image_url`` parts everywhere else. A custom OpenAI-compatible gateway has a
+official API takes image input on ``deepseek-flash`` (V4.1 Flash) and rejects
+``image_url`` parts on ``deepseek-v4-pro``. A custom OpenAI-compatible gateway has a
 catalogue we cannot know - a DeepSeek model name there may be routed to any
 backend - so nothing is refused for those and the API answers for itself. Option
 CONF_VISION_ENABLED gates the feature entirely; see flow_schemas.py.

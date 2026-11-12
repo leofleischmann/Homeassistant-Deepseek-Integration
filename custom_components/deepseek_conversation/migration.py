@@ -32,13 +32,12 @@ from .const import (
     DEFAULT_AI_TASK_NAME,
     DEFAULT_CONVERSATION_NAME,
     DOMAIN,
-    LEGACY_CHAT_MODEL_RETIRED_ON,
     LOGGER,
     SUBENTRY_TYPE_AI_TASK,
     SUBENTRY_TYPE_CONVERSATION,
     SUBENTRY_TYPES,
 )
-from .models import migrate_legacy_chat_model
+from .models import legacy_chat_model_retired_on, migrate_legacy_chat_model
 from .options import (
     adopt_strip_markdown_default,
     ai_task_options_from,
@@ -212,8 +211,9 @@ def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -
 
     ``deepseek-chat`` / ``deepseek-reasoner`` are no longer served by the
     official API, so an agent still pointing at one fails every single request
-    with no hint about why. Rewriting the setting keeps the agent working; the
-    repair issue is what tells the user their model choice changed.
+    with no hint about why. The V4 Flash ids still answer, but only through a
+    reroute DeepSeek calls temporary. Rewriting the setting keeps the agent
+    working; the repair issue is what tells the user their model choice changed.
 
     Runs on every setup rather than as a versioned migration: an agent can
     arrive on a retired id long after migration ran - from a restored backup, or
@@ -248,12 +248,13 @@ def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -
     if not moved:
         return
 
+    retired_on = legacy_chat_model_retired_on(old_model)
     LOGGER.warning(
-        "Agent(s) %s are set to %s, which the DeepSeek API stopped serving on "
-        "%s; switching them to %s",
+        "Agent(s) %s are set to %s, which DeepSeek retired on %s; switching "
+        "them to %s",
         ", ".join(moved),
         old_model,
-        LEGACY_CHAT_MODEL_RETIRED_ON,
+        retired_on,
         new_model,
     )
     ir.async_create_issue(
@@ -267,7 +268,7 @@ def async_migrate_legacy_model_option(hass: HomeAssistant, entry: ConfigEntry) -
             "entry_title": ", ".join(moved),
             "old_model": old_model,
             "new_model": new_model,
-            "retired_on": LEGACY_CHAT_MODEL_RETIRED_ON,
+            "retired_on": retired_on,
         },
         learn_more_url="https://api-docs.deepseek.com/quick_start/pricing",
     )

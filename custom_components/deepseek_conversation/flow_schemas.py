@@ -78,6 +78,7 @@ from .options import (
     coerce_max_tool_iterations,
     coerce_max_tool_result_chars,
     coerce_request_timeout,
+    normalized_reasoning_effort,
 )
 
 #: The advanced step, grouped. Order and collapsed state follow how often a
@@ -167,7 +168,7 @@ _ADVANCED_FIELDS: dict[str, tuple[_Default, Callable[[], Any]]] = {
         BooleanSelector,
     ),
     CONF_REASONING_EFFORT: (
-        _stored(RECOMMENDED_REASONING_EFFORT),
+        _stored(RECOMMENDED_REASONING_EFFORT, normalized_reasoning_effort),
         lambda: SelectSelector(
             SelectSelectorConfig(
                 options=[

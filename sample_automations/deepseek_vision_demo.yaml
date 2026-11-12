@@ -3,7 +3,7 @@
 # Two prerequisites, both one-off:
 #
 #   1. A model that accepts images, and "Allow images" enabled. On the official
-#      API the only such model is deepseek-v4-flash-vision-exp, which the call
+#      API the only such model is deepseek-flash, which the call
 #      below sets per request, so the entry's own model stays untouched.
 #
 #   2. An image Home Assistant is allowed to read. It only reads from allowed
@@ -56,7 +56,7 @@ actions:
         Reply in English.
       filenames:
         - "{{ image_path }}"
-      chat_model: deepseek-v4-flash-vision-exp
+      chat_model: deepseek-flash
       thinking_enabled: false
       max_tokens: 200
     response_variable: deepseek_vision

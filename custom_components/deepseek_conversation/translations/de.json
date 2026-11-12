@@ -74,7 +74,7 @@
                     "base_url": "API-Basis-URL",
                     "chat_model": "Modell"
                 },
-                "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4 Flash. Die Legacy-Namen deepseek-chat und deepseek-reasoner wurden am 24.07.2026 abgeschaltet und werden nicht mehr angenommen."
+                "description": "Verbindung zur DeepSeek-API. Standard ist DeepSeek V4.1 Flash. Abgeschaltete Modellnamen (deepseek-chat, deepseek-reasoner, deepseek-v4-flash, deepseek-v4-flash-vision-exp) werden nicht mehr angenommen."
             },
             "reauth_confirm": {
                 "title": "DeepSeek erneut anmelden",
@@ -106,7 +106,7 @@
             "api_error": "API-Fehler",
             "unknown": "Unbekannter Fehler",
             "url_required": "Basis-URL ist erforderlich",
-            "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
+            "model_retired": "Dieses Modell wurde von DeepSeek abgeschaltet. Wähle DeepSeek V4.1 Flash oder V4 Pro."
         },
         "abort": {
             "already_configured": "Bereits konfiguriert",
@@ -136,7 +136,7 @@
                     "data_description": {
                         "prompt": "Eine Vorlage. Verfügbare Variablen stehen in der README.",
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
-                        "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
+                        "chat_model": "Flash ist am schnellsten und nimmt Bilder, Pro ist am stärksten.",
                         "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
                         "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. DeepSeek Search braucht keinen weiteren Schlüssel und wird pro Suche über dein DeepSeek-Guthaben abgerechnet; Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
                     }
@@ -208,7 +208,7 @@
                 "reconfigure_successful": "Agent aktualisiert."
             },
             "error": {
-                "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
+                "model_retired": "Dieses Modell wurde von DeepSeek abgeschaltet. Wähle DeepSeek V4.1 Flash oder V4 Pro."
             }
         },
         "ai_task_data": {
@@ -232,7 +232,7 @@
                     "data_description": {
                         "prompt": "Eine Vorlage. Verfügbare Variablen stehen in der README.",
                         "llm_hass_api": "Nichts gewählt bedeutet keine Kontrolle über dein Zuhause.",
-                        "chat_model": "Flash ist am schnellsten, Pro am stärksten, Vision nimmt Bilder.",
+                        "chat_model": "Flash ist am schnellsten und nimmt Bilder, Pro ist am stärksten.",
                         "recommended": "Aus öffnet einen zweiten Schritt mit allem Übrigen.",
                         "web_search": "Erlaubt diesem Agenten, im offenen Web nachzuschlagen. DeepSeek Search braucht keinen weiteren Schlüssel und wird pro Suche über dein DeepSeek-Guthaben abgerechnet; Brave Search nutzt den Brave-Schlüssel, der unter Neu konfigurieren hinterlegt ist."
                     }
@@ -290,25 +290,22 @@
                 "reconfigure_successful": "Agent aktualisiert."
             },
             "error": {
-                "model_retired": "Dieses Modell wurde von DeepSeek am 24.07.2026 abgeschaltet. Wähle DeepSeek V4 Flash oder V4 Pro."
+                "model_retired": "Dieses Modell wurde von DeepSeek abgeschaltet. Wähle DeepSeek V4.1 Flash oder V4 Pro."
             }
         }
     },
     "selector": {
         "chat_model": {
             "options": {
-                "deepseek-v4-flash": "DeepSeek V4 Flash (schnell, Standard)",
-                "deepseek-v4-pro": "DeepSeek V4 Pro (leistungsstärkster)",
-                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision (experimentell, Bildeingabe)"
+                "deepseek-flash": "DeepSeek V4.1 Flash (schnell, Bildeingabe, Standard)",
+                "deepseek-v4-pro": "DeepSeek V4 Pro (leistungsstärkster, nur Text)"
             }
         },
         "reasoning_effort": {
             "options": {
                 "low": "Niedrig",
-                "medium": "Mittel",
                 "high": "Hoch",
-                "max": "Max",
-                "xhigh": "Sehr hoch"
+                "max": "Max"
             }
         },
         "web_search": {
@@ -384,7 +381,7 @@
     "issues": {
         "legacy_chat_model": {
             "title": "DeepSeek-Modell {old_model} wurde abgeschaltet",
-            "description": "DeepSeek liefert {old_model} seit {retired_on} nicht mehr aus, deshalb konnte „{entry_title}“ nicht mehr antworten. Das Modell wurde auf {new_model} umgestellt. Unter Konfigurieren kannst du ein anderes wählen; danach kannst du diese Meldung schließen."
+            "description": "DeepSeek hat {old_model} am {retired_on} abgeschaltet. „{entry_title}“ wurde auf {new_model} umgestellt, damit es weiter antwortet. Unter Konfigurieren kannst du ein anderes Modell wählen; danach kannst du diese Meldung schließen."
         }
     }
 }

@@ -11,7 +11,7 @@ Install via **HACS** (`deepseek_conversation`). Community project — not part o
 
 ## What it does
 
-Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the brain behind Assist: streaming replies, optional extended reasoning, and optional Home Assistant tool calls (lights, context lookups, and more when an LLM API is enabled). One API key can carry several agents, each with its own prompt, model and tools.
+Use DeepSeek **V4.1 Flash** (`deepseek-flash`, default, also reads images) or **V4 Pro** (`deepseek-v4-pro`) as the brain behind Assist: streaming replies, optional extended reasoning, and optional Home Assistant tool calls (lights, context lookups, and more when an LLM API is enabled). One API key can carry several agents, each with its own prompt, model and tools.
 
 | Area | What you get |
 |------|----------------|
@@ -19,8 +19,8 @@ Use DeepSeek **V4 Flash** (default), **V4 Pro** or **V4 Flash Vision** as the br
 | **Assist** | Pick an agent in your voice assistant settings; same config for voice and text chat |
 | **Who is speaking** | Optional: pass the Home Assistant user and room into the prompt so replies can be personalised ([details](#who-is-speaking)) |
 | **Tools** | Expose selected Home Assistant LLM APIs to the model (configurable tool loop, 1–20 iterations). Optional web search per agent with DeepSeek Search or Brave Search ([details](#web-search)) |
-| **Reasoning** | Toggle thinking on/off and set effort; temperature and top_p apply only when thinking is off |
-| **Images** | Select `deepseek-v4-flash-vision-exp` to send camera snapshots and attachments to the official API ([details](#images)) |
+| **Reasoning** | Toggle thinking on/off and set effort (low, high, max); temperature and top_p apply only when thinking is off |
+| **Images** | Send camera snapshots and attachments to the default `deepseek-flash` model ([details](#images)) |
 | **Context** | Optional trimming of large tool results and limit on Assist history rounds (helps with GetLiveContext-heavy chats) |
 | **Timeouts** | Configurable request timeout (default 60 s) so a stalled endpoint cannot hang a voice pipeline |
 | **Automations** | `ai_task.generate_data` (recommended, same prompt/tools as Assist), `conversation.process`, or `deepseek_conversation.generate_content` |
@@ -52,7 +52,7 @@ Change API key, base URL, or Brave Search key via the integration card **⋮ →
 
 The config entry holds the credentials. Everything else belongs to an **agent**, and one entry can carry any number of them:
 
-- **Add conversation agent** — answers in Assist. Give the voice pipeline a V4 Flash agent for speed and point automations at a V4 Pro agent with wider tool access, both on the same key.
+- **Add conversation agent** — answers in Assist. Give the voice pipeline a V4.1 Flash agent for speed and point automations at a V4 Pro agent with wider tool access, both on the same key.
 - **Add AI task entity** — runs `ai_task.generate_data`, with its own prompt and model. It starts without access to your home; add a Home Assistant API if the task needs one.
 
 Adding an agent asks for a name, prompt, Home Assistant APIs, web search and model. Turn **Recommended settings** off and a second step opens, grouped so you only unfold what you came for:
@@ -97,9 +97,8 @@ Voice satellites usually identify no user (Home Assistant runs those pipelines w
 Image input needs two things: **Allow images** on (default) and a model that
 accepts images.
 
-- **Official API** (`api.deepseek.com`): select `deepseek-v4-flash-vision-exp`
-  as the agent's model. The other DeepSeek models are text-only and reject
-  images.
+- **Official API** (`api.deepseek.com`): `deepseek-flash` (V4.1 Flash, the
+  default) takes images. `deepseek-v4-pro` is text-only and rejects them.
 - **Custom base URL**: never gated. A gateway may route any model id to any
   backend, so every request is passed through and the API decides.
 

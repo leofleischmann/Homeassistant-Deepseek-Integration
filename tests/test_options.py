@@ -167,6 +167,20 @@ class TestReasoningEffort(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(options.normalized_reasoning_effort(value), value)
 
+    def test_the_api_offers_exactly_three_levels(self) -> None:
+        self.assertEqual(const.REASONING_EFFORT_VALUES, {"low", "high", "max"})
+
+    def test_aliases_become_the_level_the_api_maps_them_to(self) -> None:
+        """Older versions offered medium and xhigh; both always ran as high."""
+        for value, expected in (
+            ("minimal", "low"),
+            ("medium", "high"),
+            ("xhigh", "high"),
+            ("ultra", "max"),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(options.normalized_reasoning_effort(value), expected)
+
     def test_anything_else_becomes_the_recommended_effort(self) -> None:
         for value in (None, "", "LOW", "extreme", 3, ["high"]):
             with self.subTest(value=value):
@@ -198,7 +212,7 @@ class TestAgentOptionReshaping(unittest.TestCase):
 
     def test_an_ai_task_drops_the_assist_only_settings(self) -> None:
         stored = {
-            const.CONF_CHAT_MODEL: "deepseek-v4-flash",
+            const.CONF_CHAT_MODEL: "deepseek-flash",
             const.CONF_MAX_TOKENS: 900,
             const.CONF_STRIP_MARKDOWN: True,
             const.CONF_INCLUDE_USER_CONTEXT: True,
@@ -207,7 +221,7 @@ class TestAgentOptionReshaping(unittest.TestCase):
         self.assertEqual(
             options.ai_task_options_from(stored),
             {
-                const.CONF_CHAT_MODEL: "deepseek-v4-flash",
+                const.CONF_CHAT_MODEL: "deepseek-flash",
                 const.CONF_MAX_TOKENS: 900,
             },
         )

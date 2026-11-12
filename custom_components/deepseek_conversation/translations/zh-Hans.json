@@ -74,7 +74,7 @@
                     "base_url": "API 基础地址",
                     "chat_model": "模型"
                 },
-                "description": "连接 DeepSeek API。默认模型为 DeepSeek V4 Flash。旧名称 deepseek-chat 和 deepseek-reasoner 已于 2026-07-24 下线，不再受支持。"
+                "description": "连接 DeepSeek API。默认模型为 DeepSeek V4.1 Flash。已下线的模型名称（deepseek-chat、deepseek-reasoner、deepseek-v4-flash、deepseek-v4-flash-vision-exp）不再受支持。"
             },
             "reauth_confirm": {
                 "title": "重新验证 DeepSeek",
@@ -106,7 +106,7 @@
             "api_error": "API 错误",
             "unknown": "未知错误",
             "url_required": "必须填写基础地址",
-            "model_retired": "该模型已于 2026-07-24 被 DeepSeek 下线。请选择 DeepSeek V4 Flash 或 V4 Pro。"
+            "model_retired": "该模型已被 DeepSeek 下线。请选择 DeepSeek V4.1 Flash 或 V4 Pro。"
         },
         "abort": {
             "already_configured": "已配置过",
@@ -136,7 +136,7 @@
                     "data_description": {
                         "prompt": "一个模板。可用变量见 README。",
                         "llm_hass_api": "未选择则无法控制你的家。",
-                        "chat_model": "Flash 最快，Pro 最强，Vision 可接收图片。",
+                        "chat_model": "Flash 最快且可接收图片，Pro 最强。",
                         "recommended": "关闭后将打开包含其余项的第二步。",
                         "web_search": "允许该代理在公开网络上查询。DeepSeek Search 无需额外密钥，按搜索次数从你的 DeepSeek 余额扣费；Brave Search 使用在“重新配置”中设置的 Brave 密钥。"
                     }
@@ -208,7 +208,7 @@
                 "reconfigure_successful": "代理已更新。"
             },
             "error": {
-                "model_retired": "该模型已于 2026-07-24 被 DeepSeek 下线。请选择 DeepSeek V4 Flash 或 V4 Pro。"
+                "model_retired": "该模型已被 DeepSeek 下线。请选择 DeepSeek V4.1 Flash 或 V4 Pro。"
             }
         },
         "ai_task_data": {
@@ -232,7 +232,7 @@
                     "data_description": {
                         "prompt": "一个模板。可用变量见 README。",
                         "llm_hass_api": "未选择则无法控制你的家。",
-                        "chat_model": "Flash 最快，Pro 最强，Vision 可接收图片。",
+                        "chat_model": "Flash 最快且可接收图片，Pro 最强。",
                         "recommended": "关闭后将打开包含其余项的第二步。",
                         "web_search": "允许该代理在公开网络上查询。DeepSeek Search 无需额外密钥，按搜索次数从你的 DeepSeek 余额扣费；Brave Search 使用在“重新配置”中设置的 Brave 密钥。"
                     }
@@ -290,25 +290,22 @@
                 "reconfigure_successful": "代理已更新。"
             },
             "error": {
-                "model_retired": "该模型已于 2026-07-24 被 DeepSeek 下线。请选择 DeepSeek V4 Flash 或 V4 Pro。"
+                "model_retired": "该模型已被 DeepSeek 下线。请选择 DeepSeek V4.1 Flash 或 V4 Pro。"
             }
         }
     },
     "selector": {
         "chat_model": {
             "options": {
-                "deepseek-v4-flash": "DeepSeek V4 Flash（快速，默认）",
-                "deepseek-v4-pro": "DeepSeek V4 Pro（能力最强）",
-                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision（实验性，支持图片输入）"
+                "deepseek-flash": "DeepSeek V4.1 Flash（快速，支持图片输入，默认）",
+                "deepseek-v4-pro": "DeepSeek V4 Pro（能力最强，仅文本）"
             }
         },
         "reasoning_effort": {
             "options": {
                 "low": "低",
-                "medium": "中",
                 "high": "高",
-                "max": "最大",
-                "xhigh": "极高"
+                "max": "最大"
             }
         },
         "web_search": {
@@ -384,7 +381,7 @@
     "issues": {
         "legacy_chat_model": {
             "title": "DeepSeek 模型 {old_model} 已下线",
-            "description": "DeepSeek 自 {retired_on} 起不再提供 {old_model}，因此“{entry_title}”无法再作出回复。模型已切换为 {new_model}。如需其他模型，请在“配置”中选择，然后关闭此提示。"
+            "description": "DeepSeek 已于 {retired_on} 下线 {old_model}。“{entry_title}”已切换为 {new_model}，以便继续回复。如需其他模型，请在“配置”中选择，然后关闭此提示。"
         }
     }
 }

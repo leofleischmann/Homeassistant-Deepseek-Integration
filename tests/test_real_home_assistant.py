@@ -862,6 +862,84 @@ class TestToolResultsTravelInTheCoreShape(unittest.TestCase):
         self.assertNotIn("tool_result", delta)
 
 
+@requires_ha
+class TestReasoningIsReplayed(unittest.TestCase):
+    """What a chat log's reasoning turns into on the way back to the API.
+
+    With ``tools`` in the request, DeepSeek wants the reasoning of *every*
+    earlier assistant turn back - not only of those that called a tool - and
+    answers 400 without it. Without tools it ignores it, so sending it always
+    while thinking is on is the one rule that is right for both.
+    """
+
+    def setUp(self) -> None:
+        from homeassistant.components import conversation
+
+        self.conversation = conversation
+        self.chat_messages = load("chat_messages")
+
+    def _log(self) -> list:
+        conversation = self.conversation
+        return [
+            conversation.UserContent(content="Is the hall light on?"),
+            conversation.AssistantContent(
+                agent_id="agent",
+                content="Let me check.",
+                thinking_content="I should look at the light.",
+                tool_calls=[
+                    llm.ToolInput(
+                        tool_name="GetLiveContext", tool_args={}, id="call_1"
+                    )
+                ],
+            ),
+            conversation.ToolResultContent(
+                agent_id="agent",
+                tool_call_id="call_1",
+                tool_name="GetLiveContext",
+                **(
+                    {"result": llm.ToolResult(data={"hall": "on"})}
+                    if _chat_log_has_typed_results()
+                    else {"tool_result": {"hall": "on"}}
+                ),
+            ),
+            conversation.AssistantContent(
+                agent_id="agent",
+                content="Yes, it is on.",
+                thinking_content="The context says on.",
+            ),
+            conversation.UserContent(content="Thanks"),
+        ]
+
+    def _assistant_reasoning(self, *, model: str, thinking_enabled: bool) -> list:
+        messages = self.chat_messages.convert_content_to_messages(
+            self._log(), model=model, thinking_enabled=thinking_enabled
+        )
+        return [
+            message.get("reasoning_content")
+            for message in messages
+            if message["role"] == "assistant"
+        ]
+
+    def test_every_assistant_turn_carries_its_reasoning(self) -> None:
+        self.assertEqual(
+            self._assistant_reasoning(model="deepseek-flash", thinking_enabled=True),
+            ["I should look at the light.", "The context says on."],
+        )
+
+    def test_none_is_sent_while_thinking_is_off(self) -> None:
+        self.assertEqual(
+            self._assistant_reasoning(model="deepseek-flash", thinking_enabled=False),
+            [None, None],
+        )
+
+    def test_a_gateways_reasoner_never_gets_it(self) -> None:
+        """deepseek-reasoner rejected reasoning in the messages array."""
+        self.assertEqual(
+            self._assistant_reasoning(model="deepseek-reasoner", thinking_enabled=True),
+            [None, None],
+        )
+
+
 def _runtime_data() -> SimpleNamespace:
     """An entry's runtime data, as far as the web tools read it.
 

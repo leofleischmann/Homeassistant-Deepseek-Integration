@@ -53,13 +53,12 @@ from .const import (
     DEEPSEEK_API_BASE_URL,
     DEFAULT_SYSTEM_PROMPT,
     DOMAIN,
-    LEGACY_CHAT_MODEL_RETIRED_ON,
     LOGGER,
     MAX_TOKENS_UPPER_BOUND,
     RESPONSE_FORMAT_JSON_OBJECT,
 )
 from .debug import async_run_debug_suite
-from .models import migrate_legacy_chat_model
+from .models import legacy_chat_model_retired_on, migrate_legacy_chat_model
 from .options import blocking_request_timeout_from_options
 from .request_builder import (
     build_generate_content_completion_args,
@@ -209,10 +208,10 @@ async def send_prompt(hass: HomeAssistant, call: ServiceCall) -> ServiceResponse
     replacement = migrate_legacy_chat_model(model, base_url=base_url)
     if replacement is not None:
         LOGGER.warning(
-            "generate_content was called with %s, which the DeepSeek API "
-            "stopped serving on %s; using %s for this call",
+            "generate_content was called with %s, which DeepSeek retired on "
+            "%s; using %s for this call",
             model,
-            LEGACY_CHAT_MODEL_RETIRED_ON,
+            legacy_chat_model_retired_on(model),
             replacement,
         )
         model = replacement

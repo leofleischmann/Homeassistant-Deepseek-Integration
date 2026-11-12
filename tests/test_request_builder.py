@@ -165,9 +165,9 @@ class TestResolveGenerateContentModel(unittest.TestCase):
         self.assertEqual(
             self.resolve(
                 {const.CONF_CHAT_MODEL: "deepseek-v4-pro"},
-                {const.CONF_CHAT_MODEL: "  deepseek-v4-flash  "},
+                {const.CONF_CHAT_MODEL: "  deepseek-flash  "},
             ),
-            "deepseek-v4-flash",
+            "deepseek-flash",
         )
 
     def test_a_blank_override_is_not_an_override(self) -> None:

@@ -44,6 +44,7 @@ from .const import (
     CONF_BRAVE_API_KEY,
     CONF_CHAT_MODEL,
     CONF_PROMPT,
+    CONF_REASONING_EFFORT,
     CONF_RECOMMENDED,
     CONF_WEB_SEARCH,
     DEEPSEEK_API_BASE_URL,
@@ -70,7 +71,11 @@ from .flow_schemas import (
     web_search_selector,
 )
 from .models import is_retired_chat_model
-from .options import normalize_web_search_choice, recommended_agent_options
+from .options import (
+    normalize_web_search_choice,
+    normalized_reasoning_effort,
+    recommended_agent_options,
+)
 from .web.selection import available_search_providers
 
 
@@ -462,9 +467,19 @@ class DeepSeekSubentryFlowHandler(ConfigSubentryFlow):
         }
 
     def _advanced_suggested(self) -> dict[str, dict[str, Any]]:
-        """Suggested values, nested the way a sectioned form expects them."""
+        """Suggested values, nested the way a sectioned form expects them.
+
+        A reasoning effort saved by an older version (``medium``, ``xhigh``) is
+        not an option of today's select; it is shown as the level the API maps
+        it to, or the form would refuse to save it unchanged.
+        """
+        suggested = dict(self.options)
+        if CONF_REASONING_EFFORT in suggested:
+            suggested[CONF_REASONING_EFFORT] = normalized_reasoning_effort(
+                suggested[CONF_REASONING_EFFORT]
+            )
         return {
-            name: {key: self.options[key] for key in keys if key in self.options}
+            name: {key: suggested[key] for key in keys if key in suggested}
             for name, keys, _collapsed in self._sections()
         }
 

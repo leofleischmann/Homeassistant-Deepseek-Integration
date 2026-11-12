@@ -60,23 +60,20 @@ def _is_deepseek_reasoner_model(model: str) -> bool:
     return "reasoner" in (model or "").lower()
 
 
-def _include_assistant_reasoning_in_request(
-    *,
-    model: str,
-    thinking_enabled: bool,
-    has_tool_calls: bool,
-) -> bool:
-    """Whether to attach reasoning_content for an assistant message.
+def _include_assistant_reasoning_in_request(*, model: str, thinking_enabled: bool) -> bool:
+    """Whether to attach reasoning_content to assistant messages.
 
-    deepseek-reasoner: never send reasoning in the messages array (API 400).
-    Thinking mode (non-reasoner): only on assistant turns that issued tool_calls;
-    plain answers do not need CoT in context (DeepSeek thinking-mode guide).
+    Thinking mode: on every assistant turn that has some. Once a request
+    carries ``tools``, the API wants the reasoning of *all* previous turns back
+    - not only of those that called a tool - and answers 400 without it; a
+    request without tools ignores it. (DeepSeek thinking-mode guide.)
+
+    ``deepseek-reasoner``, which a custom gateway may still serve, rejects
+    reasoning in the messages array altogether.
     """
     if _is_deepseek_reasoner_model(model):
         return False
-    if not thinking_enabled:
-        return False
-    return has_tool_calls
+    return thinking_enabled
 
 
 def convert_content_to_messages(
@@ -140,9 +137,7 @@ def convert_content_to_messages(
             if isinstance(content, conversation.AssistantContent):
                 thinking = getattr(content, "thinking_content", None)
                 if thinking and _include_assistant_reasoning_in_request(
-                    model=model,
-                    thinking_enabled=thinking_enabled,
-                    has_tool_calls=bool(content.tool_calls),
+                    model=model, thinking_enabled=thinking_enabled
                 ):
                     msg["reasoning_content"] = thinking
             if tool_calls:
@@ -159,9 +154,10 @@ def convert_content_to_messages(
                 # request, one such message fails every later turn of that
                 # conversation, not just the round that produced it. An
                 # assistant turn can end up empty when it carried only
-                # reasoning that is not replayed (see
-                # _include_assistant_reasoning_in_request); there is nothing
-                # left to send, so leave it out entirely. For the other roles
+                # reasoning (replayed or not, see
+                # _include_assistant_reasoning_in_request), and reasoning alone
+                # does not count; there is nothing the API would take, so
+                # leave it out entirely. For the other roles
                 # an empty string is a message, and dropping one would break
                 # the user/tool pairing the API checks.
                 if role == "assistant":

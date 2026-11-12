@@ -38,7 +38,7 @@ actions:
       prompt: >-
         {{ demo_context }}
         Confirm in one short sentence that this generate_content demo works.
-      chat_model: deepseek-v4-flash
+      chat_model: deepseek-flash
       temperature: 0.7
       thinking_enabled: false
       max_tokens: 150

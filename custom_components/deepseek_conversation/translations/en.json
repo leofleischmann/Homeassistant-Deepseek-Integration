@@ -74,7 +74,7 @@
                     "base_url": "API Base URL",
                     "chat_model": "Model"
                 },
-                "description": "Connect to the DeepSeek API. Default model is DeepSeek V4 Flash. The legacy names deepseek-chat and deepseek-reasoner were retired on 2026-07-24 and are no longer accepted."
+                "description": "Connect to the DeepSeek API. Default model is DeepSeek V4.1 Flash. The retired model names (deepseek-chat, deepseek-reasoner, deepseek-v4-flash, deepseek-v4-flash-vision-exp) are no longer accepted."
             },
             "reauth_confirm": {
                 "title": "Reauthenticate DeepSeek",
@@ -106,7 +106,7 @@
             "api_error": "API error",
             "unknown": "Unknown error",
             "url_required": "Base URL is required",
-            "model_retired": "That model was retired by DeepSeek on 2026-07-24. Choose DeepSeek V4 Flash or V4 Pro."
+            "model_retired": "DeepSeek has retired that model. Choose DeepSeek V4.1 Flash or V4 Pro."
         },
         "abort": {
             "already_configured": "Already configured",
@@ -136,7 +136,7 @@
                     "data_description": {
                         "prompt": "A template. See the README for the available variables.",
                         "llm_hass_api": "Nothing selected means no control over your home.",
-                        "chat_model": "Flash is fastest, Pro strongest, Vision accepts images.",
+                        "chat_model": "Flash is fastest and accepts images, Pro is strongest.",
                         "recommended": "Off opens a second step with everything else.",
                         "web_search": "Lets this agent look things up on the public web. DeepSeek Search needs no extra key and is billed per search on your DeepSeek balance; Brave Search uses the Brave key set under Reconfigure."
                     }
@@ -208,7 +208,7 @@
                 "reconfigure_successful": "Agent updated."
             },
             "error": {
-                "model_retired": "That model was retired by DeepSeek on 2026-07-24. Choose DeepSeek V4 Flash or V4 Pro."
+                "model_retired": "DeepSeek has retired that model. Choose DeepSeek V4.1 Flash or V4 Pro."
             }
         },
         "ai_task_data": {
@@ -232,7 +232,7 @@
                     "data_description": {
                         "prompt": "A template. See the README for the available variables.",
                         "llm_hass_api": "Nothing selected means no control over your home.",
-                        "chat_model": "Flash is fastest, Pro strongest, Vision accepts images.",
+                        "chat_model": "Flash is fastest and accepts images, Pro is strongest.",
                         "recommended": "Off opens a second step with everything else.",
                         "web_search": "Lets this agent look things up on the public web. DeepSeek Search needs no extra key and is billed per search on your DeepSeek balance; Brave Search uses the Brave key set under Reconfigure."
                     }
@@ -290,25 +290,22 @@
                 "reconfigure_successful": "Agent updated."
             },
             "error": {
-                "model_retired": "That model was retired by DeepSeek on 2026-07-24. Choose DeepSeek V4 Flash or V4 Pro."
+                "model_retired": "DeepSeek has retired that model. Choose DeepSeek V4.1 Flash or V4 Pro."
             }
         }
     },
     "selector": {
         "chat_model": {
             "options": {
-                "deepseek-v4-flash": "DeepSeek V4 Flash (fast, default)",
-                "deepseek-v4-pro": "DeepSeek V4 Pro (most capable)",
-                "deepseek-v4-flash-vision-exp": "DeepSeek V4 Flash Vision (experimental, image input)"
+                "deepseek-flash": "DeepSeek V4.1 Flash (fast, image input, default)",
+                "deepseek-v4-pro": "DeepSeek V4 Pro (most capable, text only)"
             }
         },
         "reasoning_effort": {
             "options": {
                 "low": "Low",
-                "medium": "Medium",
                 "high": "High",
-                "max": "Max",
-                "xhigh": "xHigh"
+                "max": "Max"
             }
         },
         "web_search": {
@@ -384,7 +381,7 @@
     "issues": {
         "legacy_chat_model": {
             "title": "DeepSeek model {old_model} was retired",
-            "description": "DeepSeek stopped serving {old_model} on {retired_on}, so “{entry_title}” could no longer answer. It has been switched to {new_model}. Pick a different model under Configure if you want one, then dismiss this issue."
+            "description": "DeepSeek retired {old_model} on {retired_on}. “{entry_title}” has been switched to {new_model} so it keeps answering. Pick a different model under Configure if you want one, then dismiss this issue."
         }
     }
 }
